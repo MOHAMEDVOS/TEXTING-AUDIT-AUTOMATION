@@ -16,7 +16,10 @@ extracts conversation threads, and scores agent performance using AI.
 
 Entry point: `python main.py --single "AgentName"`
 Core scraper: `scraper/browser_bot.py`
+AI Audit Logic: `ai/analyzer.py`, `ai/scorer.py`
+ML Pre-Filter: `ai/prefilter/pipeline.py`
 Config: `config/settings.py`, `config/agents.json`, `.env`
+Documentation: `docs/audit_workflow.html`, `docs/ml-prefilter-explained.html`, `docs/how-the-audit-works.html`
 
 ---
 
@@ -80,6 +83,41 @@ await self.page.wait_for_selector(
 - Do NOT use `wait_for_load_state("networkidle")` after login button click
 - Do NOT check `_is_logged_in()` immediately after clicking Login — React takes 2-3s to render
 - Do NOT wait on selectors after login before navigating to messenger — page is blank
+---
+
+## Audit Architecture (Three Funnels & Four Pillars)
+
+The system classifies every conversation into a **Funnel** type to apply relevant rules:
+1.  **Wide Funnel (WF - The Hello)**: Focus on tone, opt-outs, and not giving up after 1 'no'.
+2.  **Middle Funnel (MF - The Nurture)**: 1-2 pillars gathered.
+3.  **Narrow Funnel (NF - The Qualify)**: All 4 pillars gathered + handoff msg sent.
+
+**The Four Pillars (Required for NF/Hot Leads):**
+-   **Condition**: Lead describes property state/repairs.
+-   **Asking Price**: Lead provides a specific dollar number.
+-   **Motivation**: Lead explains *why* they are considering selling.
+-   **Timeline**: Lead states a timeframe for selling.
+
+---
+
+## ML Pre-Filter Pipeline
+
+Reduces Groq API costs by handling "clean" conversations locally.
+-   **Tier 1 (Phrase Matching)**: Instant catch for silent contacts or trivial opt-outs.
+-   **Tier 2 (kNN Embedding)**: Matches against 911+ past clean conversations (FAISS index).
+-   **Tier 3 (Classifier)**: Logistic regression predicts P(flag) and audit scores.
+-   **Tier 4 (Groq AI)**: Full audit fallback if all tiers are uncertain.
+
+**Operational Commands:**
+-   **Run Evaluation**: `python scripts/eval_prefilter.py --limit 500`
+-   **Promote Tiers**: `python scripts/promote_prefilter.py` (checks gates: FALSE-CLEAN ≤ 5%)
+-   **Rebuild kNN Index**: `python -m ai.prefilter.index_builder --rebuild`
+-   **Retrain Classifier**: `python -m ai.prefilter.train --test-split 0.2`
+
+**Env Config (`.env`):**
+-   `PREFILTER_ENABLED=true`
+-   `PREFILTER_SHADOW_MODE=true` (True = Groq scores everything for validation)
+-   `PREFILTER_T1_LIVE=true`, `PREFILTER_T2_LIVE=false`, `PREFILTER_T3_LIVE=false`
 
 ---
 
