@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audit System — Workflow Guide</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Inter:wght@300;400;500;600&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --canvas:       #faf9f5;
+      --card:         #efe9de;
+      --dark:         #111110;
+      --dark-el:      #1e1d1b;
+      --coral:        #cc785c;
+      --coral-active: #a9583e;
+      --hairline:     #d8d0c5;
+      --ink:          #0d0d0b;
+      --body:         #0d0d0b;
+      --muted:        #0d0d0b;
+      --muted-soft:   #0d0d0b;
+      --on-dark:      #ffffff;
+      --on-dark-soft: #e8e6e2;
+      --success:      #5db872;
+      --amber:        #e8a55a;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: 'Inter', sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+      font-weight: 500;
+    }
+
+    /* ─── NAV ─── */
+    nav {
+      position: sticky; top: 0; z-index: 99;
+      background: var(--canvas);
+      border-bottom: 1px solid var(--hairline);
+      height: 56px;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 40px;
+    }
+    .nav-left { display: flex; align-items: center; gap: 10px; }
+    .spike { color: var(--coral); font-size: 18px; }
+    .nav-title { font-size: 14px; font-weight: 700; color: var(--ink); }
+    .nav-right { font-size: 12px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--ink); }
+
+    /* ─── LAYOUT ─── */
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 0 40px; }
+
+    /* ─── HERO ─── */
+    .hero {
+      padding: 100px 0 80px;
+      border-bottom: 1px solid var(--hairline);
+    }
+    .hero-eyebrow {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-size: 12px; font-weight: 500; letter-spacing: 1.5px; text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 32px;
+    }
+    .hero-eyebrow::before { content: ''; width: 24px; height: 1px; background: var(--muted); }
+    h1 {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 72px; font-weight: 500; line-height: 1.0; letter-spacing: -2px;
+      color: var(--ink);
+      max-width: 800px;
+      margin-bottom: 32px;
+    }
+    h1 em { font-style: italic; color: var(--coral); }
+    .hero-desc {
+      font-size: 18px; font-weight: 600; color: var(--ink);
+      max-width: 520px; line-height: 1.65;
+    }
+
+    /* ─── SECTION HEADERS ─── */
+    .section { padding: 80px 0; border-bottom: 1px solid var(--hairline); }
+    .section:last-child { border-bottom: none; }
+
+    .section-label {
+      font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
+      color: var(--coral);
+      margin-bottom: 16px;
+    }
+    h2 {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 44px; font-weight: 600; letter-spacing: -1px; line-height: 1.1;
+      color: var(--ink);
+      margin-bottom: 40px;
+    }
+    h3 {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 24px; font-weight: 600;
+      color: var(--ink);
+      margin-bottom: 8px;
+    }
+
+    /* ─── FUNNELS: Side-by-side cards ─── */
+    .funnel-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1px;
+      background: var(--hairline);
+      border: 1px solid var(--hairline);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+    .funnel-col {
+      background: var(--canvas);
+      padding: 36px 32px;
+    }
+    .funnel-col:nth-child(2) { background: var(--card); }
+    .funnel-col:nth-child(3) { background: var(--dark); }
+    .funnel-num {
+      font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
+      color: var(--ink); margin-bottom: 20px;
+    }
+    .funnel-col:nth-child(3) .funnel-num { color: var(--on-dark-soft); }
+    .funnel-col:nth-child(3) h3 { color: var(--on-dark); }
+    .funnel-col:nth-child(3) p { color: #ffffff; }
+    .funnel-rule {
+      margin-top: 24px;
+      padding-top: 24px;
+      border-top: 1px solid var(--hairline);
+    }
+    .funnel-col:nth-child(3) .funnel-rule { border-color: rgba(255,255,255,0.08); }
+    .funnel-rule-label {
+      font-size: 11px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase;
+      color: var(--coral); margin-bottom: 12px;
+    }
+    .funnel-rule ul { list-style: none; }
+    .funnel-rule li {
+      font-size: 13px; font-weight: 600; color: var(--ink); padding: 5px 0;
+      display: flex; gap: 8px; align-items: flex-start;
+    }
+    .funnel-col:nth-child(3) .funnel-rule li { color: #ffffff; }
+    .funnel-rule li::before { content: '·'; color: var(--coral); font-size: 18px; line-height: 1.2; flex-shrink: 0; }
+
+    /* ─── FLOW DIAGRAM ─── */
+    .flow-diagram {
+      background: var(--dark);
+      border-radius: 14px;
+      padding: 48px;
+    }
+    .flow-top {
+      display: flex; flex-direction: column; align-items: center; gap: 0;
+      margin-bottom: 40px;
+    }
+    .flow-pill {
+      background: var(--dark-el);
+      border: 1px solid rgba(255,255,255,0.12);
+      color: #ffffff;
+      font-size: 14px; font-weight: 700;
+      padding: 10px 24px;
+      border-radius: 9999px;
+    }
+    .flow-pill.hub {
+      background: var(--coral); color: #fff;
+      font-size: 14px; border: none;
+    }
+    .flow-arrow { color: rgba(255,255,255,0.15); font-size: 20px; line-height: 1; padding: 6px 0; }
+
+    .flow-branches {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+    .branch {
+      background: var(--dark-el);
+      border: 1px solid rgba(255,255,255,0.05);
+      border-radius: 10px;
+      padding: 24px;
+    }
+    .branch-title {
+      font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase;
+      color: var(--coral); margin-bottom: 16px;
+    }
+    .branch ul { list-style: none; }
+    .branch li {
+      font-size: 13px; font-weight: 600; color: #ffffff;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      display: flex; gap: 8px;
+    }
+    .branch li:last-child { border-bottom: none; }
+    .branch li::before { content: '→'; color: var(--coral); flex-shrink: 0; }
+
+    /* ─── ML LEVELS ─── */
+    .levels { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--hairline); border-radius: 14px; overflow: hidden; }
+    .level {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 28px 32px;
+      border-bottom: 1px solid var(--hairline);
+      gap: 20px;
+      background: var(--canvas);
+    }
+    .level:last-child { border-bottom: none; background: var(--dark); }
+    .level-left { display: flex; gap: 20px; align-items: center; }
+    .level-num {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 40px; font-weight: 300; color: var(--hairline);
+      line-height: 1; width: 48px; flex-shrink: 0; text-align: center;
+    }
+    .level:last-child .level-num { color: rgba(255,255,255,0.1); }
+    .level-name { font-size: 16px; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
+    .level:last-child .level-name { color: #ffffff; }
+    .level-desc { font-size: 13px; font-weight: 600; color: var(--ink); }
+    .level:last-child .level-desc { color: #e8e6e2; }
+    .level-badge {
+      font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase;
+      padding: 6px 16px; border-radius: 9999px;
+      background: var(--card); color: var(--muted);
+      white-space: nowrap; flex-shrink: 0;
+    }
+    .level:last-child .level-badge { background: var(--coral); color: #fff; }
+
+    /* ─── LIMITS TABLE ─── */
+    .limits {
+      border: 1px solid var(--hairline);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+    .limits-head {
+      display: grid; grid-template-columns: 100px 1fr 1fr;
+      background: var(--card);
+      padding: 14px 28px;
+      font-size: 11px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted);
+      gap: 20px;
+    }
+    .limits-row {
+      display: grid; grid-template-columns: 100px 1fr 1fr;
+      padding: 18px 28px;
+      border-top: 1px solid var(--hairline);
+      gap: 20px;
+      align-items: start;
+    }
+    .limits-row:nth-child(odd) { background: var(--canvas); }
+    .limits-row:nth-child(even) { background: var(--card); }
+    .limits-tier { font-size: 13px; font-weight: 700; color: var(--ink); }
+    .limits-detect { font-size: 14px; font-weight: 600; color: var(--ink); }
+    .limits-limit { font-size: 13px; font-weight: 600; color: var(--ink); }
+
+    /* ─── CALLOUT BOX ─── */
+    .callout {
+      background: var(--dark);
+      border-radius: 14px;
+      padding: 48px;
+      display: grid; grid-template-columns: 1fr auto;
+      gap: 40px; align-items: center;
+    }
+    .callout h2 {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 36px; font-weight: 400; letter-spacing: -0.5px;
+      color: var(--on-dark); margin-bottom: 16px;
+    }
+    .callout p { font-size: 15px; font-weight: 600; color: #ffffff; line-height: 1.65; }
+    .callout p strong { color: var(--coral); }
+    .callout-icon {
+      font-size: 64px; color: rgba(255,255,255,0.04);
+      font-family: 'Cormorant Garamond', serif;
+      flex-shrink: 0;
+    }
+
+    /* ─── PLAN NOTE ─── */
+    .plan-note {
+      background: var(--card);
+      border-left: 3px solid var(--coral);
+      border-radius: 0 10px 10px 0;
+      padding: 20px 24px;
+      margin-top: 32px;
+    }
+    .plan-note strong { font-size: 14px; font-weight: 600; color: var(--ink); display: block; margin-bottom: 4px; }
+    .plan-note p { font-size: 14px; color: var(--body); }
+
+    /* ─── FOOTER ─── */
+    .footer {
+      background: var(--dark);
+      padding: 40px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .footer-brand { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--on-dark-soft); }
+    .footer-meta { font-size: 12px; color: var(--muted-soft); letter-spacing: 0.5px; }
+
+    @media (max-width: 768px) {
+      h1 { font-size: 44px; letter-spacing: -1px; }
+      .funnel-row, .flow-branches, .limits-head, .limits-row { grid-template-columns: 1fr; }
+      .callout { grid-template-columns: 1fr; }
+      .callout-icon { display: none; }
+      nav, .footer { padding: 0 20px; }
+      .wrap { padding: 0 20px; }
+      .hero { padding: 60px 0; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-left">
+    <span class="spike">✳</span>
+    <span class="nav-title">Audit System</span>
+  </div>
+  <span class="nav-right">Internal Guide</span>
+</nav>
+
+<div class="wrap">
+
+  <!-- HERO -->
+  <section class="hero">
+    <p class="hero-eyebrow">System Workflow</p>
+    <h1>How the System<br>Checks <em>Conversations</em></h1>
+    <p class="hero-desc">A clear, simple explanation of how the audit pipeline reads, scores, and reports on every texting conversation — from a fast keyword scan to a full AI review.</p>
+  </section>
+
+  <!-- FUNNELS -->
+  <section class="section">
+    <p class="section-label">01 — The Three Funnels</p>
+    <h2>Every Chat Is in One of These Funnels</h2>
+    <div class="funnel-row">
+      <div class="funnel-col">
+        <p class="funnel-num">Wide Funnel (WF)</p>
+        <h3>The Hello</h3>
+        <p style="font-size:14px;color:var(--body);margin-top:8px;">The goal is to get a reply. The system checks if the agent is warm and not giving up too early. No big pillars needed yet.</p>
+        <div class="funnel-rule">
+          <p class="funnel-rule-label">Rules Checked</p>
+          <ul>
+            <li>Rude Tone</li>
+            <li>Giving Up After 1 No</li>
+            <li>Rebuttal Used</li>
+            <li>Lead Said STOP or Remove Me</li>
+            <li>Label Match</li>
+          </ul>
+        </div>
+      </div>
+      <div class="funnel-col">
+        <p class="funnel-num">Middle Funnel (MF)</p>
+        <h3>The Nurture</h3>
+        <p style="font-size:14px;color:var(--body);margin-top:8px;">The goal is to learn a little. The system checks if the agent gathered 1 or 2 pillars — like why the lead is selling or their timeline.</p>
+        <div class="funnel-rule">
+          <p class="funnel-rule-label">Rules Checked</p>
+          <ul>
+            <li>1–2 Pillars Gathered</li>
+            <li>Rude Tone</li>
+            <li>Rebuttal Used</li>
+            <li>Lead Said STOP or Remove Me</li>
+            <li>Label Match</li>
+          </ul>
+        </div>
+      </div>
+      <div class="funnel-col">
+        <p class="funnel-num">Narrow Funnel (NF)</p>
+        <h3>The Qualify</h3>
+        <p style="font-size:14px;margin-top:8px;">The goal is full facts. All 4 pillars must be complete before a handoff msg is sent to the client.</p>
+        <div class="funnel-rule">
+          <p class="funnel-rule-label">Rules Checked</p>
+          <ul>
+            <li>All 4 Pillars Gathered</li>
+            <li>Handoff Msg Sent</li>
+            <li>Rude Tone</li>
+            <li>Rebuttal Used</li>
+            <li>Label Match</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FLOW DIAGRAM -->
+  <section class="section">
+    <p class="section-label">02 — Audit Flow</p>
+    <h2>How the System Decides What to Check</h2>
+    <div class="flow-diagram">
+      <div class="flow-top">
+        <div class="flow-pill">Conversation Starts</div>
+        <div class="flow-arrow">↓</div>
+        <div class="flow-pill hub">System Detects the Current Funnel</div>
+        <div class="flow-arrow">↓</div>
+      </div>
+      <div class="flow-branches">
+        <div class="branch">
+          <p class="branch-title">Wide Funnel (WF)</p>
+          <ul>
+            <li>Rude Tone</li>
+            <li>Giving Up After 1 No</li>
+            <li>Lead Said STOP or Remove Me</li>
+            <li>Rebuttal Used</li>
+            <li>Label Match</li>
+          </ul>
+        </div>
+        <div class="branch">
+          <p class="branch-title">Middle Funnel (MF)</p>
+          <ul>
+            <li>1–2 Pillars Gathered</li>
+            <li>Rude Tone</li>
+            <li>Rebuttal Used</li>
+            <li>Lead Said STOP or Remove Me</li>
+            <li>Label Match</li>
+          </ul>
+        </div>
+        <div class="branch">
+          <p class="branch-title">Narrow Funnel (NF)</p>
+          <ul>
+            <li>All 4 Pillars Gathered</li>
+            <li>Handoff Msg Sent</li>
+            <li>Rude Tone</li>
+            <li>Rebuttal Used</li>
+            <li>Label Match</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ML LEVELS -->
+  <section class="section">
+    <p class="section-label">03 — Grading Pipeline</p>
+    <h2>Four Levels Check Every Chat</h2>
+
+    <!-- ML Definition Box -->
+    <div style="background:var(--card); border-left:4px solid var(--coral); border-radius:0 12px 12px 0; padding:24px 28px; margin-bottom:40px; display:grid; grid-template-columns:auto 1fr; gap:20px; align-items:start;">
+      <div style="background:var(--coral); color:#fff; font-size:11px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; padding:6px 14px; border-radius:9999px; white-space:nowrap; margin-top:2px;">What is ML?</div>
+      <p style="font-size:15px; font-weight:600; color:var(--ink); margin:0; line-height:1.6;">
+        <strong>ML</strong> looks at thousands of past conversations 
+        and learns what a "clean" or "mistake" chat looks like — then it makes a decision on its own. 
+        <span style="color:var(--coral); font-weight:700;">Levels 1, 2, and 3 below use ML.</span>
+      </p>
+    </div>
+
+    <div class="levels">
+      <div class="level">
+        <div class="level-left">
+          <span class="level-num">1</span>
+          <div>
+            <p class="level-name">Quick Search <span style="background:var(--coral);color:#fff;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:2px 8px;border-radius:9999px;margin-left:8px;vertical-align:middle;">ML</span></p>
+            <p class="level-desc">Scans for clear STOP words like "Remove me" or "Wrong Number."</p>
+          </div>
+        </div>
+        <span class="level-badge">Instant Pass</span>
+      </div>
+      <div class="level">
+        <div class="level-left">
+          <span class="level-num">2</span>
+          <div>
+            <p class="level-name">Memory Search <span style="background:var(--coral);color:#fff;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:2px 8px;border-radius:9999px;margin-left:8px;vertical-align:middle;">ML</span></p>
+            <p class="level-desc">Compares the chat to past conversations that were already confirmed "Clean."</p>
+          </div>
+        </div>
+        <span class="level-badge">Auto Pass</span>
+      </div>
+      <div class="level">
+        <div class="level-left">
+          <span class="level-num">3</span>
+          <div>
+            <p class="level-name">Smart Guess <span style="background:var(--coral);color:#fff;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:2px 8px;border-radius:9999px;margin-left:8px;vertical-align:middle;">ML</span></p>
+            <p class="level-desc">A small model that predicts whether any mistake is likely in this chat.</p>
+          </div>
+        </div>
+        <span class="level-badge">Auto Pass</span>
+      </div>
+      <div class="level">
+        <div class="level-left">
+          <span class="level-num">4</span>
+          <div>
+            <p class="level-name">AI MODEL</p>
+            <p class="level-desc">Connects to the AI model for complex decisions. Reads every word to be 100% sure.</p>
+          </div>
+        </div>
+        <span class="level-badge">Deep Review</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- LIMITS -->
+  <section class="section">
+    <p class="section-label">04 — Current Limits</p>
+    <h2>What the ML Can and Cannot Do Now</h2>
+    <p style="color:var(--muted);font-size:15px;margin-bottom:32px;max-width:560px;">Level 1–3 are a cost-saving filter. Their job is to skip easy chats — not to audit mistakes.</p>
+    <div class="limits">
+      <div class="limits-head">
+        <span>Level</span>
+        <span>What it detects now</span>
+        <span>Current limit</span>
+      </div>
+      <div class="limits-row">
+        <span class="limits-tier">Level 01</span>
+        <span class="limits-detect">Clear STOP words like "Remove me" or "Wrong Number"</span>
+        <span class="limits-limit">Soft or unclear rejections</span>
+      </div>
+      <div class="limits-row">
+        <span class="limits-tier">Level 02</span>
+        <span class="limits-detect">Exact matches to past "Clean" conversations</span>
+        <span class="limits-limit">Chats it has never seen before</span>
+      </div>
+      <div class="limits-row">
+        <span class="limits-tier">Level 03</span>
+        <span class="limits-detect">Whether a mistake is likely at all</span>
+        <span class="limits-limit">Cannot name the specific mistake</span>
+      </div>
+      <div class="limits-row">
+        <span class="limits-tier">Level 04</span>
+        <span class="limits-detect">Full audit — tone, pillars, label, rebuttal</span>
+        <span class="limits-limit">Cost per call — reserved for hard cases</span>
+      </div>
+    </div>
+
+    <div class="plan-note">
+      <strong>Training Plan</strong>
+      <p>Real data is being collected to teach the system how to catch mistakes automatically — making it smarter and cheaper over time.</p>
+    </div>
+  </section>
+
+  <!-- CALLOUT -->
+  <section class="section">
+    <div class="callout">
+      <div>
+        <h2>Does the ML mark mistakes now?</h2>
+        <p><strong>No.</strong> Right now, Level 1–3 only validates the "Good" chats. It does not mark mistakes. If a mistake is spotted, the chat is sent to <strong>Level 4 (AI MODEL)</strong> to confirm it and create the Red Flag report. This is done to be 100% sure before giving an agent a bad grade.</p>
+      </div>
+      <div class="callout-icon">?</div>
+    </div>
+  </section>
+
+</div><!-- /wrap -->
+
+<!-- FOOTER -->
+<footer class="footer">
+  <div class="footer-brand">
+    <span style="color:var(--coral)">✳</span>
+    Audit System — Internal Documentation &nbsp;·&nbsp; <span style="color:var(--coral); font-weight:700; letter-spacing:0.5px;">by Mohamed Abdo</span>
+  </div>
+  <span class="footer-meta">v7.0 · Simple English · Internal Use Only</span>
+</footer>
+
+</body>
+</html>

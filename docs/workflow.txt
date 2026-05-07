@@ -1,0 +1,62 @@
+Every conversation
+        ↓
+Pre-flight scan (flag_triggers.py)
+"Does this text contain ANY suspicious content?"
+(opt-outs, profanity, $ amounts, wrong number, threats)
+        ↓
+    ┌───┴───┐
+   YES      NO
+    ↓        ↓
+  Groq      ML tiers (Tier 1 → 2 → 3)
+            If ML is confident → ML scores it
+            If ML is not confident → Groq
+
+______________________________________________________________
+Great question. The 1,549 are all Groq-scored conversations — but none of them have been explicitly confirmed correct by a human. They're just "Groq said this, and nobody pushed back."
+
+Think of it like this:
+
+
+1,549 conversations scored by Groq
+     ↓
+     6 → you clicked ✓ Valid  (you confirmed Groq was right)
+     0 → you clicked ✗ Not Valid on the whole convo
+ 1,543 → nobody reviewed them  (assumed correct, but not confirmed)
+The ML currently learns from all 1,549 — including the ones Groq may have gotten wrong.
+
+The PREFILTER_REQUIRE_VALIDATION setting controls this:
+
+Right now (false) — ML learns from all 1,549. Fast but includes potential Groq mistakes.
+When you flip it to true — ML only learns from your 6 validated ones. Safe but tiny index.
+The real answer to your question: you don't need to validate all 1,549. The goal is to validate enough that you trust the index. Around 50–100 validated conversations is enough to flip the switch — you're spot-checking, not reviewing everything.
+
+Think of it like a manager reviewing 10% of calls instead of every single call. The 6 you validated are the ones you're 100% certain about. The rest are "probably fine" based on Groq.
+
+Want me to also show on the progress bar how many are unreviewed so the gap is visible at a glance?
+
+
+
+__________________________________________________________________
+
+
+Yes — exactly.  
+This account should get **different audit behavior** from other accounts.
+
+How it works now:
+
+- We load account config from DB (`accounts.funnel_tier`, `accounts.guidelines`).
+- During analysis, `ai/scorer.py` passes these into `analyze_conversation(...)`.
+- `ai/analyzer.py` builds prompt via `get_system_prompt(..., funnel_tier, guidelines)`.
+- `ai/prompts.py` appends:
+  - **PART 15** = tier rules (`NF` / `MF` / `WF`)
+  - **PART 16** = that account’s custom guidelines
+
+So two accounts with same convo can score differently because prompt context is different.
+
+For your account (`office@propertysellersolutions.com`):
+- Tier is `NF`, so audit expects narrow-funnel behavior.
+- Guidelines require pillars like `Condition`, `asking price`, `Closing`, `motivation`.
+- Missing these on an engaged lead can affect script/adherence and labeling.
+
+So yes: **same AI model, but account-specific prompt context => account-specific result.**
+

@@ -1,0 +1,47 @@
+# Secrets — NEVER commit these
+.env
+config/agents.json
+config/groq_keys.json
+config/agent_keys.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# Logs
+logs/
+*.log
+flask.log
+flask_err.log
+flask_run.log
+test_output.log
+error.log
+
+# Debug / temp artifacts
+debug_selector.py
+html_dump.py
+dump_test.py
+test_parser.py
+_fix_global.py
+_fix_moji.py
+fix_app.py
+fix_app2.py
+fix_app3.py
+print_transcripts.py
+inbox_dom_dump.html
+_full_prompt_dump.txt
+threads_dump.json
+threads.txt
+threads_out.txt
+
+# Reports / exports
+reports/
+*.pdf
+
+# OS
+.DS_Store
+Thumbs.db

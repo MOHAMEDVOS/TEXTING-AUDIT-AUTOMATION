@@ -1,0 +1,5 @@
+=== 2281 / Amna Mohamed Elsaid Kandil ===
+flags: ['Gave up after first no with zero rebuttal.']
+scores: c=100 s=90 p=95 sa=80
+label:  -> Not Interested (correct=False)
+summary: Scenario A, no funnel stage reached. Texter did not gather any pillars and gave up after the first 'no'.

@@ -1,0 +1,10 @@
+{
+  "knn_index": {
+    "built_at": "2026-04-29T03:06:43.894942Z",
+    "n_vectors": 340,
+    "n_clean": 266,
+    "n_flagged": 74,
+    "embedding_model": "all-MiniLM-L6-v2",
+    "dimension": 384
+  }
+}

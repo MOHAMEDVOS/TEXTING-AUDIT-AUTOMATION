@@ -1,0 +1,92 @@
+{
+  "last_run_at": "2026-05-05T21:38:57.984691Z",
+  "last_feedback_consumed_up_to": "2026-05-05T14:39:06.277598-04:00Z",
+  "total_rules_generated": 25,
+  "total_feedback_consumed": 125,
+  "runs": [
+    {
+      "ran_at": "2026-04-24T03:02:07.230155Z",
+      "feedback_entries": 58,
+      "clusters": 6,
+      "new_rules": 6
+    },
+    {
+      "ran_at": "2026-04-24T04:38:02.263412Z",
+      "feedback_entries": 3,
+      "clusters": 2,
+      "new_rules": 2
+    },
+    {
+      "ran_at": "2026-04-24T15:01:32.425837Z",
+      "feedback_entries": 3,
+      "clusters": 2,
+      "new_rules": 2
+    },
+    {
+      "ran_at": "2026-04-24T19:46:41.322495Z",
+      "feedback_entries": 6,
+      "clusters": 2,
+      "new_rules": 2
+    },
+    {
+      "ran_at": "2026-04-25T01:06:01.969906Z",
+      "feedback_entries": 1,
+      "clusters": 1,
+      "new_rules": 1
+    },
+    {
+      "ran_at": "2026-04-26T16:41:10.919359Z",
+      "feedback_entries": 2,
+      "clusters": 1,
+      "new_rules": 1
+    },
+    {
+      "ran_at": "2026-04-27T02:09:14.023935Z",
+      "feedback_entries": 14,
+      "clusters": 3,
+      "new_rules": 3
+    },
+    {
+      "ran_at": "2026-04-27T17:40:15.789004Z",
+      "feedback_entries": 5,
+      "clusters": 2,
+      "new_rules": 2
+    },
+    {
+      "ran_at": "2026-04-28T00:30:47.885319Z",
+      "feedback_entries": 17,
+      "clusters": 1,
+      "new_rules": 1
+    },
+    {
+      "ran_at": "2026-04-28T18:27:44.276363Z",
+      "feedback_entries": 1,
+      "clusters": 1,
+      "new_rules": 1
+    },
+    {
+      "ran_at": "2026-04-28T22:59:16.878785Z",
+      "feedback_entries": 1,
+      "clusters": 1,
+      "new_rules": 1
+    },
+    {
+      "ran_at": "2026-04-29T20:45:39.055190Z",
+      "feedback_entries": 1,
+      "clusters": 1,
+      "new_rules": 1
+    },
+    {
+      "ran_at": "2026-05-05T17:35:23.458668Z",
+      "feedback_entries": 7,
+      "clusters": 1,
+      "new_rules": 1
+    },
+    {
+      "ran_at": "2026-05-05T21:38:57.984691Z",
+      "feedback_entries": 6,
+      "clusters": 1,
+      "new_rules": 1
+    }
+  ]
+}

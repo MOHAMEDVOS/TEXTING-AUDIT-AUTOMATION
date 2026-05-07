@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How the Audit Works</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #0f1117; color: #e2e8f0; line-height: 1.7; }
+
+  .slide { min-height: 100vh; padding: 60px 80px; display: flex; flex-direction: column; justify-content: center; border-bottom: 2px solid #1e2535; }
+
+  h1 { font-size: 3rem; font-weight: 800; color: #fff; margin-bottom: 12px; }
+  h2 { font-size: 2rem; font-weight: 700; color: #60a5fa; margin-bottom: 30px; }
+  h3 { font-size: 1.2rem; font-weight: 600; color: #94a3b8; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 1px; }
+  p  { font-size: 1.1rem; color: #cbd5e1; max-width: 900px; margin-bottom: 16px; }
+
+  .subtitle { font-size: 1.4rem; color: #64748b; margin-bottom: 40px; }
+
+  /* Cards */
+  .cards { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 20px; }
+  .card {
+    flex: 1; min-width: 220px;
+    background: #1e2535; border-radius: 16px; padding: 28px 24px;
+    border: 1px solid #2d3748;
+  }
+  .card.green  { border-left: 4px solid #22c55e; }
+  .card.blue   { border-left: 4px solid #3b82f6; }
+  .card.yellow { border-left: 4px solid #f59e0b; }
+  .card.red    { border-left: 4px solid #ef4444; }
+  .card.purple { border-left: 4px solid #a855f7; }
+  .card-icon { font-size: 2rem; margin-bottom: 12px; }
+  .card h4 { font-size: 1.1rem; font-weight: 700; color: #fff; margin-bottom: 8px; }
+  .card p  { font-size: 0.95rem; color: #94a3b8; margin: 0; }
+
+  /* Flow diagram */
+  .flow { display: flex; flex-direction: column; gap: 0; max-width: 700px; margin: 30px auto; }
+  .flow-box {
+    background: #1e2535; border: 1px solid #2d3748;
+    border-radius: 14px; padding: 20px 28px;
+    display: flex; align-items: center; gap: 16px;
+  }
+  .flow-box.highlight { background: #1e3a5f; border-color: #3b82f6; }
+  .flow-box .num {
+    width: 40px; height: 40px; border-radius: 50%;
+    background: #3b82f6; color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 1.1rem; flex-shrink: 0;
+  }
+  .flow-box .num.green  { background: #22c55e; }
+  .flow-box .num.yellow { background: #f59e0b; color: #000; }
+  .flow-box .num.red    { background: #ef4444; }
+  .flow-box .num.purple { background: #a855f7; }
+  .flow-box .text h4 { font-size: 1rem; font-weight: 700; color: #fff; }
+  .flow-box .text p  { font-size: 0.9rem; color: #94a3b8; margin: 0; }
+  .flow-arrow { text-align: center; font-size: 1.5rem; color: #475569; padding: 4px 0; }
+
+  /* Score bars */
+  .scores { display: flex; flex-direction: column; gap: 20px; max-width: 800px; margin-top: 20px; }
+  .score-row { display: flex; align-items: center; gap: 16px; }
+  .score-label { width: 220px; font-size: 1rem; font-weight: 600; color: #e2e8f0; flex-shrink: 0; }
+  .score-bar-bg { flex: 1; background: #1e2535; border-radius: 8px; height: 16px; }
+  .score-bar { height: 16px; border-radius: 8px; }
+  .score-val { width: 50px; text-align: right; font-weight: 700; color: #fff; }
+
+  /* Two columns */
+  .two-col { display: flex; gap: 40px; flex-wrap: wrap; margin-top: 20px; }
+  .col { flex: 1; min-width: 300px; }
+
+  /* Flag list */
+  .flag-list { list-style: none; display: flex; flex-direction: column; gap: 14px; margin-top: 16px; }
+  .flag-list li {
+    display: flex; align-items: flex-start; gap: 14px;
+    background: #1e2535; border-radius: 12px; padding: 16px 20px;
+    border: 1px solid #2d3748;
+  }
+  .flag-icon { font-size: 1.4rem; flex-shrink: 0; margin-top: 2px; }
+  .flag-text h4 { font-size: 0.95rem; font-weight: 700; color: #fff; margin-bottom: 4px; }
+  .flag-text p  { font-size: 0.88rem; color: #94a3b8; margin: 0; }
+
+  /* ML tier diagram */
+  .ml-tiers { display: flex; flex-direction: column; gap: 0; max-width: 720px; }
+  .tier {
+    display: flex; align-items: stretch; gap: 0;
+    background: #1e2535; border: 1px solid #2d3748;
+    border-radius: 14px; overflow: hidden; margin-bottom: 12px;
+  }
+  .tier-side {
+    width: 6px; flex-shrink: 0;
+  }
+  .tier-content { padding: 20px 24px; flex: 1; }
+  .tier-content h4 { font-size: 1rem; font-weight: 700; color: #fff; margin-bottom: 6px; }
+  .tier-content p  { font-size: 0.9rem; color: #94a3b8; margin: 0; }
+  .tier-badge {
+    display: inline-block; font-size: 0.75rem; font-weight: 700;
+    padding: 3px 10px; border-radius: 20px; margin-left: 10px;
+    vertical-align: middle;
+  }
+
+  /* Convo example */
+  .chat { background: #1e2535; border-radius: 16px; padding: 24px; max-width: 700px; }
+  .msg { margin-bottom: 14px; }
+  .msg .bubble {
+    display: inline-block; padding: 10px 16px; border-radius: 14px;
+    font-size: 0.95rem; max-width: 85%;
+  }
+  .msg.agent  { text-align: left; }
+  .msg.agent .bubble  { background: #2d3748; color: #e2e8f0; border-bottom-left-radius: 4px; }
+  .msg.contact { text-align: right; }
+  .msg.contact .bubble { background: #1e40af; color: #fff; border-bottom-right-radius: 4px; }
+  .msg .who { font-size: 0.75rem; color: #64748b; margin-bottom: 4px; }
+  .msg.contact .who { text-align: right; }
+  .verdict {
+    margin-top: 20px; padding: 16px 20px; border-radius: 12px;
+    border: 1px solid;
+  }
+  .verdict.bad  { background: #2d1515; border-color: #ef4444; }
+  .verdict.good { background: #0f2d1a; border-color: #22c55e; }
+  .verdict h4 { font-size: 1rem; font-weight: 700; margin-bottom: 6px; }
+  .verdict.bad  h4 { color: #f87171; }
+  .verdict.good h4 { color: #4ade80; }
+  .verdict p { font-size: 0.9rem; color: #94a3b8; margin: 0; }
+
+  /* Summary table */
+  table { border-collapse: collapse; width: 100%; max-width: 900px; margin-top: 20px; }
+  th { background: #1e2535; color: #60a5fa; padding: 14px 18px; text-align: left; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; }
+  td { padding: 14px 18px; border-top: 1px solid #1e2535; font-size: 0.95rem; color: #cbd5e1; }
+  tr:hover td { background: #1e2535; }
+
+  .pill {
+    display: inline-block; padding: 3px 12px; border-radius: 20px;
+    font-size: 0.8rem; font-weight: 700;
+  }
+  .pill.green  { background: #14532d; color: #4ade80; }
+  .pill.red    { background: #450a0a; color: #f87171; }
+  .pill.yellow { background: #451a03; color: #fbbf24; }
+
+  .slide-num { font-size: 0.8rem; color: #475569; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 2px; }
+  .big-number { font-size: 4rem; font-weight: 900; color: #3b82f6; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════ SLIDE 1: TITLE -->
+<div class="slide" style="background: linear-gradient(135deg, #0f1117 0%, #1a1f35 100%);">
+  <div class="slide-num">Presentation</div>
+  <h1>How the Audit Works</h1>
+  <p class="subtitle">A plain-English guide to what gets checked, how scores are calculated,<br>and how the system decides if something is a red flag.</p>
+  <div class="cards" style="margin-top: 50px;">
+    <div class="card blue">
+      <div class="card-icon">📋</div>
+      <h4>What is an audit?</h4>
+      <p>Every text conversation gets read by an AI that acts like a senior manager reviewing the agent's work.</p>
+    </div>
+    <div class="card green">
+      <div class="card-icon">🎯</div>
+      <h4>What does it check?</h4>
+      <p>Did the agent follow the script? Was the tone professional? Did they miss any red flags?</p>
+    </div>
+    <div class="card yellow">
+      <div class="card-icon">⚡</div>
+      <h4>How fast?</h4>
+      <p>Each conversation is scored in about 5-10 seconds. 10 conversations takes under 2 minutes.</p>
+    </div>
+    <div class="card red">
+      <div class="card-icon">🤖</div>
+      <h4>Who decides?</h4>
+      <p>The AI (Groq LLM) reads every message and applies your company's exact rules — not generic rules.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ SLIDE 2: THE BIG PICTURE -->
+<div class="slide">
+  <div class="slide-num">Section 1 — The Big Picture</div>
+  <h2>What Happens Step by Step</h2>
+  <p>When you press "Run Audit", here is exactly what happens to each conversation:</p>
+
+  <div class="flow" style="max-width: 680px; margin: 40px 0;">
+    <div class="flow-box">
+      <div class="num" style="background:#475569;">1</div>
+      <div class="text">
+        <h4>Scraper opens SmarterContact</h4>
+        <p>Logs in as the agent, opens each conversation, reads every message.</p>
+      </div>
+    </div>
+    <div class="flow-arrow">↓</div>
+    <div class="flow-box">
+      <div class="num" style="background:#a855f7;">2</div>
+      <div class="text">
+        <h4>ML Pre-Filter checks first (free, instant)</h4>
+        <p>3 fast filters check if the conversation is "obviously clean" — if yes, skip expensive AI.</p>
+      </div>
+    </div>
+    <div class="flow-arrow">↓</div>
+    <div class="flow-box highlight">
+      <div class="num" style="background:#3b82f6;">3</div>
+      <div class="text">
+        <h4>AI reads the full conversation</h4>
+        <p>Groq AI reads every message like a manager and applies your company's exact rulebook.</p>
+      </div>
+    </div>
+    <div class="flow-arrow">↓</div>
+    <div class="flow-box">
+      <div class="num" style="background:#22c55e;">4</div>
+      <div class="text">
+        <h4>Scores are calculated (0–100 each)</h4>
+        <p>4 scores are produced: Compliance, Attitude, Professionalism, Script Adherence.</p>
+      </div>
+    </div>
+    <div class="flow-arrow">↓</div>
+    <div class="flow-box">
+      <div class="num" style="background:#f59e0b; color:#000;">5</div>
+      <div class="text">
+        <h4>Red flags are listed (if any)</h4>
+        <p>Any specific mistakes the agent made are listed with an explanation.</p>
+      </div>
+    </div>
+    <div class="flow-arrow">↓</div>
+    <div class="flow-box">
+      <div class="num" style="background:#ef4444;">6</div>
+      <div class="text">
+        <h4>Results saved to dashboard</h4>
+        <p>Scores, flags, and label accuracy are stored and visible in your reporting dashboard.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ SLIDE 3: THE 4 SCORES -->
+<div class="slide">
+  <div class="slide-num">Section 2 — The Scores</div>
+  <h2>The 4 Scores (Each Out of 100)</h2>
+  <p>Every conversation gets 4 separate scores. Think of them as 4 questions a manager would ask after reading the conversation.</p>
+
+  <div class="cards" style="margin-top: 30px;">
+    <div class="card green">
+      <div class="card-icon">✅</div>
+      <h4>1. Compliance (Adherence)</h4>
+      <p><strong style="color:#fff;">Question: Did the agent respect opt-outs?</strong><br><br>
+      If someone said "stop texting me" or "remove me" — did the agent stop?
+      This score drops to zero if the agent kept texting after an explicit stop request.</p>
+    </div>
+    <div class="card blue">
+      <div class="card-icon">😊</div>
+      <h4>2. Attitude (Sentiment)</h4>
+      <p><strong style="color:#fff;">Question: Was the agent's tone good?</strong><br><br>
+      Was the agent warm, empathetic, and conversational? Or cold, pushy, and robotic?
+      <em>Note: If the LEAD was rude, the agent's score does NOT drop — only the agent's tone is judged.</em></p>
+    </div>
+    <div class="card yellow">
+      <div class="card-icon">💼</div>
+      <h4>3. Professionalism</h4>
+      <p><strong style="color:#fff;">Question: Did the agent act professionally?</strong><br><br>
+      Only big mistakes count: wrong name used, incoherent sentences, mixed up property details.
+      Minor typos and casual language are NOT penalized.</p>
+    </div>
+    <div class="card purple">
+      <div class="card-icon">📜</div>
+      <h4>4. Script Adherence</h4>
+      <p><strong style="color:#fff;">Question: Did the agent follow the playbook?</strong><br><br>
+      Did they gather the right information? Use the rebuttals? Offer the $1,000 referral at the right moment?
+      This measures whether the agent followed the correct sales process.</p>
+    </div>
+  </div>
+
+  <div class="scores" style="margin-top: 40px;">
+    <h3>Example: What scores look like</h3>
+    <div class="score-row">
+      <span class="score-label">Compliance</span>
+      <div class="score-bar-bg"><div class="score-bar" style="width:95%;background:#22c55e;"></div></div>
+      <span class="score-val" style="color:#4ade80;">95</span>
+    </div>
+    <div class="score-row">
+      <span class="score-label">Attitude</span>
+      <div class="score-bar-bg"><div class="score-bar" style="width:82%;background:#3b82f6;"></div></div>
+      <span class="score-val" style="color:#60a5fa;">82</span>
+    </div>
+    <div class="score-row">
+      <span class="score-label">Professionalism</span>
+      <div class="score-bar-bg"><div class="score-bar" style="width:90%;background:#a855f7;"></div></div>
+      <span class="score-val" style="color:#c084fc;">90</span>
+    </div>
+    <div class="score-row">
+      <span class="score-label">Script Adherence</span>
+      <div class="score-bar-bg"><div class="score-bar" style="width:65%;background:#f59e0b;"></div></div>
+      <span class="score-val" style="color:#fbbf24;">65</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ SLIDE 4: THE FUNNEL -->
+<div class="slide">
+  <div class="slide-num">Section 3 — The Sales Funnel</div>
+  <h2>How the AI Reads the Conversation</h2>
+  <p>The AI first classifies what TYPE of conversation it is, then applies the right rules for that type.</p>
+
+  <div class="two-col" style="margin-top: 30px;">
+    <div class="col">
+      <h3>Step 1 — What type is this?</h3>
+      <div class="flow" style="margin: 16px 0 0 0;">
+        <div class="flow-box" style="margin-bottom:10px;">
+          <div class="num" style="background:#22c55e; width:36px; height:36px; font-size:0.9rem;">A</div>
+          <div class="text"><h4>Normal Seller</h4><p>Lead owns the property and may sell.</p></div>
+        </div>
+        <div class="flow-box" style="margin-bottom:10px;">
+          <div class="num" style="background:#3b82f6; width:36px; height:36px; font-size:0.9rem;">B</div>
+          <div class="text"><h4>Wrong Number</h4><p>Person has nothing to do with the property.</p></div>
+        </div>
+        <div class="flow-box" style="margin-bottom:10px;">
+          <div class="num" style="background:#f59e0b; color:#000; width:36px; height:36px; font-size:0.9rem;">C</div>
+          <div class="text"><h4>Wrong Property</h4><p>Lead owns a DIFFERENT property than listed.</p></div>
+        </div>
+        <div class="flow-box" style="margin-bottom:10px;">
+          <div class="num" style="background:#a855f7; width:36px; height:36px; font-size:0.9rem;">D</div>
+          <div class="text"><h4>Referral</h4><p>Lead offers someone else who wants to sell.</p></div>
+        </div>
+        <div class="flow-box" style="margin-bottom:10px;">
+          <div class="num" style="background:#ef4444; width:36px; height:36px; font-size:0.9rem;">E</div>
+          <div class="text"><h4>Realtor / Investor</h4><p>Lead is a real estate professional.</p></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col">
+      <h3>Step 2 — How far did the sale progress?</h3>
+      <p style="font-size:0.95rem;">For normal sellers, the AI checks how deep into the "funnel" the agent got:</p>
+      <div style="margin-top: 20px; position: relative;">
+        <div style="background:#1e2535; border:1px solid #2d3748; border-radius:14px; padding:20px; margin-bottom:10px;">
+          <div style="color:#94a3b8; font-size:0.85rem; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Wide Funnel (WF)</div>
+          <div style="color:#fff; font-weight:600;">Just making contact — any positive signal counts</div>
+          <div style="color:#64748b; font-size:0.85rem; margin-top:4px;">Labels: Potential, New Lead, Stopped Responding</div>
+        </div>
+        <div style="background:#1e2535; border:1px solid #2d3748; border-radius:14px; padding:20px; margin-bottom:10px;">
+          <div style="color:#94a3b8; font-size:0.85rem; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Middle Funnel (MF)</div>
+          <div style="color:#fff; font-weight:600;">1-2 pieces of key info gathered from the lead</div>
+          <div style="color:#64748b; font-size:0.85rem; margin-top:4px;">Labels: Warm, WL drip, AP drip</div>
+        </div>
+        <div style="background:#1e2535; border:1px solid #2d3748; border-radius:14px; padding:20px;">
+          <div style="color:#94a3b8; font-size:0.85rem; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Narrow Funnel (NF)</div>
+          <div style="color:#fff; font-weight:600;">All 4 pillars gathered — ready to book a call</div>
+          <div style="color:#64748b; font-size:0.85rem; margin-top:4px;">Labels: Hot, Lead, Lead Pushed</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ SLIDE 5: THE 4 PILLARS -->
+<div class="slide">
+  <div class="slide-num">Section 4 — The 4 Pillars</div>
+  <h2>The 4 Pillars: What the Agent Needs to Find Out</h2>
+  <p>For a serious seller conversation, the agent needs to collect 4 key pieces of information — called "pillars."
+  The AI checks whether the agent actually got these from the lead, in their own words.</p>
+
+  <div class="cards" style="margin-top: 30px;">
+    <div class="card" style="border-left: 4px solid #22c55e;">
+      <div class="card-icon">🏠</div>
+      <h4>Pillar 1 — Condition</h4>
+      <p>What state is the property in? Any repairs needed? The lead must describe it themselves — the agent can't assume.</p>
+      <p style="margin-top: 10px; font-size: 0.85rem; color: #475569;">Example: <em>"Needs a new roof and the kitchen is outdated"</em></p>
+    </div>
+    <div class="card" style="border-left: 4px solid #3b82f6;">
+      <div class="card-icon">💰</div>
+      <h4>Pillar 2 — Asking Price</h4>
+      <p>What price would the lead want? They must give a specific number. "How much can you offer?" does NOT count — that is the lead's question, not their answer.</p>
+      <p style="margin-top: 10px; font-size: 0.85rem; color: #475569;">Example: <em>"I'd need at least $250,000"</em></p>
+    </div>
+    <div class="card" style="border-left: 4px solid #f59e0b;">
+      <div class="card-icon">❓</div>
+      <h4>Pillar 3 — Motivation</h4>
+      <p>WHY are they considering selling? The lead must tell the agent their reason — not just say "yes" or nod along.</p>
+      <p style="margin-top: 10px; font-size: 0.85rem; color: #475569;">Example: <em>"We're downsizing, kids moved out"</em></p>
+    </div>
+    <div class="card" style="border-left: 4px solid #a855f7;">
+      <div class="card-icon">📅</div>
+      <h4>Pillar 4 — Timeline</h4>
+      <p>WHEN would they want to sell? Again, the lead must state a timeframe. The agent should NEVER reveal the 6-month buying window.</p>
+      <p style="margin-top: 10px; font-size: 0.85rem; color: #475569;">Example: <em>"Within the next 3 months"</em></p>
+    </div>
+  </div>
+
+  <div style="background: #1a1f35; border: 1px solid #2d3748; border-radius: 14px; padding: 24px; max-width: 800px; margin-top: 30px;">
+    <h3 style="color: #f59e0b; margin-bottom: 12px;">⚠️ Golden Rule</h3>
+    <p style="font-size: 1rem;">A pillar is only "gathered" if the <strong style="color: #fff;">lead said it in their own words.</strong>
+    If the agent asked but the lead didn't answer — it does NOT count as gathered.
+    The AI will only mark a pillar as collected if it can quote the lead's exact response.</p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ SLIDE 6: THE REBUTTALS -->
+<div class="slide">
+  <div class="slide-num">Section 5 — The Rebuttals</div>
+  <h2>When a Lead Says "No" — The 3 Rebuttals</h2>
+  <p>A lead saying "No" or "Not interested" is NOT a reason to stop. The correct playbook says the agent must try 3 rebuttals before giving up. The AI checks whether they did this.</p>
+
+  <div class="flow" style="max-width: 700px; margin: 30px 0;">
+    <div class="flow-box">
+      <div class="num" style="background:#3b82f6;">1</div>
+      <div class="text">
+        <h4>Future Rebuttal — "Maybe later?"</h4>
+        <p>"Is it more of a never, or something you might consider down the road?"<br>
+        Goal: find out if they might sell in the future, even if not now.</p>
+      </div>
+    </div>
+    <div class="flow-arrow">↓ If still no</div>
+    <div class="flow-box">
+      <div class="num" style="background:#a855f7;">2</div>
+      <div class="text">
+        <h4>Other Properties — "Do you own anything else?"</h4>
+        <p>"Do you happen to own any other properties you'd consider selling?"<br>
+        Goal: pivot to any other property they might own.</p>
+      </div>
+    </div>
+    <div class="flow-arrow">↓ If still no</div>
+    <div class="flow-box">
+      <div class="num" style="background:#22c55e;">3</div>
+      <div class="text">
+        <h4>Referral Close — "$1,000 for a referral"</h4>
+        <p>"Know someone who wants to sell? I pay $1,000 for referrals I close on."<br>
+        Goal: exit gracefully and get a potential new lead.</p>
+      </div>
+    </div>
+    <div class="flow-arrow">↓</div>
+    <div class="flow-box" style="border-color: #ef4444; background: #2d1515;">
+      <div class="num" style="background:#ef4444;">✕</div>
+      <div class="text">
+        <h4>After all 3 rebuttals — STOP</h4>
+        <p>Label as "Not Interested." Do not send more messages. Any message after this = red flag.</p>
+      </div>
+    </div>
+  </div>
+
+  <div style="background: #0f2d1a; border: 1px solid #22c55e; border-radius: 14px; padding: 20px; max-width: 700px;">
+    <h4 style="color: #4ade80; margin-bottom: 8px;">✅ Important: "No" is NOT a stop signal</h4>
+    <p style="font-size: 0.95rem;">"No", "Not interested", "NO!!!" — these are all soft rejections. The Future Rebuttal is the REQUIRED response. The AI will NEVER flag an agent for continuing after a soft no.</p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ SLIDE 7: RED FLAGS -->
+<div class="slide">
+  <div class="slide-num">Section 6 — Red Flags</div>
+  <h2>What Counts as a Red Flag</h2>
+  <p>A red flag is only raised when an agent made a <strong style="color:#fff;">clear, specific mistake</strong> that a manager would need to coach them on.
+  Borderline situations do NOT get a flag — the AI defaults to "no flag" when unsure.</p>
+
+  <div class="two-col">
+    <div class="col">
+      <h3 style="color: #ef4444;">🚩 These ARE red flags</h3>
+      <ul class="flag-list">
+        <li>
+          <span class="flag-icon">🚫</span>
+          <div class="flag-text">
+            <h4>Texting after explicit opt-out</h4>
+            <p>Lead said "stop texting", "remove me", "unsubscribe", "leave me alone" — and agent kept going.</p>
+          </div>
+        </li>
+        <li>
+          <span class="flag-icon">😡</span>
+          <div class="flag-text">
+            <h4>Aggressive or deceptive language</h4>
+            <p>Agent used threatening, dishonest, or manipulative wording.</p>
+          </div>
+        </li>
+        <li>
+          <span class="flag-icon">💸</span>
+          <div class="flag-text">
+            <h4>Giving a firm dollar offer</h4>
+            <p>Agent said "I'll pay you $200,000" — agents are NOT allowed to make offers over text.</p>
+          </div>
+        </li>
+        <li>
+          <span class="flag-icon">🏳️</span>
+          <div class="flag-text">
+            <h4>Gave up after first "no"</h4>
+            <p>Lead said "not interested" and agent immediately stopped with zero rebuttals attempted.</p>
+          </div>
+        </li>
+        <li>
+          <span class="flag-icon">📞</span>
+          <div class="flag-text">
+            <h4>Booked a call without qualifying first</h4>
+            <p>Agent jumped straight to "let's hop on a call!" before gathering any pillars.</p>
+          </div>
+        </li>
+        <li>
+          <span class="flag-icon">🤦</span>
+          <div class="flag-text">
+            <h4>Incoherent or embarrassing message</h4>
+            <p>Sent a message that made no sense or used the wrong name for the lead.</p>
+          </div>
+        </li>
+      </ul>
+    </div>
+
+    <div class="col">
+      <h3 style="color: #22c55e;">✅ These are NOT red flags</h3>
+      <ul class="flag-list">
+        <li>
+          <span class="flag-icon">💬</span>
+          <div class="flag-text">
+            <h4>Sending multiple follow-up texts</h4>
+            <p>This is the job. Wide funnel drip sequences require multiple messages without a response.</p>
+          </div>
+        </li>
+        <li>
+          <span class="flag-icon">🔄</span>
+          <div class="flag-text">
+            <h4>Continuing after "No" or "Not interested"</h4>
+            <p>Soft rejections require the rebuttal sequence. The agent MUST continue — stopping early is the mistake.</p>
+          </div>
+        </li>
+        <li>
+          <span class="flag-icon">✏️</span>
+          <div class="flag-text">
+            <h4>Minor typos or casual tone</h4>
+            <p>Informal language, abbreviations, relaxed punctuation — all fine. Only major errors count.</p>
+          </div>
+        </li>
+        <li>
+          <span class="flag-icon">❓</span>
+          <div class="flag-text">
+            <h4>"How did you get my number?"</h4>
+            <p>This is a neutral question. Agent answers it and continues — never a flag.</p>
+          </div>
+        </li>
+        <li>
+          <span class="flag-icon">💵</span>
+          <div class="flag-text">
+            <h4>Mentioning the $1,000 referral</h4>
+            <p>This is a required scripted exit line. The AI scores it positively, never flags it.</p>
+          </div>
+        </li>
+        <li>
+          <span class="flag-icon">😤</span>
+          <div class="flag-text">
+            <h4>Rude lead, professional agent</h4>
+            <p>If the lead was hostile but the agent stayed professional, the score stays high — the lead's behavior is never judged.</p>
+          </div>
+        </li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ SLIDE 8: REAL EXAMPLE -->
+<div class="slide">
+  <div class="slide-num">Section 7 — Real Examples</div>
+  <h2>Red Flag vs. No Flag — Side by Side</h2>
+
+  <div class="two-col">
+    <div class="col">
+      <h3 style="color: #ef4444;">Example A — RED FLAG</h3>
+      <div class="chat">
+        <div class="msg agent">
+          <div class="who">Agent (Jack)</div>
+          <div class="bubble">Hi Franklin, have you thought about selling your property at 2142 Wilburn Ave?</div>
+        </div>
+        <div class="msg contact">
+          <div class="who">Franklin</div>
+          <div class="bubble">I am not selling my house. Please stop contacting me.</div>
+        </div>
+        <div class="msg agent">
+          <div class="who">Agent (Jack)</div>
+          <div class="bubble">Hi Franklin, I wanted to see if you've considered selling your property at 2142 Wilburn Ave — let me know!</div>
+        </div>
+        <div class="msg agent">
+          <div class="who">Agent (Jack)</div>
+          <div class="bubble">Hey Franklin, hope your day is going well. Would you like to chat about your property?</div>
+        </div>
+        <div class="verdict bad">
+          <h4>🚩 RED FLAG — Compliance score drops</h4>
+          <p>"Please stop contacting me" is an explicit opt-out. Agent sent 2 more messages after that. This is the only real line that can never be crossed.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="col">
+      <h3 style="color: #22c55e;">Example B — NO FLAG</h3>
+      <div class="chat">
+        <div class="msg agent">
+          <div class="who">Agent (Jack)</div>
+          <div class="bubble">Hi Karl, have you thought about selling your property at 1037 N Hutchinson Ave?</div>
+        </div>
+        <div class="msg contact">
+          <div class="who">Karl</div>
+          <div class="bubble">No 👎</div>
+        </div>
+        <div class="msg agent">
+          <div class="who">Agent (Jack)</div>
+          <div class="bubble">Not a problem at all. Do you think it could be for sale within the next 6 months?</div>
+        </div>
+        <div class="msg contact">
+          <div class="who">Karl</div>
+          <div class="bubble">No</div>
+        </div>
+        <div class="msg agent">
+          <div class="who">Agent (Jack)</div>
+          <div class="bubble">Understood. Know someone who wants to sell? I pay $1,000 for referrals I close on.</div>
+        </div>
+        <div class="verdict good">
+          <h4>✅ NO FLAG — Perfect script execution</h4>
+          <p>"No" is a soft rejection. Agent used Future Rebuttal, then Referral Close. Textbook correct. High script adherence score.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ SLIDE 9: THE ML -->
+<div class="slide">
+  <div class="slide-num">Section 8 — The ML Pre-Filter</div>
+  <h2>How the ML Saves Time & Money</h2>
+  <p>Running every conversation through Groq AI costs money and quota. The ML pre-filter is a "shortcut checker" that handles obvious cases for free.</p>
+
+  <div class="ml-tiers" style="margin: 30px 0;">
+    <div class="tier">
+      <div class="tier-side" style="background:#22c55e;"></div>
+      <div class="tier-content">
+        <h4>Tier 1 — Phrase Check <span class="tier-badge" style="background:#14532d;color:#4ade80;">Free · &lt;1ms</span></h4>
+        <p>Scans for specific words: "stop texting", "remove me", "wrong number." If found → flags immediately without reading the whole conversation. If clean → passes to Tier 2.</p>
+      </div>
+    </div>
+    <div class="tier">
+      <div class="tier-side" style="background:#3b82f6;"></div>
+      <div class="tier-content">
+        <h4>Tier 2 — Similarity Check <span class="tier-badge" style="background:#1e3a5f;color:#60a5fa;">Free · ~5ms</span></h4>
+        <p>Compares this conversation to 911 past conversations. If it looks very similar to conversations that were "clean" before → copy their score. Currently at 911 stored conversations — needs 2,000 to become highly effective.</p>
+      </div>
+    </div>
+    <div class="tier">
+      <div class="tier-side" style="background:#a855f7;"></div>
+      <div class="tier-content">
+        <h4>Tier 3 — Pattern Predictor <span class="tier-badge" style="background:#2e1065;color:#c084fc;">Free · ~10ms</span></h4>
+        <p>A trained model that predicts the 4 scores based on patterns it learned from past Groq decisions. If confident it's clean → skip Groq. If any doubt → send to Groq.</p>
+      </div>
+    </div>
+    <div class="tier">
+      <div class="tier-side" style="background:#ef4444;"></div>
+      <div class="tier-content">
+        <h4>Tier 4 — Groq AI (Full Audit) <span class="tier-badge" style="background:#450a0a;color:#f87171;">Costs quota · ~8 seconds</span></h4>
+        <p>Full audit by the AI. Reads every message, applies all rules, produces 4 scores + red flags + summary. Only conversations that passed through all 3 filters reach here.</p>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex; gap:30px; flex-wrap:wrap; margin-top:10px;">
+    <div style="background:#1e2535; border-radius:14px; padding:24px; flex:1; min-width:200px;">
+      <div style="font-size:2.5rem; font-weight:900; color:#22c55e;">100%</div>
+      <div style="color:#94a3b8; font-size:0.95rem; margin-top:4px;">Current ML accuracy<br>when it short-circuits</div>
+    </div>
+    <div style="background:#1e2535; border-radius:14px; padding:24px; flex:1; min-width:200px;">
+      <div style="font-size:2.5rem; font-weight:900; color:#3b82f6;">911</div>
+      <div style="color:#94a3b8; font-size:0.95rem; margin-top:4px;">Conversations in memory<br>Target: 2,000</div>
+    </div>
+    <div style="background:#1e2535; border-radius:14px; padding:24px; flex:1; min-width:200px;">
+      <div style="font-size:2.5rem; font-weight:900; color:#a855f7;">2%</div>
+      <div style="color:#94a3b8; font-size:0.95rem; margin-top:4px;">Groq calls saved now<br>Target: 50–80% at 2,000</div>
+    </div>
+    <div style="background:#1e2535; border-radius:14px; padding:24px; flex:1; min-width:200px;">
+      <div style="font-size:2.5rem; font-weight:900; color:#f59e0b;">0%</div>
+      <div style="color:#94a3b8; font-size:0.95rem; margin-top:4px;">False-clean rate<br>Never said clean when it wasn't</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ SLIDE 10: SUMMARY -->
+<div class="slide" style="background: linear-gradient(135deg, #0f1117 0%, #1a1f35 100%);">
+  <div class="slide-num">Summary</div>
+  <h2>Quick Reference — The Whole System</h2>
+
+  <table>
+    <thead>
+      <tr>
+        <th>What</th>
+        <th>How it works</th>
+        <th>Result</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Compliance score</strong></td>
+        <td>Did agent stop after "stop texting / remove me / unsubscribe"?</td>
+        <td><span class="pill green">0 = never stopped&nbsp; 100 = perfect</span></td>
+      </tr>
+      <tr>
+        <td><strong>Attitude score</strong></td>
+        <td>Was agent's tone warm, empathetic, professional?</td>
+        <td><span class="pill green">Agent's tone only — lead's rudeness ignored</span></td>
+      </tr>
+      <tr>
+        <td><strong>Professionalism</strong></td>
+        <td>Any big mistakes: wrong name, incoherent message?</td>
+        <td><span class="pill yellow">Minor typos = ignored</span></td>
+      </tr>
+      <tr>
+        <td><strong>Script adherence</strong></td>
+        <td>Did agent follow the funnel, pillars, and 3 rebuttals?</td>
+        <td><span class="pill green">Checks entire playbook</span></td>
+      </tr>
+      <tr>
+        <td><strong>Red flag trigger</strong></td>
+        <td>"Stop texting", "remove me", "unsubscribe", "leave me alone"</td>
+        <td><span class="pill red">Only these exact phrases</span></td>
+      </tr>
+      <tr>
+        <td><strong>NOT a red flag</strong></td>
+        <td>"No", "Not interested", "NO!!!" — all soft rejections</td>
+        <td><span class="pill green">Rebuttals required — continuing is correct</span></td>
+      </tr>
+      <tr>
+        <td><strong>Pillars needed</strong></td>
+        <td>Condition, Price, Motivation, Timeline — all from the lead's own words</td>
+        <td><span class="pill yellow">Narrow funnel only</span></td>
+      </tr>
+      <tr>
+        <td><strong>ML pre-filter</strong></td>
+        <td>Checks obvious cases for free before using expensive AI</td>
+        <td><span class="pill green">100% accurate · 0% false-cleans</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div style="margin-top: 50px; padding: 28px; background: #1e2535; border-radius: 16px; max-width: 700px; border: 1px solid #2d3748;">
+    <h3 style="color: #60a5fa; margin-bottom: 12px;">The one rule that matters most</h3>
+    <p style="font-size: 1.1rem;">The only conversation that is guaranteed to get a red flag and a zero compliance score is when an agent keeps texting <strong style="color:#fff;">after someone explicitly asked them to stop</strong>. Everything else — soft rejections, rude leads, multiple follow-ups — is just part of the job.</p>
+  </div>
+</div>
+
+</body>
+</html>

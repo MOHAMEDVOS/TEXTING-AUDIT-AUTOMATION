@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ML Pre-Filter — How It Replaces Groq</title>
+<style>
+  :root {
+    --parchment:    #f5f4ed;
+    --ivory:        #faf9f5;
+    --white:        #ffffff;
+    --warm-sand:    #e8e6dc;
+    --dark-surface: #30302e;
+    --near-black:   #141413;
+    --terracotta:   #c96442;
+    --coral:        #d97757;
+    --charcoal:     #4d4c48;
+    --olive:        #5e5d59;
+    --stone:        #87867f;
+    --warm-silver:  #b0aea5;
+    --border-cream: #f0eee6;
+    --border-warm:  #e8e6dc;
+    --green:        #6b8e4e;
+    --blue:         #3898ec;
+    --error:        #b53333;
+    --purple:       #7c6fa0;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    background: var(--parchment);
+    color: var(--near-black);
+    font-family: Georgia, 'Times New Roman', serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page { max-width: 960px; margin: 0 auto; padding: 72px 40px 120px; }
+
+  .eyebrow {
+    font-family: Arial, sans-serif;
+    font-size: 11px; font-weight: 500;
+    letter-spacing: 0.12px; text-transform: uppercase;
+    color: var(--stone); margin-bottom: 16px;
+  }
+  h1 { font-size: 58px; font-weight: 500; line-height: 1.08; margin-bottom: 22px; letter-spacing: -0.01em; }
+  h2 { font-size: 34px; font-weight: 500; line-height: 1.2; margin-bottom: 18px; }
+  h3 { font-size: 22px; font-weight: 500; line-height: 1.25; margin-bottom: 12px; }
+  h4 { font-family: Arial, sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 0.1px; text-transform: uppercase; color: var(--stone); margin-bottom: 8px; }
+  p  { font-family: Arial, sans-serif; font-size: 16px; line-height: 1.65; color: var(--charcoal); margin-bottom: 14px; }
+  .lede { font-size: 19px; line-height: 1.6; color: var(--olive); font-family: Georgia, serif; margin-bottom: 24px; }
+  ul, ol { font-family: Arial, sans-serif; font-size: 15px; line-height: 1.7; color: var(--charcoal); padding-left: 20px; margin-bottom: 14px; }
+  li { margin-bottom: 7px; }
+  strong { color: var(--near-black); font-weight: 600; }
+
+  section { margin-bottom: 80px; }
+
+  .hero {
+    padding: 36px 0 60px;
+    border-bottom: 1px solid var(--border-warm);
+    margin-bottom: 72px;
+  }
+  .logo-row { display: flex; align-items: center; gap: 12px; margin-bottom: 30px; }
+  .logo-mark {
+    width: 42px; height: 42px; border-radius: 10px;
+    background: var(--terracotta);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--ivory); font-size: 20px; font-weight: 500;
+    box-shadow: 0 0 0 1px var(--terracotta);
+  }
+  .logo-word { font-size: 19px; font-weight: 500; color: var(--near-black); }
+  .logo-word .dot { color: var(--terracotta); }
+  .tags { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
+  .tag {
+    font-family: Arial, sans-serif; font-size: 12px; font-weight: 500;
+    color: var(--charcoal); background: var(--ivory);
+    border: 1px solid var(--border-warm);
+    padding: 5px 12px; border-radius: 24px;
+  }
+
+  .card {
+    background: var(--ivory); border: 1px solid var(--border-cream);
+    border-radius: 16px; padding: 26px 30px;
+    box-shadow: rgba(0,0,0,0.04) 0 4px 24px;
+    margin-bottom: 18px;
+  }
+  .card-accent {
+    border-left: 3px solid var(--terracotta);
+    padding-left: 26px; margin-bottom: 18px;
+  }
+
+  table {
+    width: 100%; border-collapse: collapse;
+    font-family: Arial, sans-serif; font-size: 14px;
+    background: var(--ivory); border: 1px solid var(--border-cream);
+    border-radius: 12px; overflow: hidden; margin-bottom: 18px;
+  }
+  th {
+    background: var(--warm-sand); color: var(--near-black);
+    text-align: left; padding: 11px 16px;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08px;
+    text-transform: uppercase; border-bottom: 1px solid var(--border-warm);
+  }
+  td { padding: 11px 16px; color: var(--charcoal); border-top: 1px solid var(--border-cream); vertical-align: top; }
+  tr:first-child td { border-top: none; }
+
+  .dark {
+    background: var(--near-black); color: var(--warm-silver);
+    padding: 52px 48px; border-radius: 24px; margin: 48px 0;
+  }
+  .dark h2 { color: var(--ivory); }
+  .dark h3 { color: var(--ivory); }
+  .dark p, .dark li { color: var(--warm-silver); font-family: Arial, sans-serif; font-size: 15px; }
+  .dark strong { color: var(--coral); }
+  .dark .eyebrow { color: var(--stone); }
+
+  .diagram-wrap {
+    background: var(--ivory);
+    border: 1px solid var(--border-cream);
+    border-radius: 20px;
+    box-shadow: rgba(0,0,0,0.05) 0 6px 32px;
+    padding: 16px;
+    margin: 28px 0 40px;
+    overflow-x: auto;
+  }
+
+  .swot { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 24px; }
+  .swot-card { padding: 24px 26px; border-radius: 16px; background: var(--ivory); border: 1px solid var(--border-cream); box-shadow: rgba(0,0,0,0.04) 0 4px 20px; }
+  .swot-card h3 { display: flex; align-items: center; gap: 9px; font-size: 20px; margin-bottom: 14px; }
+  .dot-ind { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+  .dot-green  { background: var(--green); }
+  .dot-terra  { background: var(--terracotta); }
+  .dot-blue   { background: var(--blue); }
+  .dot-red    { background: var(--error); }
+  .swot-card ul { font-size: 14px; margin: 0; }
+
+  .stat-row { display: flex; gap: 20px; flex-wrap: wrap; margin: 28px 0; }
+  .stat-box {
+    flex: 1; min-width: 160px;
+    background: var(--ivory); border: 1px solid var(--border-cream);
+    border-radius: 16px; padding: 24px 22px;
+    box-shadow: rgba(0,0,0,0.04) 0 4px 20px;
+    text-align: center;
+  }
+  .stat-box .num { font-family: Georgia, serif; font-size: 42px; font-weight: 500; color: var(--terracotta); line-height: 1; margin-bottom: 8px; }
+  .stat-box .label { font-family: Arial, sans-serif; font-size: 13px; color: var(--olive); line-height: 1.4; }
+
+  @media (max-width: 700px) {
+    .page { padding: 44px 18px 80px; }
+    h1 { font-size: 38px; }
+    h2 { font-size: 26px; }
+    .swot { grid-template-columns: 1fr; }
+    .dark { padding: 32px 22px; }
+    .stat-row { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ─── HERO ─────────────────────────────────── -->
+  <div class="hero">
+    <div class="logo-row">
+      <div class="logo-mark">ML</div>
+      <div class="logo-word">Texting Audit<span class="dot">.</span></div>
+    </div>
+    <div class="eyebrow">ML Pre-Filter · How it replaces Groq · 2026</div>
+    <h1>Smarter.<br>Faster.<br>Free.</h1>
+    <p class="lede">
+      Right now, every single conversation goes to Groq AI for a full audit.
+      That costs quota, takes 8–10 seconds per conversation, and fails when free-tier limits run out.
+      The ML Pre-Filter is a system of 3 checkpoints that sits in front of Groq and handles the
+      easy conversations for free — so Groq only sees the hard ones.
+    </p>
+    <div class="tags">
+      <span class="tag">No API cost</span>
+      <span class="tag">Runs locally on your machine</span>
+      <span class="tag">Currently in shadow mode (learning)</span>
+      <span class="tag">Target: skip 50–80% of Groq calls</span>
+      <span class="tag">911 conversations in memory</span>
+    </div>
+  </div>
+
+
+  <!-- ─── SECTION 1: THE PROBLEM ─────────────── -->
+  <section>
+    <div class="eyebrow">01 · The Problem</div>
+    <h2>Why we need this.</h2>
+    <p>
+      Groq AI is powerful — but it has two real problems when you're running audits every day across 39 agents.
+    </p>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:24px;">
+      <div class="card" style="border-left:3px solid var(--error);">
+        <h4 style="color:var(--error);">Problem 1 — Rate limits</h4>
+        <p style="margin:0;">Free Groq keys have a limit on how many conversations they can process per minute. When 10 agents all run audits at the same time, the keys run out and conversations get skipped.</p>
+      </div>
+      <div class="card" style="border-left:3px solid var(--error);">
+        <h4 style="color:var(--error);">Problem 2 — Wasted calls</h4>
+        <p style="margin:0;">Most conversations are simple and predictable. A "Wrong Number" conversation with 3 messages doesn't need a full 10-second AI analysis — the answer is obvious. Yet we send it to Groq anyway.</p>
+      </div>
+    </div>
+
+    <div class="card-accent" style="margin-top:28px;">
+      <h4>The fix</h4>
+      <p style="margin:0;font-family:Georgia,serif;font-size:17px;color:var(--near-black);line-height:1.6;">
+        Build 3 cheap, fast, local checkpoints. If any checkpoint is confident enough → score the conversation
+        locally for free. Only send to Groq when none of the checkpoints are confident.
+      </p>
+    </div>
+  </section>
+
+
+  <!-- ─── SECTION 2: THE BIG PICTURE DIAGRAM ─── -->
+  <section>
+    <div class="eyebrow">02 · The Full Flow</div>
+    <h2>Before and after the ML filter.</h2>
+    <p>
+      The diagram below shows how a conversation travels through the system — from the SmarterContact inbox,
+      through the 3 ML checkpoints, and either exits with a free local score or escalates to Groq.
+    </p>
+
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 880 640" xmlns="http://www.w3.org/2000/svg" font-family="Arial,sans-serif" style="display:block;width:100%;max-width:880px;margin:0 auto;height:auto;">
+        <defs>
+          <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="#9e9b93"/>
+          </marker>
+          <marker id="arr-green" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="#6b8e4e"/>
+          </marker>
+          <marker id="arr-terra" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="#c96442"/>
+          </marker>
+          <marker id="arr-blue" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="#3898ec"/>
+          </marker>
+          <filter id="sh">
+            <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="rgba(0,0,0,0.09)"/>
+          </filter>
+        </defs>
+
+        <!-- ── Conversation IN ── -->
+        <g filter="url(#sh)">
+          <rect x="340" y="18" width="200" height="56" rx="12" fill="#141413"/>
+          <text x="440" y="43" text-anchor="middle" fill="#faf9f5" font-family="Georgia,serif" font-size="13" font-weight="500">Conversation</text>
+          <text x="440" y="60" text-anchor="middle" fill="#87867f" font-size="10">Scraped from SmarterContact</text>
+        </g>
+        <line x1="440" y1="75" x2="440" y2="104" stroke="#9e9b93" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- ── TIER 1 ── -->
+        <g filter="url(#sh)">
+          <rect x="290" y="106" width="300" height="74" rx="12" fill="#e8f4ea" stroke="#6b8e4e" stroke-width="1.5"/>
+          <text x="440" y="130" text-anchor="middle" fill="#3a5a2a" font-size="12" font-weight="700">Checkpoint 1 — Phrase Scan</text>
+          <text x="440" y="148" text-anchor="middle" fill="#5a7a4a" font-size="10">Reads for exact words: "stop texting", "wrong number",</text>
+          <text x="440" y="162" text-anchor="middle" fill="#5a7a4a" font-size="10">"remove me", "unsubscribe". Free. Under 1 millisecond.</text>
+        </g>
+
+        <!-- T1 → confident exit -->
+        <line x1="590" y1="143" x2="680" y2="143" stroke="#6b8e4e" stroke-width="1.5" marker-end="url(#arr-green)"/>
+        <text x="635" y="135" text-anchor="middle" fill="#6b8e4e" font-size="9.5" font-weight="600">Confident</text>
+        <g filter="url(#sh)">
+          <rect x="682" y="118" width="150" height="52" rx="10" fill="#e8f4ea" stroke="#6b8e4e" stroke-width="1.5"/>
+          <text x="757" y="140" text-anchor="middle" fill="#3a5a2a" font-size="11" font-weight="700">Free Score</text>
+          <text x="757" y="156" text-anchor="middle" fill="#5a7a4a" font-size="9.5">No Groq needed</text>
+        </g>
+
+        <!-- T1 → pass down -->
+        <line x1="440" y1="180" x2="440" y2="210" stroke="#9e9b93" stroke-width="1.5" marker-end="url(#arr)"/>
+        <text x="460" y="198" fill="#87867f" font-size="9.5">Not sure yet</text>
+
+        <!-- ── TIER 2 ── -->
+        <g filter="url(#sh)">
+          <rect x="270" y="212" width="340" height="84" rx="12" fill="#eef3fc" stroke="#3898ec" stroke-width="1.5"/>
+          <text x="440" y="236" text-anchor="middle" fill="#1a4a8a" font-size="12" font-weight="700">Checkpoint 2 — Memory Lookup</text>
+          <text x="440" y="254" text-anchor="middle" fill="#3a6aaa" font-size="10">Compares this conversation to 911 past audited conversations.</text>
+          <text x="440" y="268" text-anchor="middle" fill="#3a6aaa" font-size="10">If it looks very similar to a clean conversation → copy that score.</text>
+          <text x="440" y="282" text-anchor="middle" fill="#3a6aaa" font-size="10">Free. About 5 milliseconds.</text>
+        </g>
+
+        <!-- T2 → confident exit -->
+        <line x1="610" y1="254" x2="680" y2="254" stroke="#3898ec" stroke-width="1.5" marker-end="url(#arr-blue)"/>
+        <text x="645" y="246" text-anchor="middle" fill="#3898ec" font-size="9.5" font-weight="600">Confident</text>
+        <g filter="url(#sh)">
+          <rect x="682" y="229" width="150" height="52" rx="10" fill="#eef3fc" stroke="#3898ec" stroke-width="1.5"/>
+          <text x="757" y="251" text-anchor="middle" fill="#1a4a8a" font-size="11" font-weight="700">Free Score</text>
+          <text x="757" y="267" text-anchor="middle" fill="#3a6aaa" font-size="9.5">Copied from past data</text>
+        </g>
+
+        <!-- T2 → pass down -->
+        <line x1="440" y1="296" x2="440" y2="326" stroke="#9e9b93" stroke-width="1.5" marker-end="url(#arr)"/>
+        <text x="460" y="314" fill="#87867f" font-size="9.5">Not sure yet</text>
+
+        <!-- ── TIER 3 ── -->
+        <g filter="url(#sh)">
+          <rect x="270" y="328" width="340" height="84" rx="12" fill="#f5eeff" stroke="#7c6fa0" stroke-width="1.5"/>
+          <text x="440" y="352" text-anchor="middle" fill="#3a1a6a" font-size="12" font-weight="700">Checkpoint 3 — Pattern Predictor</text>
+          <text x="440" y="370" text-anchor="middle" fill="#5a3a8a" font-size="10">A trained model that learned patterns from 900+ past Groq results.</text>
+          <text x="440" y="384" text-anchor="middle" fill="#5a3a8a" font-size="10">Predicts the 4 scores. If confident it's clean → return result.</text>
+          <text x="440" y="398" text-anchor="middle" fill="#5a3a8a" font-size="10">Free. About 10 milliseconds.</text>
+        </g>
+
+        <!-- T3 → confident exit -->
+        <line x1="610" y1="370" x2="680" y2="370" stroke="#7c6fa0" stroke-width="1.5" marker-end="url(#arr)"/>
+        <text x="645" y="362" text-anchor="middle" fill="#7c6fa0" font-size="9.5" font-weight="600">Confident</text>
+        <g filter="url(#sh)">
+          <rect x="682" y="345" width="150" height="52" rx="10" fill="#f5eeff" stroke="#7c6fa0" stroke-width="1.5"/>
+          <text x="757" y="367" text-anchor="middle" fill="#3a1a6a" font-size="11" font-weight="700">Free Score</text>
+          <text x="757" y="383" text-anchor="middle" fill="#5a3a8a" font-size="9.5">Predicted locally</text>
+        </g>
+
+        <!-- T3 → pass down to Groq -->
+        <line x1="440" y1="412" x2="440" y2="442" stroke="#c96442" stroke-width="1.8" marker-end="url(#arr-terra)"/>
+        <text x="464" y="430" fill="#c96442" font-size="9.5" font-weight="600">Still unsure</text>
+
+        <!-- ── GROQ ── -->
+        <g filter="url(#sh)">
+          <rect x="290" y="444" width="300" height="80" rx="12" fill="#141413" stroke="#c96442" stroke-width="1.5"/>
+          <text x="440" y="470" text-anchor="middle" fill="#faf9f5" font-family="Georgia,serif" font-size="14" font-weight="500">Groq AI — Full Audit</text>
+          <text x="440" y="488" text-anchor="middle" fill="#87867f" font-size="10">Reads every message. Applies all rules.</text>
+          <text x="440" y="503" text-anchor="middle" fill="#87867f" font-size="10">Produces 4 scores + red flags + summary.</text>
+          <text x="440" y="517" text-anchor="middle" fill="#c96442" font-size="10" font-weight="600">Costs quota. Takes 8–10 seconds.</text>
+        </g>
+
+        <!-- Groq → result -->
+        <line x1="440" y1="524" x2="440" y2="554" stroke="#9e9b93" stroke-width="1.5" marker-end="url(#arr)"/>
+        <g filter="url(#sh)">
+          <rect x="340" y="556" width="200" height="48" rx="10" fill="#fdeeed" stroke="#c96442" stroke-width="1.5"/>
+          <text x="440" y="576" text-anchor="middle" fill="#7a2a10" font-size="12" font-weight="700">Full Audit Result</text>
+          <text x="440" y="593" text-anchor="middle" fill="#aa4a20" font-size="9.5">Saved to database</text>
+        </g>
+
+        <!-- Legend -->
+        <rect x="20" y="608" width="840" height="26" rx="8" fill="#f0eee6"/>
+        <rect x="36" y="616" width="10" height="10" rx="2" fill="#e8f4ea" stroke="#6b8e4e" stroke-width="1"/>
+        <text x="52" y="625" font-size="10" fill="#5e5d59">Tier 1 — Phrase</text>
+        <rect x="156" y="616" width="10" height="10" rx="2" fill="#eef3fc" stroke="#3898ec" stroke-width="1"/>
+        <text x="172" y="625" font-size="10" fill="#5e5d59">Tier 2 — Memory</text>
+        <rect x="286" y="616" width="10" height="10" rx="2" fill="#f5eeff" stroke="#7c6fa0" stroke-width="1"/>
+        <text x="302" y="625" font-size="10" fill="#5e5d59">Tier 3 — Predictor</text>
+        <rect x="416" y="616" width="10" height="10" rx="2" fill="#141413" stroke="#c96442" stroke-width="1"/>
+        <text x="432" y="625" font-size="10" fill="#5e5d59">Groq — Full Audit (last resort)</text>
+        <line x1="630" y1="621" x2="655" y2="621" stroke="#6b8e4e" stroke-width="1.5" marker-end="url(#arr-green)"/>
+        <text x="661" y="625" font-size="10" fill="#5e5d59">Free exit</text>
+        <line x1="726" y1="621" x2="751" y2="621" stroke="#c96442" stroke-width="1.8" marker-end="url(#arr-terra)"/>
+        <text x="757" y="625" font-size="10" fill="#5e5d59">Escalate</text>
+      </svg>
+    </div>
+
+    <p>
+      The key insight: the 3 checkpoints run locally on your machine in under 20 milliseconds total.
+      They cost nothing. Only conversations that pass all 3 checkpoints without a confident answer
+      ever reach Groq. That means Groq is reserved for the conversations that actually need
+      a full human-like analysis.
+    </p>
+  </section>
+
+
+  <!-- ─── SECTION 3: THE 3 CHECKPOINTS IN DETAIL ── -->
+  <section>
+    <div class="eyebrow">03 · The 3 Checkpoints</div>
+    <h2>What each one actually does.</h2>
+
+    <!-- TIER 1 -->
+    <div class="card" style="border-left:3px solid var(--green); margin-bottom:28px;">
+      <h4 style="color:var(--green);">Checkpoint 1 — Phrase Scan &nbsp;·&nbsp; free &nbsp;·&nbsp; &lt;1ms</h4>
+      <h3 style="margin-bottom:10px;">It reads for specific words.</h3>
+      <p>
+        This is the simplest checkpoint. It scans every message in the conversation looking for
+        <strong>exact phrases</strong> that have a clear, known meaning — no guesswork needed.
+      </p>
+      <p>
+        <strong>Phrases that flag immediately:</strong> "stop texting", "remove me", "unsubscribe",
+        "leave me alone", "don't contact me" — these mean the agent violated compliance.
+        The result is returned instantly: compliance score = 0, red flag raised. Groq never sees this conversation.
+      </p>
+      <p style="margin-bottom:0;">
+        <strong>Phrases that mean clean exit:</strong> Very short conversations where the agent
+        only sent 1–2 messages and there's no response yet — these don't need scoring at all.
+        The system returns a default clean score without any analysis.
+      </p>
+    </div>
+
+    <!-- TIER 2 -->
+    <div class="card" style="border-left:3px solid var(--blue); margin-bottom:28px;">
+      <h4 style="color:var(--blue);">Checkpoint 2 — Memory Lookup &nbsp;·&nbsp; free &nbsp;·&nbsp; ~5ms</h4>
+      <h3 style="margin-bottom:10px;">It compares this conversation to past ones.</h3>
+      <p>
+        Every conversation that has ever been scored by Groq is stored in a memory bank — currently
+        <strong>911 conversations</strong>. This checkpoint converts the new conversation into a
+        mathematical "fingerprint" (a list of 384 numbers that represents its meaning), then searches
+        the memory bank for the most similar past conversations.
+      </p>
+      <p>
+        <strong>If the top match is 92% similar or more AND all nearby conversations were "clean"</strong>
+        — the system copies the average score from those past conversations and returns it.
+        No Groq needed.
+      </p>
+      <p style="margin-bottom:0;">
+        <strong>Safety rule:</strong> if ANY of the nearby conversations had a red flag, the system
+        refuses to copy the score and escalates to Groq — even if the similarity is very high.
+        It never risks saying "clean" when a similar past conversation was actually flagged.
+      </p>
+    </div>
+
+    <!-- TIER 3 -->
+    <div class="card" style="border-left:3px solid var(--purple); margin-bottom:28px;">
+      <h4 style="color:var(--purple);">Checkpoint 3 — Pattern Predictor &nbsp;·&nbsp; free &nbsp;·&nbsp; ~10ms</h4>
+      <h3 style="margin-bottom:10px;">It predicts the score from learned patterns.</h3>
+      <p>
+        This is a small AI model trained entirely on your own past Groq results.
+        It has learned: "when a conversation looks like X, Groq typically gives it a score of Y."
+        It applies that knowledge to predict all 4 scores without calling Groq.
+      </p>
+      <p>
+        <strong>It only short-circuits if:</strong> predicted flag probability is below 15%
+        AND all 4 predicted scores are above 75. If there is any doubt — any sign this
+        conversation might be risky — it passes to Groq.
+      </p>
+      <p style="margin-bottom:0;">
+        <strong>It retrains automatically</strong> as more data comes in — the more conversations
+        that get scored by Groq, the smarter and more confident the predictor becomes.
+      </p>
+    </div>
+  </section>
+
+
+  <!-- ─── SECTION 4: THE DECISION DIAGRAM ──────── -->
+  <section>
+    <div class="eyebrow">04 · The Decision Logic</div>
+    <h2>How each checkpoint decides.</h2>
+    <p>For each checkpoint, there are only two possible outcomes: <strong>short-circuit</strong> (return a free score) or <strong>escalate</strong> (pass to the next checkpoint or Groq).</p>
+
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 880 380" xmlns="http://www.w3.org/2000/svg" font-family="Arial,sans-serif" style="display:block;width:100%;max-width:880px;margin:0 auto;height:auto;">
+        <defs>
+          <marker id="da" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="#9e9b93"/>
+          </marker>
+          <marker id="da-g" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="#6b8e4e"/>
+          </marker>
+          <marker id="da-r" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="#c96442"/>
+          </marker>
+          <filter id="dsh">
+            <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="rgba(0,0,0,0.09)"/>
+          </filter>
+        </defs>
+
+        <!-- ─ T1 decision box ─ -->
+        <g filter="url(#dsh)">
+          <rect x="20" y="30" width="180" height="100" rx="12" fill="#e8f4ea" stroke="#6b8e4e" stroke-width="1.5"/>
+          <text x="110" y="55" text-anchor="middle" fill="#3a5a2a" font-size="11" font-weight="700">Checkpoint 1</text>
+          <text x="110" y="72" text-anchor="middle" fill="#5a7a4a" font-size="9.5">Any opt-out phrase?</text>
+          <text x="110" y="88" text-anchor="middle" fill="#5a7a4a" font-size="9.5">"stop texting" etc.</text>
+          <line x1="30" y1="100" x2="190" y2="100" stroke="#d0e8d0" stroke-width="0.8"/>
+          <text x="80" y="118" text-anchor="middle" fill="#6b8e4e" font-size="10" font-weight="600">YES → flag it</text>
+          <text x="155" y="118" text-anchor="middle" fill="#87867f" font-size="10">NO → next</text>
+        </g>
+
+        <!-- T1 YES → green result -->
+        <line x1="110" y1="130" x2="110" y2="160" stroke="#6b8e4e" stroke-width="1.5" marker-end="url(#da-g)"/>
+        <g filter="url(#dsh)">
+          <rect x="40" y="162" width="140" height="40" rx="8" fill="#e8f4ea" stroke="#6b8e4e" stroke-width="1.5"/>
+          <text x="110" y="177" text-anchor="middle" fill="#3a5a2a" font-size="10" font-weight="700">Free score returned</text>
+          <text x="110" y="191" text-anchor="middle" fill="#5a7a4a" font-size="9">compliance = 0</text>
+        </g>
+
+        <!-- T1 NO → T2 -->
+        <line x1="200" y1="80" x2="256" y2="80" stroke="#9e9b93" stroke-width="1.4" marker-end="url(#da)"/>
+
+        <!-- ─ T2 decision box ─ -->
+        <g filter="url(#dsh)">
+          <rect x="258" y="30" width="200" height="110" rx="12" fill="#eef3fc" stroke="#3898ec" stroke-width="1.5"/>
+          <text x="358" y="55" text-anchor="middle" fill="#1a4a8a" font-size="11" font-weight="700">Checkpoint 2</text>
+          <text x="358" y="73" text-anchor="middle" fill="#3a6aaa" font-size="9.5">Similar to a past convo?</text>
+          <text x="358" y="89" text-anchor="middle" fill="#3a6aaa" font-size="9.5">Match &gt;= 92% similar?</text>
+          <text x="358" y="105" text-anchor="middle" fill="#3a6aaa" font-size="9.5">All neighbors clean?</text>
+          <line x1="268" y1="116" x2="448" y2="116" stroke="#c8d8f0" stroke-width="0.8"/>
+          <text x="310" y="132" text-anchor="middle" fill="#3898ec" font-size="10" font-weight="600">YES → copy score</text>
+          <text x="418" y="132" text-anchor="middle" fill="#87867f" font-size="10">NO → next</text>
+        </g>
+
+        <!-- T2 YES → blue result -->
+        <line x1="358" y1="140" x2="358" y2="170" stroke="#3898ec" stroke-width="1.5" marker-end="url(#da)"/>
+        <g filter="url(#dsh)">
+          <rect x="288" y="172" width="140" height="40" rx="8" fill="#eef3fc" stroke="#3898ec" stroke-width="1.5"/>
+          <text x="358" y="187" text-anchor="middle" fill="#1a4a8a" font-size="10" font-weight="700">Free score returned</text>
+          <text x="358" y="201" text-anchor="middle" fill="#3a6aaa" font-size="9">avg of past neighbors</text>
+        </g>
+
+        <!-- T2 NO → T3 -->
+        <line x1="458" y1="80" x2="514" y2="80" stroke="#9e9b93" stroke-width="1.4" marker-end="url(#da)"/>
+
+        <!-- ─ T3 decision box ─ -->
+        <g filter="url(#dsh)">
+          <rect x="516" y="30" width="200" height="120" rx="12" fill="#f5eeff" stroke="#7c6fa0" stroke-width="1.5"/>
+          <text x="616" y="55" text-anchor="middle" fill="#3a1a6a" font-size="11" font-weight="700">Checkpoint 3</text>
+          <text x="616" y="73" text-anchor="middle" fill="#5a3a8a" font-size="9.5">Predict: flag risk below 15%?</text>
+          <text x="616" y="89" text-anchor="middle" fill="#5a3a8a" font-size="9.5">All 4 predicted scores above 75?</text>
+          <text x="616" y="106" text-anchor="middle" fill="#5a3a8a" font-size="9.5">Both must be true.</text>
+          <line x1="526" y1="116" x2="706" y2="116" stroke="#d8c8f0" stroke-width="0.8"/>
+          <text x="570" y="138" text-anchor="middle" fill="#7c6fa0" font-size="10" font-weight="600">YES → predict score</text>
+          <text x="676" y="138" text-anchor="middle" fill="#87867f" font-size="10">NO → Groq</text>
+        </g>
+
+        <!-- T3 YES → purple result -->
+        <line x1="616" y1="150" x2="616" y2="180" stroke="#7c6fa0" stroke-width="1.5" marker-end="url(#da)"/>
+        <g filter="url(#dsh)">
+          <rect x="546" y="182" width="140" height="40" rx="8" fill="#f5eeff" stroke="#7c6fa0" stroke-width="1.5"/>
+          <text x="616" y="197" text-anchor="middle" fill="#3a1a6a" font-size="10" font-weight="700">Free score returned</text>
+          <text x="616" y="211" text-anchor="middle" fill="#5a3a8a" font-size="9">predicted locally</text>
+        </g>
+
+        <!-- T3 NO → Groq -->
+        <line x1="716" y1="80" x2="772" y2="80" stroke="#c96442" stroke-width="1.8" marker-end="url(#da-r)"/>
+        <g filter="url(#dsh)">
+          <rect x="774" y="46" width="86" height="68" rx="10" fill="#141413" stroke="#c96442" stroke-width="1.5"/>
+          <text x="817" y="68" text-anchor="middle" fill="#faf9f5" font-family="Georgia,serif" font-size="11" font-weight="500">Groq AI</text>
+          <text x="817" y="84" text-anchor="middle" fill="#87867f" font-size="9">Full audit</text>
+          <text x="817" y="98" text-anchor="middle" fill="#c96442" font-size="9">8–10 sec</text>
+        </g>
+
+        <!-- Status bar at bottom -->
+        <rect x="20" y="270" width="840" height="90" rx="12" fill="#f0eee6"/>
+        <text x="440" y="294" text-anchor="middle" fill="#4d4c48" font-family="Arial,sans-serif" font-size="11" font-weight="700">CURRENT STATUS (shadow mode — all results still go to Groq for verification)</text>
+
+        <rect x="50" y="308" width="10" height="10" rx="2" fill="#e8f4ea" stroke="#6b8e4e" stroke-width="1"/>
+        <text x="66" y="318" font-size="10" fill="#5e5d59">T1: 0 exits (0%)</text>
+
+        <rect x="200" y="308" width="10" height="10" rx="2" fill="#eef3fc" stroke="#3898ec" stroke-width="1"/>
+        <text x="216" y="318" font-size="10" fill="#5e5d59">T2: 0 exits (0%)</text>
+
+        <rect x="350" y="308" width="10" height="10" rx="2" fill="#f5eeff" stroke="#7c6fa0" stroke-width="1"/>
+        <text x="366" y="318" font-size="10" fill="#5e5d59">T3: 6 exits (2%) — 100% accurate</text>
+
+        <rect x="560" y="308" width="10" height="10" rx="2" fill="#141413" stroke="#c96442" stroke-width="1"/>
+        <text x="576" y="318" font-size="10" fill="#5e5d59">Groq: 294 calls (98%)</text>
+
+        <text x="440" y="348" text-anchor="middle" fill="#87867f" font-size="10">At 2,000 conversations in memory: T2 + T3 expected to handle 50–80% of calls — saving the majority of Groq quota.</text>
+      </svg>
+    </div>
+  </section>
+
+
+  <!-- ─── SECTION 5: WHAT CHANGES ──────────────── -->
+  <section>
+    <div class="eyebrow">05 · What Changes for You</div>
+    <h2>Before vs. after the ML is live.</h2>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Situation</th>
+          <th>Before ML (today)</th>
+          <th>After ML is live</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Wrong Number conversation</strong><br><small style="color:var(--stone);">3 messages, obvious</small></td>
+          <td>Sent to Groq — costs quota, 8 seconds</td>
+          <td>Tier 1 catches it instantly — free, 1ms</td>
+        </tr>
+        <tr>
+          <td><strong>Simple "Not Interested" conversation</strong><br><small style="color:var(--stone);">agent used rebuttals correctly</small></td>
+          <td>Sent to Groq — costs quota</td>
+          <td>Tier 2 or 3 handles it — free, copies a past similar score</td>
+        </tr>
+        <tr>
+          <td><strong>Groq rate limit hit</strong><br><small style="color:var(--stone);">keys exhausted, conversation skipped</small></td>
+          <td>Conversation not scored — shows as null</td>
+          <td>ML handles it locally — scored even with no Groq quota left</td>
+        </tr>
+        <tr>
+          <td><strong>Complex flagged conversation</strong><br><small style="color:var(--stone);">opt-out ignored, multiple issues</small></td>
+          <td>Sent to Groq for full analysis</td>
+          <td>Still sent to Groq — ML always escalates risky conversations</td>
+        </tr>
+        <tr>
+          <td><strong>10 agents running at the same time</strong><br><small style="color:var(--stone);">parallel audit run</small></td>
+          <td>All 10 × 10 convos = 100 Groq calls, high chance of rate limit</td>
+          <td>~20–50 Groq calls (the hard ones only), rate limits rarely hit</td>
+        </tr>
+        <tr>
+          <td><strong>Audit speed</strong></td>
+          <td>~8–10 seconds per conversation</td>
+          <td>Under 1 second for ML-handled convos, 8–10s only for escalated ones</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+
+  <!-- ─── DARK: SAFETY RULES ───────────────────── -->
+  <div class="dark">
+    <div class="eyebrow">06 · Safety Rules</div>
+    <h2>It will never make a dangerous mistake.</h2>
+    <p>
+      The ML system is designed to be <strong>conservative</strong>. It only short-circuits a
+      conversation when it is highly confident the conversation is clean.
+      It never risks hiding a red flag.
+    </p>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:24px;">
+      <div>
+        <h3>What it CAN do</h3>
+        <ul>
+          <li>Say "this conversation is clean" and skip Groq</li>
+          <li>Copy scores from very similar past conversations</li>
+          <li>Predict scores based on learned patterns</li>
+          <li>Return an instant result for obvious opt-out violations</li>
+        </ul>
+      </div>
+      <div>
+        <h3>What it will NEVER do</h3>
+        <ul>
+          <li><strong>Say "clean" when any nearby past conversation was flagged</strong></li>
+          <li><strong>Ignore a high flag-risk prediction — always escalates to Groq</strong></li>
+          <li><strong>Override Groq when there is any doubt</strong></li>
+          <li><strong>Short-circuit a conversation it has never seen patterns like before</strong></li>
+        </ul>
+      </div>
+    </div>
+
+    <div style="margin-top:28px;padding:22px 26px;background:rgba(255,255,255,0.05);border-radius:12px;border:1px solid rgba(255,255,255,0.08);">
+      <p style="margin:0;font-family:Georgia,serif;font-size:17px;color:#faf9f5;line-height:1.6;">
+        "The ML can only ever be wrong in one direction: it might send a clean conversation to Groq
+        unnecessarily. It is designed to make that mistake rather than the opposite one —
+        calling a flagged conversation clean."
+      </p>
+    </div>
+  </div>
+
+
+  <!-- ─── SECTION 7: THE ROADMAP ───────────────── -->
+  <section>
+    <div class="eyebrow">07 · Rollout Plan</div>
+    <h2>When does it go live?</h2>
+
+    <div class="swot">
+      <div class="swot-card">
+        <h3><span class="dot-ind dot-terra"></span>Right now — Shadow mode</h3>
+        <ul>
+          <li>ML runs on every conversation and records what it would have decided.</li>
+          <li>Groq still makes the final score — nothing changes for you.</li>
+          <li>System is collecting data to prove it is accurate.</li>
+          <li><strong>911 conversations stored. Target: 2,000.</strong></li>
+        </ul>
+      </div>
+
+      <div class="swot-card">
+        <h3><span class="dot-ind dot-blue"></span>Next — Flip it live</h3>
+        <ul>
+          <li>Run <code style="font-family:monospace;font-size:12px;background:#f0eee6;padding:2px 6px;border-radius:4px;">python scripts/eval_prefilter.py</code> to check accuracy.</li>
+          <li>If agreement with Groq is 95%+ → flip <strong>PREFILTER_SHADOW_MODE=false</strong> in .env.</li>
+          <li>Tier 1 goes live first (lowest risk — exact phrase matching only).</li>
+          <li>Tiers 2 and 3 enabled after verification at 2,000 conversations.</li>
+        </ul>
+      </div>
+
+      <div class="swot-card">
+        <h3><span class="dot-ind dot-green"></span>Goal — 50–80% Groq calls skipped</h3>
+        <ul>
+          <li>Most "Not Interested", "Wrong Number", and simple drip conversations handled locally.</li>
+          <li>Rate limits become a non-issue for normal daily audits.</li>
+          <li>Audit runs faster — ML conversations return in under 1 second.</li>
+          <li>Groq reserved for genuinely complex or risky conversations only.</li>
+        </ul>
+      </div>
+
+      <div class="swot-card">
+        <h3><span class="dot-ind dot-blue" style="background:var(--purple);"></span>Long term — Self-improving</h3>
+        <ul>
+          <li>Dream Worker retrains the predictor model weekly automatically.</li>
+          <li>More conversations = more patterns learned = higher confidence = more savings.</li>
+          <li>Thresholds calibrate themselves based on accuracy data.</li>
+          <li>Eventually handles 80%+ of all conversations with no human intervention.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ─── STATS ─────────────────────────────────── -->
+  <section>
+    <div class="eyebrow">08 · Current Numbers</div>
+    <h2>Where things stand today.</h2>
+
+    <div class="stat-row">
+      <div class="stat-box">
+        <div class="num">911</div>
+        <div class="label">Conversations in<br>ML memory bank</div>
+      </div>
+      <div class="stat-box">
+        <div class="num">100%</div>
+        <div class="label">Accuracy when ML<br>short-circuits</div>
+      </div>
+      <div class="stat-box">
+        <div class="num">0%</div>
+        <div class="label">False-clean rate<br>(never said clean when it wasn't)</div>
+      </div>
+      <div class="stat-box">
+        <div class="num">2%</div>
+        <div class="label">Groq calls saved now<br>(target: 50–80%)</div>
+      </div>
+    </div>
+
+    <div class="card-accent" style="margin-top:10px;">
+      <h4>Why only 2% right now?</h4>
+      <p style="margin:0;">With 911 conversations in memory, Tier 2 doesn't have enough examples to confidently
+      match most conversations. The more conversations get audited by Groq, the bigger and more useful
+      the memory bank becomes. At 2,000 entries, the skip rate is expected to jump to 30–60%.</p>
+    </div>
+  </section>
+
+
+  <!-- Credits -->
+  <div style="
+    margin-top: 60px;
+    background: var(--near-black);
+    border-radius: 20px;
+    padding: 36px 44px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 28px;
+  ">
+    <div style="display:flex;align-items:center;gap:32px;flex-wrap:wrap;">
+      <div>
+        <div style="font-family:Arial,sans-serif;font-size:10px;font-weight:600;letter-spacing:0.12px;text-transform:uppercase;color:var(--stone);margin-bottom:6px;">Project</div>
+        <div style="font-family:Georgia,serif;font-size:22px;font-weight:500;color:#fff;">Texting Audit Automation</div>
+      </div>
+      <div style="width:1px;height:40px;background:var(--dark-surface);flex-shrink:0;"></div>
+      <div>
+        <div style="font-family:Arial,sans-serif;font-size:10px;font-weight:600;letter-spacing:0.12px;text-transform:uppercase;color:var(--stone);margin-bottom:6px;">Design &amp; Development</div>
+        <a href="https://t.me/Mohmed_abdo" target="_blank" rel="noreferrer" style="font-family:Georgia,serif;font-size:22px;font-weight:500;color:var(--coral);text-decoration:none;">Mohamed Abdo</a>
+      </div>
+    </div>
+    <div style="font-family:Arial,sans-serif;font-size:12px;color:var(--stone);text-align:right;">
+      ML Pre-Filter Overview<br>Internal Document · 2026
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

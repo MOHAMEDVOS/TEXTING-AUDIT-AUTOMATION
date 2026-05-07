@@ -1,0 +1,3495 @@
+[
+  {
+    "conversation_id": 2465,
+    "contact_name": "Kathryn Barrows",
+    "texter_name": "Sohaila Mohamed Fawzy Abbass",
+    "account_name": "Resva1014",
+    "assigned_labels": [
+      "FU1",
+      "WL drip"
+    ],
+    "funnel_tier": "MF",
+    "guidelines": "Cash offer account\n\"(Ask about) \nClosing",
+    "agent_id": 6,
+    "msg_count": 9,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hi Kathryn, it's Jack with LHB. Just checking if you'd ever consider something like 139k-185k in cash for 6962 Bennell Dr?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Kathryn, it's Jack. I came across 6962 Bennell Dr and wondered if a cash price between 139k-185k might catch your interest.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Kathryn, Jack here. I came across 6962 Bennell Dr and was wondering if a cash price in the 139k-185k range might interest you?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Kathryn, it's Jack. I'm reaching out to ask if a cash range like 139k-185k would ever make sense for your place at 6962 Bennell Dr?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Kathryn, it's Jack from LHB. If a cash range like 139k-185k made sense for 6962 Bennell Dr, would you be open to a quick chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Kathryn, it's Jack with LHB. If 6962 Bennell Dr ever made sense in a cash range like 139k-185k, would you be open to chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "175k cash",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Got it And I just wanted to know what sparks the initial interest in selling the property ?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey just following up - no rush at all. I was just curious what initially made you consider selling the property, if you don't mind me asking?",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2473,
+    "contact_name": "Amy Leo",
+    "texter_name": "Sohaila Mohamed Fawzy Abbass",
+    "account_name": "Resva1014",
+    "assigned_labels": [
+      "Not interested"
+    ],
+    "funnel_tier": "MF",
+    "guidelines": "Cash offer account\n\"(Ask about) \nClosing",
+    "agent_id": 6,
+    "msg_count": 17,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hi Amy! This is Adam reaching out,  I own a small family business in Powell. Do you have any plans for 1685 Boulder Ct?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Amy, was looking at 1685 Boulder Ct. Are you interested in moving? -Adam with LHB.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Amy, was looking at 1685 Boulder Ct. Are you interested in moving? -Adam with LHB.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello Amy, found 1685 Boulder Ct in county records. Would you consider moving? -Adam with LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Amy. Saw in the county records that you own 1685 Boulder Ct. Have you considered moving? -Adam with LHB.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Amy, was looking at 1685 Boulder Ct. Are you interested in moving? -Adam with LHB.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello Amy, found 1685 Boulder Ct in county records. Would you consider moving? -Adam with LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Amy, This is Jack with LHB. I noticed 1685 Boulder Ct and wanted to see if you'd be open to a cash range like 203k-271k?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Amy, it's Jack with LHB. Just checking if you'd ever consider something like 195k-260k in cash for 1685 Boulder Ct?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Amy, it's Jack with LHB. Just checking if you'd ever consider something like 195k-260k in cash for 1685 Boulder Ct?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Amy, it's Jack with LHB. Just checking if you'd ever consider something like 195k-260k in cash for 1685 Boulder Ct?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Amy, it's Jack from LHB. If a cash range like 195k-260k made sense for 1685 Boulder Ct, would you be open to a quick chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Amy, it's Jack with LHB. If 1685 Boulder Ct ever made sense in a cash range like 195k-260k, would you be open to chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Amy, it's Jack with LHB. I came across 1685 Boulder Ct and wondered if you'd consider a cash range, such as 195k-260k? Let me know",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Amy, it's Jack from LHB. If a cash range like 195k-260k made sense for 1685 Boulder Ct, would you be open to a quick chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "No thank you",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Not a problem at all. Do you think it could be for sale within the next 4 months?",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2471,
+    "contact_name": "Deborah Thomas",
+    "texter_name": "Sohaila Mohamed Fawzy Abbass",
+    "account_name": "Resva1014",
+    "assigned_labels": [
+      "Wrong Number"
+    ],
+    "funnel_tier": "MF",
+    "guidelines": "Cash offer account\n\"(Ask about) \nClosing",
+    "agent_id": 6,
+    "msg_count": 12,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hi Jack! I saw in the county records that you own 976 Medinah Te. Can we have a conversation about it?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello Jack, found 976 Medinah Te in county records. Would you consider moving? -Adam with LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello Jack, found 976 Medinah Te in county records. Would you consider moving? -Adam with LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello Jack, Adam from LHB here. I noticed your property at 976 Medinah Te. Are you open to discussing future possibilities?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Deborah, it's Jack with LHB. I came across 5425 Tamarack Blvd and wondered if you'd consider a cash range, such as 199k-265k? Let me know",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Deborah, it's Jack from LHB. If a cash range like 199k-265k made sense for 5425 Tamarack Blvd, would you be open to a quick chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Deborah, This is Jack with LHB. I noticed 5425 Tamarack Blvd and wanted to see if you'd be open to a cash range like 199k-265k?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Deborah, it's Jack. I'm reaching out to ask if a cash range like 199k-265k would ever make sense for your place at 5425 Tamarack Blvd?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Deborah, it's Jack with LHB. I came across 5425 Tamarack Blvd and wondered if you'd consider a cash range, such as 199k-265k? Let me know",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Deborah, it's Jack with LHB. I came across 5425 Tamarack Blvd and wondered if you'd consider a cash range, such as 199k-265k? Let me know",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "I'm not Deborah and I live in Florida. Never heard of Tamarack. Cash sounds good though...",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "I'm so sorry about that! Would you by chance know someone who may want or need to sell their home? We pay up to $1,000 for any referral you bring to us!",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2467,
+    "contact_name": "Thomas Schneider",
+    "texter_name": "Sohaila Mohamed Fawzy Abbass",
+    "account_name": "Resva1014",
+    "assigned_labels": [
+      "Wrong Number"
+    ],
+    "funnel_tier": "MF",
+    "guidelines": "Cash offer account\n\"(Ask about) \nClosing",
+    "agent_id": 6,
+    "msg_count": 9,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hey Thomas, it's Jack. I'm reaching out to ask if a cash range like 223k-298k would ever make sense for your place at 1210 Timber Wood Dr?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Thomas, Jack here. I came across 1210 Timber Wood Dr and was wondering if a cash price in the 223k-298k range might interest you?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Thomas, it's Jack from LHB. If a cash range like 223k-298k made sense for 1210 Timber Wood Dr, would you be open to a quick chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Thomas, Jack here. I came across 1210 Timber Wood Dr and was wondering if a cash price in the 223k-298k range might interest you?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Thomas, it's Jack with LHB. If 1210 Timber Wood Dr ever made sense in a cash range like 223k-298k, would you be open to chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Thomas, This is Jack with LHB. I noticed 1210 Timber Wood Dr and wanted to see if you'd be open to a cash range like 223k-298k?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Wrong number",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "I'm so sorry about that! Would you by chance know someone who may want or need to sell their home? We pay up to $1,000 for any referral you bring to us!",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "No I don't",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2458,
+    "contact_name": "Delsa Evans",
+    "texter_name": "Sohaila Mohamed Fawzy Abbass",
+    "account_name": "Resva1014",
+    "assigned_labels": [
+      "Maybe later"
+    ],
+    "funnel_tier": "MF",
+    "guidelines": "Cash offer account\n\"(Ask about) \nClosing",
+    "agent_id": 6,
+    "msg_count": 20,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hey Delsa, it's Jack with LHB. If 3073 Cooper Bluff Dr ever made sense in a cash range like 105k-140k, would you be open to chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Delsa, it's Jack with LHB. I came across 3073 Cooper Bluff Dr and wondered if you'd consider a cash range, such as 105k-140k? Let me know",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Delsa, it's Jack with LHB. I came across 3073 Cooper Bluff Dr and wondered if you'd consider a cash range, such as 105k-140k? Let me know",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Delsa, Jack here. I came across 3073 Cooper Bluff Dr and was wondering if a cash price in the 105k-140k range might interest you?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Delsa, it's Jack with LHB. If 3073 Cooper Bluff Dr ever made sense in a cash range like 105k-140k, would you be open to chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Delsa, it's Jack. I'm reaching out to ask if a cash range like 105k-140k would ever make sense for your place at 3073 Cooper Bluff Dr?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Delsa passed",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "I'm so sorry for your loss, I can only imagine how difficult that must be. When things settle down, I'd love to chat about your property at 3073 Cooper Bluff Dr, if you've ever thought about selling. No rush at all.",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Thanks. Maybe in the near future",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Assuming we're able to reach an agreement, would selling sometime within the next 4 months be possible for you?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Check back with me in a couple months",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "If the range ends up making sense for you, would you be open to a quick call so I can go over the details and see if we're a fit?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Not yet. Im not ready to sell yet. But possibly soon. Thanks for your understanding",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "And I just wanted to know what sparks the initial interest in selling the property ?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey just following up - no rush at all. I was just curious what initially made you consider selling the property, if you don't mind me asking?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "It's not really mine. My daughter lives there.  She has mentioned it   Sorry. Thats all I know",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Got it, I appreciate you clarifying that.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "If the numbers make sense, we're flexible on closing and can work with up to a 4-month timeline. Would it be okay if I set up a quick call?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "No",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Understood. Do you have anything or know someone who wants to maybe sell? I usually look for homes that need some work. I pay $1000 for referrals I close on.",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2472,
+    "contact_name": "Gabriel Roese",
+    "texter_name": "Sohaila Mohamed Fawzy Abbass",
+    "account_name": "Resva1014",
+    "assigned_labels": [
+      "Wrong Number"
+    ],
+    "funnel_tier": "MF",
+    "guidelines": "Cash offer account\n\"(Ask about) \nClosing",
+    "agent_id": 6,
+    "msg_count": 19,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hey Jiechun. Saw in the county records that you own 10279 Wellington Blvd. Have you considered moving? -Lisa with LHB.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "I am trying to be sure if this is the correct number. Is this Jiechun?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Jiechun, This is Adam with LHB reaching out! Saw in the county records that you own 10279 Wellington Blvd. Have you considered moving?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Jiechun, noticed in the county records that you own 10279 Wellington Blvd. Got any plans with that? -Adam with LHB.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello Jiechun, found 10279 Wellington Blvd in county records. Would you consider moving? -Adam with LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello Jiechun! Is this a good time to have a talk about 10279 Wellington Blvd ? -Adam with LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello Jiechun, found 10279 Wellington Blvd in county records. Would you consider moving? -Adam with LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Jiechun, noticed in the county records that you own 10279 Wellington Blvd. Got any plans with that? -Taylor with LHB.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey! This is Sarah with LHB. Is 10279 Wellington Blvd yours? I'd love to discuss a potential deal if you're interested!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Gabriel, it's Jack with LHB. I came across 3040 Rightmire Blvd and wondered if you'd consider a cash range, such as 186k-248k? Let me know",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Gabriel, This is Jack with LHB. I noticed 3040 Rightmire Blvd and wanted to see if you'd be open to a cash range like 190k-254k?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Gabriel, This is Jack with LHB. I noticed 3040 Rightmire Blvd and wanted to see if you'd be open to a cash range like 190k-254k?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Gabriel, Jack here. I came across 3040 Rightmire Blvd and was wondering if a cash price in the 190k-254k range might interest you?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Gabriel, it's Jack with LHB. If 3040 Rightmire Blvd ever made sense in a cash range like 190k-254k, would you be open to chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Gabriel, it's Jack with LHB. I came across 3040 Rightmire Blvd and wondered if you'd consider a cash range, such as 190k-254k? Let me know",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Gabriel, it's Jack from LHB. If a cash range like 190k-254k made sense for 3040 Rightmire Blvd, would you be open to a quick chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Gabriel, it's Jack. I'm reaching out to ask if a cash range like 190k-254k would ever make sense for your place at 3040 Rightmire Blvd?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Where is located? I don't know the address",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "I'm so sorry about that! Would you by chance know someone who may want or need to sell their home? We pay up to $1,000 for any referral you bring to us!",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2463,
+    "contact_name": "Mark Strong",
+    "texter_name": "Sohaila Mohamed Fawzy Abbass",
+    "account_name": "Resva1014",
+    "assigned_labels": [
+      "FU1",
+      "WL drip"
+    ],
+    "funnel_tier": "MF",
+    "guidelines": "Cash offer account\n\"(Ask about) \nClosing",
+    "agent_id": 6,
+    "msg_count": 9,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hi Mark, Jack here. I came across 3285 Mallcreek Ct and was wondering if a cash price in the 128k-171k range might interest you?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Mark, it's Jack with LHB. Just checking if you'd ever consider something like 128k-171k in cash for 3285 Mallcreek Ct?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Mark, it's Jack. I'm reaching out to ask if a cash range like 128k-171k would ever make sense for your place at 3285 Mallcreek Ct?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Mark, it's Jack. I'm reaching out to ask if a cash range like 128k-171k would ever make sense for your place at 3285 Mallcreek Ct?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Mark, it's Jack. I'm reaching out to ask if a cash range like 128k-171k would ever make sense for your place at 3285 Mallcreek Ct?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Mark, it's Jack. I'm reaching out to ask if a cash range like 128k-171k would ever make sense for your place at 3285 Mallcreek Ct?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Sure $171k",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Got it And I just wanted to know what sparks the initial interest in selling the property ?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey just following up - no rush at all. I was just curious what initially made you consider selling the property, if you don't mind me asking?",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2470,
+    "contact_name": "Peter Benner",
+    "texter_name": "Sohaila Mohamed Fawzy Abbass",
+    "account_name": "Resva1014",
+    "assigned_labels": [
+      "Verified",
+      "Not interested"
+    ],
+    "funnel_tier": "MF",
+    "guidelines": "Cash offer account\n\"(Ask about) \nClosing",
+    "agent_id": 6,
+    "msg_count": 17,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hey Peter, spotted your property in Powell. Ready to talk? -Pope",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Peter! Noticed your property in Powell. Up for a chat? -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi there! Saw your property in Powell. Want to chat? -Jake",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Peter, was looking at 1780 Linkton Dr. Are you interested in moving? -Lisa with LHB.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Peter, it's Jack with LHB. If 1780 Linkton Dr ever made sense in a cash range like 207k-276k, would you be open to chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Peter, Jack here. I came across 1780 Linkton Dr and was wondering if a cash price in the 207k-276k range might interest you?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Peter, it's Jack with LHB. I came across 1780 Linkton Dr and wondered if you'd consider a cash range, such as 207k-276k? Let me know",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Peter, it's Jack. I came across 1780 Linkton Dr and wondered if a cash price between 207k-276k might catch your interest.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Peter, it's Jack with LHB. I came across 1780 Linkton Dr and wondered if you'd consider a cash range, such as 207k-276k? Let me know",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Hi Jack, thank you for the offer.However i'm not interested",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Not a problem at all. Do you think it could be for sale within the next 4 months?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Peter, it's Jack. I'm reaching out to ask if a cash range like 207k-276k would ever make sense for your place at 1780 Linkton Dr?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Thank you for the offer. However, I'm okay.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Not a problem at all. Do you think it could be for sale within the next 4 months?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "No, i don't believe so.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Understood. Do you have anything or know someone who wants to maybe sell? I usually look for homes that need some work. I pay $1000 for referrals I close on.",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "I'll keep that in mind.",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2475,
+    "contact_name": "Thomas Revou",
+    "texter_name": "Sohaila Mohamed Fawzy Abbass",
+    "account_name": "Resva1014",
+    "assigned_labels": [
+      "Not interested"
+    ],
+    "funnel_tier": "MF",
+    "guidelines": "Cash offer account\n\"(Ask about) \nClosing",
+    "agent_id": 6,
+    "msg_count": 15,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hi Thomas! I saw in the county records that you own 1249 Hamlet St. Can we have a conversation about it?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello Thomas! Is this a good time to have a talk about 1249 Hamlet St ? -Adam with LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Thomas! This is Adam. I saw your property at 1249 Hamlet St. Are you interested in talking about your plans for it?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Thomas! I saw in the county records that you own 1249 Hamlet St. Can we have a conversation about it?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Thomas, are you planning on moving from 1249 Hamlet St? -Adam with LHB.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Thomas, county records say you own 1249 Hamlet St. Any chance you're considering a move? -Adam with LHB.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Thomas, considering moving from 1249 Hamlet St? -Adam with LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Thomas, This is Jack with LHB. I noticed 851 E 4th Ave and wanted to see if you'd be open to a cash range like 61k-82k?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Thomas, it's Jack with LHB. I came across 851 E 4th Ave and wondered if you'd consider a cash range, such as 61k-82k? Let me know",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Thomas, it's Jack. I came across 851 E 4th Ave and wondered if a cash price between 61k-82k might catch your interest.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Thomas, it's Jack from LHB. If a cash range like 61k-82k made sense for 851 E 4th Ave, would you be open to a quick chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Thomas, it's Jack with LHB. I came across 851 E 4th Ave and wondered if you'd consider a cash range, such as 61k-82k? Let me know",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Thomas, it's Jack. I'm reaching out to ask if a cash range like 61k-82k would ever make sense for your place at 851 E 4th Ave?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Disliked \"Hey Thomas, it's Jack. I'm reaching out to ask if a cash range like 61k-82k would ever make sense for your place at 851 E 4th Ave?\"",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Not a problem at all. Do you think it could be for sale within the next 4 months?",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2468,
+    "contact_name": "Maurice Stevens",
+    "texter_name": "Sohaila Mohamed Fawzy Abbass",
+    "account_name": "Resva1014",
+    "assigned_labels": [
+      "Not interested"
+    ],
+    "funnel_tier": "MF",
+    "guidelines": "Cash offer account\n\"(Ask about) \nClosing",
+    "agent_id": 6,
+    "msg_count": 8,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hey Maurice, it's Jack from LHB. If a cash range like 181k-242k made sense for 887 S Roys Ave, would you be open to a quick chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Maurice, it's Jack with LHB. If 887 S Roys Ave ever made sense in a cash range like 181k-242k, would you be open to chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Maurice, it's Jack. I'm reaching out to ask if a cash range like 181k-242k would ever make sense for your place at 887 S Roys Ave?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Maurice, Jack here. I came across 887 S Roys Ave and was wondering if a cash price in the 181k-242k range might interest you?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Maurice, it's Jack with LHB. Just checking if you'd ever consider something like 181k-242k in cash for 887 S Roys Ave?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Maurice, Jack here. I came across 887 S Roys Ave and was wondering if a cash price in the 181k-242k range might interest you?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "No",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Not a problem at all. Do you think it could be for sale within the next 4 months?",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2460,
+    "contact_name": "Troy Farms Acquisitions LLC",
+    "texter_name": "Sohaila Mohamed Fawzy Abbass",
+    "account_name": "Resva1014",
+    "assigned_labels": [
+      "FU1",
+      "WL drip"
+    ],
+    "funnel_tier": "MF",
+    "guidelines": "Cash offer account\n\"(Ask about) \nClosing",
+    "agent_id": 6,
+    "msg_count": 18,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hi Michelle, interested in local opportunities. Ever wondered about options for 37 Louella Dr? Jack-LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello Michelle, I'd like to discuss your property at 37 Louella Dr. Curious about your plans. Jack-LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Troy Farms Acquisitions, it's Jack with LHB. If 93 Equestrian Way ever made sense in a cash range like 173k-231k, would you be open to chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Troy Farms Acquisitions, This is Jack with LHB. I noticed 93 Equestrian Way and wanted to see if you'd be open to a cash range like 173k-231k?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Troy Farms Acquisitions, it's Jack with LHB. If 93 Equestrian Way ever made sense in a cash range like 173k-231k, would you be open to chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Troy Farms Acquisitions, it's Jack. I'm reaching out to ask if a cash range like 173k-231k would ever make sense for your place at 93 Equestrian Way?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Troy Farms Acquisitions, Jack here. I came across 93 Equestrian Way and was wondering if a cash price in the 173k-231k range might interest you?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Troy Farms Acquisitions, it's Jack. I'm reaching out to ask if a cash range like 173k-231k would ever make sense for your place at 93 Equestrian Way?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Yes",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Got it And I just wanted to know what sparks the initial interest in selling the property ?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "I want to sell it",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "I'm curious, have you made any changes or upgrades recently?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Yes",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Thank you so much for the insight. I'll have my partner touch base soon to go over the next steps. I'm really looking forward to seeing where this goes and hopefully working together! Have a great day!",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Wait",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "If the range ends up making sense for you, would you be open to a quick call so I can go over the details and see if we're a fit?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey just following up - wanted to see if that range we discussed would make sense for you. If it does, would you be open to a quick call to go over everything in more detail?",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2457,
+    "contact_name": "Dan Distelhorst",
+    "texter_name": "Sohaila Mohamed Fawzy Abbass",
+    "account_name": "Resva1014",
+    "assigned_labels": [
+      "Lead, Pushed",
+      "Pushed to client"
+    ],
+    "funnel_tier": "MF",
+    "guidelines": "Cash offer account\n\"(Ask about) \nClosing",
+    "agent_id": 6,
+    "msg_count": 13,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hello Rita, I'm interested in properties at Columbus. Is 5812 Rocky Rill Rd something we could discuss sometime? Jack-LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Rita, curious if you've ever thought about opportunities for 5812 Rocky Rill Rd? I'd love to chat whenever you're ready. Jack-LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Marios L Fitros, it's Jack with LHB. I came across 2554 Stonington Ave and wondered if you'd consider a cash range, such as 156k-208k? Let me know",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Marios L Fitros, it's Jack with LHB. Just checking if you'd ever consider something like 156k-208k in cash for 2554 Stonington Ave?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Marios L Fitros, This is Jack with LHB. I noticed 2554 Stonington Ave and wanted to see if you'd be open to a cash range like 156k-208k?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Marios L Fitros, it's Jack. I'm reaching out to ask if a cash range like 156k-208k would ever make sense for your place at 2554 Stonington Ave?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Dan, it's Jack. I came across 78 Winthrop Rd and wondered if a cash price between 323400-431200 might catch your interest.",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Only in cash",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Got it. I just want to confirm, have you made any upgrades or changes recently?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi, just checking in on 78 Winthrop Rd. Were there any updates?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Dan, is this home something you still want to sell?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey there, I don't want to be a bother. I'd love to purchase 78 Winthrop Rd. Are you no longer interested in selling?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "I'll have my partner touch base soon to go over the next steps. I'm really looking forward to seeing where this goes and hopefully working together! Have a great day!",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2461,
+    "contact_name": "Gerard Quinn",
+    "texter_name": "Sohaila Mohamed Fawzy Abbass",
+    "account_name": "Resva1014",
+    "assigned_labels": [
+      "FU1",
+      "WL drip"
+    ],
+    "funnel_tier": "MF",
+    "guidelines": "Cash offer account\n\"(Ask about) \nClosing",
+    "agent_id": 6,
+    "msg_count": 6,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hi Gerard, it's Jack. I came across 4042 Peregrine Pass Dr and wondered if a cash price between 228600-304800 might catch your interest.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Gerard, it's Jack with LHB. Just checking if you'd ever consider something like 268800-358400 in cash for 717 Waybaugh Dr?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Sure",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Got it what sparks the initial interest in selling the property ?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey just following up - no rush at all. I was just curious what initially made you consider selling the property, if you don't mind me asking?",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2464,
+    "contact_name": "Joseph White",
+    "texter_name": "Sohaila Mohamed Fawzy Abbass",
+    "account_name": "Resva1014",
+    "assigned_labels": [
+      "FU1",
+      "WL drip"
+    ],
+    "funnel_tier": "MF",
+    "guidelines": "Cash offer account\n\"(Ask about) \nClosing",
+    "agent_id": 6,
+    "msg_count": 10,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hey Joseph, it's Jack with LHB. If 1057 S Harris Ave ever made sense in a cash range like 103k-138k, would you be open to chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Joseph, it's Jack. I came across 1057 S Harris Ave and wondered if a cash price between 103k-138k might catch your interest.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Joseph, it's Jack. I'm reaching out to ask if a cash range like 103k-138k would ever make sense for your place at 1057 S Harris Ave?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Joseph, it's Jack. I came across 1057 S Harris Ave and wondered if a cash price between 103k-138k might catch your interest.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Joseph, it's Jack with LHB. I came across 1057 S Harris Ave and wondered if you'd consider a cash range, such as 103k-138k? Let me know",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Joseph, it's Jack with LHB. I came across 1057 S Harris Ave and wondered if you'd consider a cash range, such as 103k-138k? Let me know",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Sure!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "And I just wanted to know what sparks the initial interest in selling the property ?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey just following up - no rush at all. I was just curious what initially made you consider selling the property, if you don't mind me asking?",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2459,
+    "contact_name": "David Karlin",
+    "texter_name": "Sohaila Mohamed Fawzy Abbass",
+    "account_name": "Resva1014",
+    "assigned_labels": [
+      "Abv MV"
+    ],
+    "funnel_tier": "MF",
+    "guidelines": "Cash offer account\n\"(Ask about) \nClosing",
+    "agent_id": 6,
+    "msg_count": 11,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hello David, I'd like to discuss your property at 4967 Deer Run Pl. Curious about your plans. Jack-LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey David, it's Jack. I'm reaching out to ask if a cash range like 135k-180k would ever make sense for your place at 4967 Deer Run Pl?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey David, it's Jack from LHB. If a cash range like 135k-180k made sense for 4967 Deer Run Pl, would you be open to a quick chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi David, it's Jack. I came across 4967 Deer Run Pl and wondered if a cash price between 135k-180k might catch your interest.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi David, This is Jack with LHB. I noticed 4967 Deer Run Pl and wanted to see if you'd be open to a cash range like 135k-180k?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi David, it's Jack with LHB. I came across 4967 Deer Run Pl and wondered if you'd consider a cash range, such as 135k-180k? Let me know",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi David, it's Jack with LHB. Just checking if you'd ever consider something like 135k-180k in cash for 4967 Deer Run Pl?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Nope",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Not a problem at all. Do you think it could be for sale within the next 4 months?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Probably not. But we have totally upgraded the unit. The shower cost 12,000$. We would list at a minimum $250,000. We have an agent",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "I appreciate the reply but that is going to be more than I can pay. If by chance you know anyone looking to sell, I pay $1000 on all referrals I close on!",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2462,
+    "contact_name": "Holly Stephens",
+    "texter_name": "Sohaila Mohamed Fawzy Abbass",
+    "account_name": "Resva1014",
+    "assigned_labels": [
+      "FU1",
+      "WL drip"
+    ],
+    "funnel_tier": "MF",
+    "guidelines": "Cash offer account\n\"(Ask about) \nClosing",
+    "agent_id": 6,
+    "msg_count": 9,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hi Holly, it's Jack with LHB. I came across 740 Whitetail Loop and wondered if you'd consider a cash range, such as 72k-96k? Let me know",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Holly, This is Jack with LHB. I noticed 740 Whitetail Loop and wanted to see if you'd be open to a cash range like 72k-96k?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Holly, it's Jack. I'm reaching out to ask if a cash range like 72k-96k would ever make sense for your place at 740 Whitetail Loop?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Holly, it's Jack with LHB. If 740 Whitetail Loop ever made sense in a cash range like 72k-96k, would you be open to chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Holly, Jack here. I came across 740 Whitetail Loop and was wondering if a cash price in the 72k-96k range might interest you?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Holly, it's Jack with LHB. Just checking if you'd ever consider something like 72k-96k in cash for 740 Whitetail Loop?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Yes",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Got it And I just wanted to know what sparks the initial interest in selling the property ?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey just following up - no rush at all. I was just curious what initially made you consider selling the property, if you don't mind me asking?",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2466,
+    "contact_name": "Daniel Mathews",
+    "texter_name": "Sohaila Mohamed Fawzy Abbass",
+    "account_name": "Resva1014",
+    "assigned_labels": [
+      "Not interested"
+    ],
+    "funnel_tier": "MF",
+    "guidelines": "Cash offer account\n\"(Ask about) \nClosing",
+    "agent_id": 6,
+    "msg_count": 11,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hey Daniel, it's Jack with LHB. If 30 E Iroquois Dr ever made sense in a cash range like 196k-262k, would you be open to chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Daniel, This is Jack with LHB. I noticed 30 E Iroquois Dr and wanted to see if you'd be open to a cash range like 196k-262k?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Daniel, it's Jack with LHB. I came across 30 E Iroquois Dr and wondered if you'd consider a cash range, such as 196k-262k? Let me know",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Daniel, it's Jack. I came across 30 E Iroquois Dr and wondered if a cash price between 196k-262k might catch your interest.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Daniel, it's Jack with LHB. If 30 E Iroquois Dr ever made sense in a cash range like 196k-262k, would you be open to chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Daniel, it's Jack with LHB. I came across 30 E Iroquois Dr and wondered if you'd consider a cash range, such as 196k-262k? Let me know",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "No thanks",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Not a problem at all. Do you think it could be for sale within the next 4 months?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "No",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Understood. Do you have anything or know someone who wants to maybe sell? I usually look for homes that need some work. I pay $1000 for referrals I close on.",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "No",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2469,
+    "contact_name": "Roland Segieth",
+    "texter_name": "Sohaila Mohamed Fawzy Abbass",
+    "account_name": "Resva1014",
+    "assigned_labels": [
+      "Wrong Number"
+    ],
+    "funnel_tier": "MF",
+    "guidelines": "Cash offer account\n\"(Ask about) \nClosing",
+    "agent_id": 6,
+    "msg_count": 9,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hey Roland, it's Jack from LHB. If a cash range like 123k-164k made sense for 3623 Maize Rd, would you be open to a quick chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Roland, it's Jack with LHB. Just checking if you'd ever consider something like 123k-164k in cash for 3623 Maize Rd?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Roland, This is Jack with LHB. I noticed 3623 Maize Rd and wanted to see if you'd be open to a cash range like 123k-164k?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Roland, Jack here. I came across 3623 Maize Rd and was wondering if a cash price in the 123k-164k range might interest you?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Roland, it's Jack from LHB. If a cash range like 123k-164k made sense for 3623 Maize Rd, would you be open to a quick chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Roland, it's Jack with LHB. I came across 3623 Maize Rd and wondered if you'd consider a cash range, such as 123k-164k? Let me know",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Wrong person",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "I'm so sorry about that! Would you by chance know someone who may want or need to sell their home? We pay up to $1,000 for any referral you bring to us!",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "No",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2474,
+    "contact_name": "Danielle Jamison",
+    "texter_name": "Sohaila Mohamed Fawzy Abbass",
+    "account_name": "Resva1014",
+    "assigned_labels": [
+      "Not interested"
+    ],
+    "funnel_tier": "MF",
+    "guidelines": "Cash offer account\n\"(Ask about) \nClosing",
+    "agent_id": 6,
+    "msg_count": 8,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hey Danielle, it's Jack with LHB. If 570 Townsend Ave ever made sense in a cash range like 117k-156k, would you be open to chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Danielle, it's Jack. I'm reaching out to ask if a cash range like 117k-156k would ever make sense for your place at 570 Townsend Ave?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Danielle, it's Jack. I'm reaching out to ask if a cash range like 117k-156k would ever make sense for your place at 570 Townsend Ave?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Danielle, This is Jack with LHB. I noticed 570 Townsend Ave and wanted to see if you'd be open to a cash range like 117k-156k?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Danielle, it's Jack with LHB. If 570 Townsend Ave ever made sense in a cash range like 117k-156k, would you be open to chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Danielle, it's Jack with LHB. Just checking if you'd ever consider something like 117k-156k in cash for 570 Townsend Ave?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "No thanks",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Not a problem at all. Do you think it could be for sale within the next 4 months?",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2476,
+    "contact_name": "Carol Johnson",
+    "texter_name": "Sohaila Mohamed Fawzy Abbass",
+    "account_name": "Resva1014",
+    "assigned_labels": [
+      "Not interested"
+    ],
+    "funnel_tier": "MF",
+    "guidelines": "Cash offer account\n\"(Ask about) \nClosing",
+    "agent_id": 6,
+    "msg_count": 15,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hey Carol, it's Jack with LHB. If 322 S Warren Ave ever made sense in a cash range like 97k-130k, would you be open to chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Carol, it's Jack with LHB. I came across 322 S Warren Ave and wondered if you'd consider a cash range, such as 97k-130k? Let me know",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Carol, it's Jack with LHB. Just checking if you'd ever consider something like 97k-130k in cash for 322 S Warren Ave?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Carol, it's Jack. I came across 322 S Warren Ave and wondered if a cash price between 97k-130k might catch your interest.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Carol, it's Jack. I came across 322 S Warren Ave and wondered if a cash price between 97k-130k might catch your interest.",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Jack who",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Jack Collins. I'm a sole proprietor with local home buyers in your area who buys and sells a few homes a year. If you're open to selling, we can talk further.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Carol, it's Jack with LHB. I came across 322 S Warren Ave and wondered if you'd consider a cash range, such as 97k-130k? Let me know",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "No",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Not a problem at all. Do you think it could be for sale within the next 4 months?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "I don't think so",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Understood. Do you have anything or know someone who wants to maybe sell? I usually look for homes that need some work. I pay $1000 for referrals I close on.",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "The houses are going up around here",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "313 s ogden ave",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Look it up. Vinebrooks has it",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2453,
+    "contact_name": "Scott Wagenbrenner",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "Wrong Number"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 6,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hi, this is Adam with LHB. Interested in exploring opportunities for 5186 Copper Creek Dr? Let me know if you'd like to chat. Thanks!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi, I'm Adam with LHB. Came across 5186 Copper Creek Dr and wondered if you'd be open to discussing any possibilities for it?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi, this is Adam with LHB. Are you open to chatting about 5186 Copper Creek Dr? Let me know!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Scott, I wanted to see if you've considered selling your property at 5186 Copper Creek Dr. Let me know if you'd like to talk. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "I don't own this property anymore",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "I'm so sorry about that! Would you by chance know someone who may want or need to sell their home? We pay up to $1,000 for any referral you bring to us!",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2451,
+    "contact_name": "Julia Nelson",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "Wrong Number"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 7,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hello Dennis E Sayers, Jack w/ LHB here, and hoped to ask something related to 2669 Elliott Ave.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Julia, this is Jack w/ LHB. When you have a moment, could I ask something about 2622 Elliott Ave?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Julia, have you considered selling your property at 2622 Elliott Ave? Happy to talk if it's something you're exploring. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Julia, have you considered selling your property at 2622 Elliott Ave? Happy to talk if it's something you're exploring. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Julia, have you ever considered selling your property at 2622 Elliott Ave? Let me know if you'd like to discuss. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "[Name] A Julia (Nelson) Judge [Mobile] (216) 355-6785",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "I'm so sorry about that! Would you by chance know someone who may want or need to sell their home? We pay up to $1,000 for any referral you bring to us!",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2454,
+    "contact_name": "James Boardrow",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "Wrong Number"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 6,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hey James, noticed in the county records that you own 5497 Gardenbrooke St. Got any plans with that? -Lisa with LHB.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey, it's Adam with LHB. I'd like to chat about a direct deal for 5497 Gardenbrooke St. Would that interest you?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey! This is Adam with LHB. I'm looking for rentals or rehabs in your area. Would you explore a deal at 5497 Gardenbrooke St?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi James, I wanted to see if you've considered selling your property at 5497 Gardenbrooke St. Let me know if you'd like to talk. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Not my house",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "I'm so sorry about that! Would you by chance know someone who may want or need to sell their home? We pay up to $1,000 for any referral you bring to us!",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2448,
+    "contact_name": "Gail Davis",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "Verified",
+      "Not interested"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 12,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hello! Jack with LHB here. Noticed 98 Fabius Way Sw. Would you be open to discussing potential ideas for it?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello! Jack with LHB here. Noticed 98 Fabius Way Sw. Would you be open to discussing potential ideas for it?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello Gail, I'm interested in properties at Pataskala. Is 104 Fabius Way Sw something we could discuss sometime? Jack-LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Hollett, exploring opportunities around Lancaster. Would you consider discussing 921 Spring St in the future? Jack-LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello Hollett, I'd like to discuss your property at 921 Spring St. Curious about your plans. Jack-LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Hollett, any chance you'd consider talking about 921 Spring St sometime soon? -Jack, LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Gail, Jack w/LHB. I'm reaching out to a few homeowners in Pataskala. May I ask you something regarding 104 Fabius Way Sw?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Gail, quick question, have you thought about selling your property at 104 Fabius Way Sw? Let me know. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "No",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Not a problem at all. Do you think it could be for sale within the next 4 months?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "No",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Understood. Do you have anything or know someone who wants to maybe sell? I usually look for homes that need some work. I pay $1000 for referrals I close on.",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2426,
+    "contact_name": "Drema Klatt",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "Wrong Number"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 8,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hi, this is Adam with LHB. Interested in exploring opportunities for 611 Windmiller Dr Apt 257? Let me know if you'd like to chat. Thanks!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey! This is Adam with LHB. Is 611 Windmiller Dr Apt 257 yours? I'd love to discuss a potential deal if you're interested!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey! Jack with LHB here. Saw 611 Windmiller Dr Apt 257 and thought we might explore a deal if you're open to it.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey, this is Jack with LHB. I'm looking at opportunities like 611 Windmiller Dr Apt 257. Are you open to exploring a deal?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Drema, I wanted to see if you've considered selling your property at 611 Windmiller Dr Apt 257. Let me know if you'd like to talk. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "no That's not my property",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "I'm so sorry about that! Would you by chance know someone who may want or need to sell their home? We pay up to $1,000 for any referral you bring to us!",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "no",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2449,
+    "contact_name": "Andrew Ford",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "Do Not Call"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 5,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hi, I'm Adam with LHB. Came across 740 Liverpool Pl and wondered if you'd be open to discussing any possibilities for it?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi, this is Adam with LHB. Are you open to chatting about 740 Liverpool Pl? Let me know!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello! Jack here with LHB. Are you the owner of 740 Liverpool Pl? I'd love to chat about any ideas you're considering.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Andrew, have you considered selling your property at 740 Liverpool Pl? Happy to talk if it's something you're exploring. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Please take us off tge list. I said NO. And don't plan to in the next few months",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2442,
+    "contact_name": "Ernie Slucher",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "FU1",
+      "WL drip"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 14,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hi there! Are you open to the idea of selling property at Newark soon? Shoot me a text if you would like to discuss.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi, this is Adam with LHB. Interested in exploring opportunities for 1020 Fairlawn Ave? Let me know if you'd like to chat. Thanks!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi, I'm Adam with LHB. Came across 1020 Fairlawn Ave and wondered if you'd be open to discussing any possibilities for it?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey! This is Adam with LHB. I'm looking for rentals or rehabs in your area. Would you explore a deal at 1020 Fairlawn Ave?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey, it's Adam with LHB. I'd like to chat about a direct deal for 1020 Fairlawn Ave. Would that interest you?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi, this is Jack from LHB. I'm exploring properties like 1020 Fairlawn Ave. Could we discuss any potential ideas?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey! This is Jack with LHB. Are you the owner of 573 Highmeadows Village Dr? I'd love to discuss any opportunities you have in mind.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello! Jack from LHB here. Saw 1020 Fairlawn Ave. Could we connect to chat about it?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey! Jack with LHB here. Saw 1020 Fairlawn Ave and thought we might explore a deal if you're open to it.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Ernie, hope your day is going well. I'd like to ask something about 573 Highmeadows Village Dr. -Jack w/LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Ernie, have you thought about selling your property at 573 Highmeadows Village Dr lately? Happy to chat if you're open to it. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "400K CASH. No brokers, no agents, just you and me.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hard to give an exact number without more details, but in your area, we typically pay something between 175K-248K in cash, and we would take care of all the fees to closing. Would that interest you?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi, just checking in on 573 Highmeadows Village Dr. Were there any updates, or does everything still look correct? Let me know!",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2444,
+    "contact_name": "Duane Henneman",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "FU3",
+      "WL drip"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 8,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hello! Jack here with LHB. Are you the owner of 3209 Abbey Knoll Dr? I'd love to chat about any ideas you're considering.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Duane, I'd love to chat about opportunities for your property at 3209 Abbey Knoll Dr. I'm available when you are. Jack-LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Duane, have you ever considered selling your property at 3209 Abbey Knoll Dr? Let me know if you'd like to discuss. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Yes",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Got it! Can you tell me a bit about the property's condition? And do you have a price in mind?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey just reaching out if you had a price in mind of what you'd want for 3209 Abbey Knoll Dr?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello Duane. It's okay if not, I can get you a price. Just checking if it's something you still want to sell.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Touching base Duane. Are you still thinking to possibly sell your property at 3209 Abbey Knoll Dr?",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2443,
+    "contact_name": "Sarah Cordonnier",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "FU2",
+      "WL drip"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 7,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hey! Jack with LHB here. I came across 1612 Fallhaven Dr. Could we discuss any potential ideas you have in mind?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Sarah, I'd love to chat about opportunities for your property at 1612 Fallhaven Dr. I'm available when you are. Jack-LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Sarah, quick question, have you thought about selling your property at 1612 Fallhaven Dr? Let me know. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Yes we have",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Got it! Can you tell me a bit about the property's condition? And do you have a price in mind?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey just reaching out if you had a price in mind of what you'd want for 1612 Fallhaven Dr?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello Sarah. It's okay if not, I can get you a price. Just checking if it's something you still want to sell.",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2452,
+    "contact_name": "Steven McCracken",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "Wrong Number"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 8,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hey Sarah. Saw in the county records that you own 2813 Kingsrowe Ct. Have you considered moving? -Adam with LHB.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi, this is Adam with LHB. Are you open to chatting about 2813 Kingsrowe Ct? Let me know!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi, this is Jack with LHB. I came across 7955 Ohio Northern Dr Nw and would love to discuss if you'd consider a potential deal.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Steven, I'd love to chat about opportunities for your property at 7955 Ohio Northern Dr Nw. I'm available when you are. Jack-LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Steven, have you thought about selling your property at 7955 Ohio Northern Dr Nw lately? Happy to chat if you're open to it. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "I don't own this property",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Not a problem at all. Do you think it could be for sale within the next 4 months?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "I don't know, I dont own this property",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2441,
+    "contact_name": "Kris Ehmke",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "FU3",
+      "WL drip"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 25,
+    "messages": [
+      {
+        "sender": "contact",
+        "body": "Sure, call me!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "I would love to but, before we hop on a call can you tell me if you maybe have any plans to sell soon or down the road? I would hate to waste your time if it's not the right fit.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Kris, any chance you'd consider talking about 1898 Greenglen Ct sometime soon? -Jack, LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Sure!! Hit me up",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Great! I am just wondering if you are interested in selling anytime soon?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello Kris, I'm looking into homes near Columbus. Would you be open to a short conversation about 1898 Greenglen Ct? -Jack, LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello Kris, Emma w/ LHB here, and hoped to ask something related to 1898 Greenglen Ct. Is that alright with you?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Sure!!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "I am texting you regarding your property at 1898 Greenglen Ct. Do you have any plans to sell it soon or down the road?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Kris, hope your week's going well. may I ask something about 1898 Greenglen Ct? -Jack w/LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Kris, hope your day is going well. I'd like to ask something about 1898 Greenglen Ct. -Jack w/LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Kris, hope your day is going well. I'd like to ask something about 1898 Greenglen Ct. -Jack w/LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Sure!!! What's up??",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "I recently noticed your property at 1898 Greenglen Ct, and it really stood out to me. Have you considered selling your property?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello Kris, Jack w/ LHB here, and hoped to ask something related to 1898 Greenglen Ct.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Kris, hope you're doing well. May I ask you something about 1898 Greenglen Ct when you have a moment? Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Sure",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Texting you regarding your property at 1898 Greenglen Ct, do you have any plans to sell it soon or down the road?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Kris, have you considered selling your property at 1898 Greenglen Ct? Let me know. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Absolutely!!! Call me!!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "I would love to but, before we hop on a call can you tell me a bit more about the house? I would hate to waste your time if it's not the right fit.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Can you tell me a bit about the property's condition? And do you have a price in mind?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey just reaching out if you had a price in mind of what you'd want for 1898 Greenglen Ct?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello Kris. It's okay if not, I can get you a price. Just checking if it's something you still want to sell.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Touching base Kris. Are you still thinking to possibly sell your property at 1898 Greenglen Ct?",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2435,
+    "contact_name": "Regina Ann Obrien-Miller",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "Wrong Number"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 8,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hey Obrien. Saw in the county records that you own 4788 Smoketalk Ln # 7. Have you considered moving? -Adam with LHB.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello Regina Ann, Jack w/ LHB here, and hoped to ask something related to 4788 Smoketalk Ln.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Regina Ann, have you thought about selling your property at 4788 Smoketalk Ln lately? Happy to chat if you're open to it. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Regina Ann, I wanted to see if you've considered selling your property at 4788 Smoketalk Ln. Let me know if you'd like to talk. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Regina Ann, I wanted to see if you've considered selling your property at 4788 Smoketalk Ln. Let me know if you'd like to talk. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Regina Ann, have you thought about selling your place at 4788 Smoketalk Ln? Let me know. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Do your home work. Have not owned that property in 2 YEARS.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Understood. Do you have anything or know someone who wants to maybe sell? I usually look for homes that need some work. I pay $1000 for referrals I close on.",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2445,
+    "contact_name": "Marisa Unknown",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "Verified",
+      "Not interested"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 9,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hello Leeann, found 3564 Silverado Dr in county records. Would you consider moving? -Lisa with LHB.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi, I'm Adam with LHB. Came across 3564 Silverado Dr and wondered if you'd be open to discussing any possibilities for it?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi, this is Adam with LHB. Are you open to chatting about 3564 Silverado Dr? Let me know!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Marisa, have you considered selling your property at 3564 Silverado Dr? Happy to talk if it's something you're exploring. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "No.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Not a problem at all. Do you think it could be for sale within the next 4 months?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "No. I just bought it",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Understood. Do you have anything or know someone who wants to maybe sell? I usually look for homes that need some work. I pay $1000 for referrals I close on.",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "I dont.",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2450,
+    "contact_name": "Sharma Hodge Hodge",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "Verified",
+      "Not interested"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 9,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hey Joseph, county records say you own 408 Elm St. Any chance you're considering a move? -Lisa with LHB.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi, this is Adam with LHB. Interested in exploring opportunities for 408 Elm St? Let me know if you'd like to chat. Thanks!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi, I'm Adam with LHB. Came across 408 Elm St and wondered if you'd be open to discussing any possibilities for it?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Sharma Hodge, have you considered selling your property at 408 Elm St? Happy to talk if it's something you're exploring. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "House is not for sale",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Not a problem at all. Do you think it could be for sale within the next 4 months?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "No",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Understood. Do you have anything or know someone who wants to maybe sell? I usually look for homes that need some work. I pay $1000 for referrals I close on.",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "No, not at this time",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2455,
+    "contact_name": "Tom Roll",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "Wrong Number"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 25,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hey there! This is Lisa reaching out. Spotted your property in Columbus. Can we have a discussion?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey there! This is Lisa reaching out. Spotted your property in Columbus. Can we have a discussion?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey! Emma here. I wanted to touch base with you about your property in Columbus. Have you considered letting it go?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi there, it's Lisa reaching out! I've noticed your place in Columbus. Could we talk about it sometime?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey , spotted your property in Columbus. Ready to talk? -Zack",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi there! How are you doing today? This is David reaching out. Would you like to sell your property at Columbus anytime soon?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi there! Are you open to the idea of selling property at Columbus soon? Shoot me a text if you would like to discuss.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Greetings! David here, reaching out to discuss your property in Columbus that caught my eye online. Do you have a moment to chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi there! This is David reaching out. I saw your property at Columbus online, do you have time to discuss it?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi there! This is David reaching out. I saw your property at Columbus online, do you have time to discuss it?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi there! I am your neighbor in Columbus do you have time to talk? I was wondering if there is any plans to sell it.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi there! How are you doing today? This is David reaching out. Would you like to sell your property at Columbus anytime soon?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Greetings! David here, reaching out to discuss your property in Columbus that caught my eye online. Do you have a moment to chat?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey there! Do you have any plans for your property at Columbus? I think that we can purchase it. Reply yes to get connected.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi there! Are you open to the idea of selling property at Columbus soon? Shoot me a text if you would like to discuss.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi there! Are you open to the idea of selling property at Columbus soon? Shoot me a text if you would like to discuss.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello there! ! I've been in the RE market for a while and I'd like to add some properties to my portfolio. Would you like to sell your property at Columbus?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi, this is Adam with LHB. Are you open to chatting about 2858 E Livingston Ave? Let me know!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello , hope you're doing well. Would it be alright to ask you something about 117 Haldy Ave? -Jack w/LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Tom, quick question, have you thought about selling your property at 2747 Gregory Rd? Let me know. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Tom, have you considered selling your property at 2747 Gregory Rd? Happy to talk if it's something you're exploring. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Tom, have you ever considered selling your property at 2747 Gregory Rd? Let me know if you'd like to discuss. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Tom, I wanted to see if you've considered selling your property at 2747 Gregory Rd. Let me know if you'd like to talk. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Not tom",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "I'm so sorry about that! Would you by chance know someone who may want or need to sell their home? We pay up to $1,000 for any referral you bring to us!",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2430,
+    "contact_name": "Kathryn Gardner",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "Do Not Call"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 8,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hi, this is Adam with LHB. Are you open to chatting about 7674 Brandon Rd? Let me know!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey, it's Adam with LHB. I'd like to chat about a direct deal for 7674 Brandon Rd. Would that interest you?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey! This is Jack with LHB. Are you the owner of 7674 Brandon Rd? I'd love to discuss any opportunities you have in mind.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Kathryn, hope your week's going well. may I ask something about 7674 Brandon Rd? -Jack w/LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Kathryn, hope your week's going well. may I ask something about 7674 Brandon Rd? -Jack w/LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Kathryn, have you thought about selling your place at 7674 Brandon Rd? Let me know. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Jack who ate you.  I do not suffer unidendentified AI entities.   Only live human beings with a SSN.  And who are not ashamed to identify themselves professionally, and accurately.  Which means you have a registered cell phone.  And a real company.  Not a schill.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "I'm reaching out regarding your property at 7674 Brandon Rd. I'm a local buyer who handles a few homes a year, and I was wondering if you'd consider selling it soon? With LHB-Local home buyers",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2428,
+    "contact_name": "Kevin Foley",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "Verified",
+      "Not interested"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 7,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hey! This is Adam with LHB. Is 6349 Oisin Ct yours? I'd love to discuss a potential deal if you're interested!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi, this is Adam with LHB. Interested in exploring opportunities for 6349 Oisin Ct? Let me know if you'd like to chat. Thanks!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey! This is Jack with LHB. Is 6349 Oisin Ct yours? I'd love to discuss possibilities if you're interested!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Kevin, have you considered selling your property at 1735 North Star Rd? Let me know. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "I get a dozen cold calls like this a day. Appreciation is slowing. The math to cash flow a rental property in this macro environment is bleak for new entrants.  Show me you know something I don't by sending a real offer. Otherwise don't waste my time",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Got it! Can you tell me a bit about the property's condition? And do you have a price in mind?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "To be clear. You reached out about an unlisted property to someone not actively trying to sell. Nothing about this conversation interests me. Give me a number or a range to get me interested. I'm not going to waste my time giving you information you can find online just to get a low ball offer I'm going to reject. Prove to me this is worth my time",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2431,
+    "contact_name": "William Langdon",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "Verified",
+      "Not interested"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 11,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hey William, noticed in the county records that you own 6225 Steitz Rd. Got any plans with that? -Lisa with LHB.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi, this is Adam with LHB. Are you open to chatting about 6225 Steitz Rd? Let me know!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey! This is Jack with LHB. Is 6225 Steitz Rd yours? I'd love to discuss possibilities if you're interested!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi William, I've been checking out properties in your area and thought I'd touch base. Let me know if you're open to talking! -Jack, LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi, this is Jack with LHB. I came across 6225 Steitz Rd and would love to discuss if you'd consider a potential deal.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi William, have you considered selling your property at 6625 Steitz Rd? Happy to talk if it's something you're exploring. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "No",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Not a problem at all. Do you think it could be for sale within the next 4 months?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "No",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Understood. Do you have anything or know someone who wants to maybe sell? I usually look for homes that need some work. I pay $1000 for referrals I close on.",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "No, I don't.",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2412,
+    "contact_name": "Ezra Wallake",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "Lead, Pushed",
+      "Pushed to client"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 21,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hi, Lisa reaching out. Noticed your property in Worthington. Can we set up a time to discuss?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi there, it's Lisa reaching out! I've noticed your place in Worthington. Could we talk about it sometime?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey, I came across your property in Worthington. Are you available for a discussion? -Lisa",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey, I came across your property in Worthington. Are you available for a discussion? -Lisa",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey there! Do you have any plans for your property at Worthington? I think that we can purchase it. Reply yes to get connected.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey! Noah here. I wanted to touch base with you about your property in Worthington. Have you considered letting it go?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello! Jack here from LHB. Came across 285 Mccoy Ave. Open to chatting about a deal?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey Ezra, hope you're well. Have you given any thought to what you might want to do with 285 Mccoy Ave down the line? Jack-LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello Ezra, I'm reaching out about 285 Mccoy Ave. Could we chat for a moment? -Jack w/LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Ezra, have you thought about selling your place at 68 Wilwood Ave? Let me know. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Yep",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Got it! Can you tell me a bit about the property's condition? And do you have a price in mind?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey just reaching out if you had a price in mind of what you'd want for 68 Wilwood Ave?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "The highest amount",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Just wanted to make sure if you had a price range in mind you don't want to go below?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello Ezra. It's okay if not, I can get you a price. Just checking if it's something you still want to sell.",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Yeah, 15k",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Alright, but if you don't mind me asking, could you share a bit about the reason for selling? I completely understand if it's personal.",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "I am a builder and we aren't building on the lot",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "It's a vacant lot. It used to have a house on it",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Great, I'll have my partner touch base soon to go over the next steps. I'm really looking forward to seeing where this goes and hopefully working together! Have a great day!",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2408,
+    "contact_name": "Andrew Haack",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "FU1",
+      "WL drip"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 8,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hi Andrew, hope your week's going well. may I ask something about 6366 Red Bank Ct? -Jack w/LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Andrew, have you thought about selling your place at 6366 Red Bank Ct? Let me know. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Andrew, have you thought about selling your property at 6366 Red Bank Ct lately? Happy to chat if you're open to it. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Andrew, have you thought about selling your place at 6366 Red Bank Ct? Let me know. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Okay",
+        "sent_at": null
+      },
+      {
+        "sender": "system",
+        "body": "Missed call",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Got it! Can you tell me a bit about the property's condition? And do you have a price in mind?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey just reaching out if you had a price in mind of what you'd want for 6366 Red Bank Ct?",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2422,
+    "contact_name": "Anthony Cody",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "Wrong Number"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 9,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hey! This is Adam with LHB. I'm looking for rentals or rehabs in your area. Would you explore a deal at 13350 Yankeetown Chenoweth Rd?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi! I'm Adam with LHB. Curious if you'd like to work out a deal on 13350 Yankeetown Chenoweth Rd? Let me know if interested!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey, this is Jack with LHB. I'm looking at properties like 13350 Yankeetown Chenoweth Rd. Let me know if you'd be open to a deal!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Anthony, this is Jack w/ LHB. When you have a moment, could I ask something about 13350 Yankeetown Chenoweth Rd?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Anthony, have you thought about selling your place at 13350 Yankeetown Chenoweth Rd? Let me know. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Anthony, quick question, have you thought about selling your property at 13350 Yankeetown Chenoweth Rd? Let me know. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "This is not Anthony !!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "I'm so sorry about that! Would you by chance know someone who may want or need to sell their home? We pay up to $1,000 for any referral you bring to us!",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Don't know anyone at this time.",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2409,
+    "contact_name": "Michael Conrad",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "FU1",
+      "HL drip"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 12,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hey Michael, noticed in the county records that you own 2176 - 2178 Big Tree Dr. Got any plans with that? -Lisa with LHB.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey! This is Adam with LHB. I'm looking for rentals or rehabs in your area. Would you explore a deal at Josephine Ave?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey, it's Sarah with LHB. I'd like to chat about a direct deal for Josephine Ave . Would that interest you?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey! This is Adam with LHB. Is Josephine Ave yours? I'd love to discuss a potential deal if you're interested!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi, this is Jack from LHB. I'm exploring properties like Josephine Ave. Could we discuss any potential ideas?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Michael, exploring opportunities around Columbus. Would you consider discussing 2176 - 2178 Big Tree Dr in the future? Jack-LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello Michael, hope you're doing well. Would it be alright to ask you something about 2176 - 2178 Big Tree Dr? -Jack w/LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Michael, I wanted to see if you've considered selling your property at 2176 - 2178 Big Tree Dr. Let me know if you'd like to talk. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Yes adding 100,000 for it",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Asking",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Got it! Can you tell me a bit about the property's condition?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi, just checking in on 2176 - 2178 Big Tree Dr. Were there any updates, or does everything still look correct? Let me know!",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2414,
+    "contact_name": "John Antritt",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "Lead, Pushed",
+      "Pushed to client"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 16,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hey! This is Jack with LHB. Is 11 3Rd Ave Sw yours? I'd love to discuss possibilities if you're interested!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello John, I'd like to discuss your property at 11 3Rd Ave Sw. Curious about your plans. Jack-LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey John, hope you're well. Have you given any thought to what you might want to do with 11 3rd Ave Sw down the line? Jack-LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello John, have you explored any opportunities for 11 3rd Ave Sw? -Jack, LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi John, Jack w/LHB. I'm reaching out to a few homeowners in Etna. May I ask you something regarding 11 3rd Ave Sw?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi John, quick question, have you thought about selling your property at 11 3rd Ave Sw? Let me know. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "No Sir",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Going to sell my property in Logan Ohio though",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Sure feel free to send me the full address to the property so I can look it up.",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "33342 Blackburn road",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Got it! Can you tell me a bit about the property's condition? And do you have a price in mind?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Feel free to call me",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "I would love to but, before we hop on a call can you tell me a bit more about the house? I would hate to waste your time if it's not the right fit.",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Don't like texting",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "I'll have my partner touch base soon to go over the next steps. I'm really looking forward to seeing where this goes and hopefully working together! Have a great day!",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Ok",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2427,
+    "contact_name": "Andy Waibel Waibel",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "Wrong Number"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 7,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hello! Jack here from LHB. Came across 6464 Bellbrook Pl. Open to chatting about a deal?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Anand, exploring opportunities around Worthington. Would you consider discussing 6464 Bellbrook Pl in the future? Jack-LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Anand, curious if you've ever thought about opportunities for 6464 Bellbrook Pl? I'd love to chat whenever you're ready. Jack-LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Andy Waibel, have you thought about selling your property at 13376 Laurel Rd Ne? Let's discuss if you're interested. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Its been sold",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "I'm so sorry about that! Would you by chance know someone who may want or need to sell their home? We pay up to $1,000 for any referral you bring to us!",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Sorry, we live in FL",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2413,
+    "contact_name": "Dhana Gurung",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "Do Not Call"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 7,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hey! Jack with LHB here. Saw 507 Stockbridge Rd and thought we might explore a deal if you're open to it.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello Deborah, I'm interested in properties at Columbus. Is 507 Stockbridge Rd something we could discuss sometime? Jack-LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello Dhana, Jack w/ LHB here, and hoped to ask something related to 1781 Coronet Dr.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Dhana, quick question, have you thought about selling your property at 1781 Coronet Dr? Let me know. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Dhana, I wanted to see if you've considered selling your property at 1781 Coronet Dr. Let me know if you'd like to talk. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Dhana, have you ever considered selling your property at 1781 Coronet Dr? Let me know if you'd like to discuss. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Stop texting me i don't have nothing to do with that",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2429,
+    "contact_name": "Eric McGuire",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "Do Not Call"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 7,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hey, it's Adam with LHB. I'd like to chat about a direct deal for 3475 Lindstrom Dr. Would that interest you?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi, this is Adam with LHB. Interested in exploring opportunities for 3475 Lindstrom Dr? Let me know if you'd like to chat. Thanks!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi! I'm Adam with LHB. Curious if you'd like to work out a deal on 3475 Lindstrom Dr? Let me know if interested!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Eric, have you thought about selling your property at 3475 Lindstrom Dr? Let's discuss if you're interested. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "No",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Not a problem at all. Do you think it could be for sale within the next 4 months?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "No.  Seriously , does this really work? I block every number that does this, so you can take me off the list or waste your time-your choice.",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2425,
+    "contact_name": "Jeffrey Barber",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "Do Not Call"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 7,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hello Pab of Ohio, I'm reaching out about 4621 Jae Ave # 4623. Could we chat for a moment? -Jack w/LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello Pab of Ohio, I'm reaching out about 4621 Jae Ave # 4623. Could we chat for a moment? -Jack w/LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Jeffrey, have you thought about selling your property at 10533 Villa Ct? Let's discuss if you're interested. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Jeffrey, have you thought about selling your place at 10533 Villa Ct? Let me know. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Sure.. what's the offer",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Got it! Can you tell me a bit about the property's condition? And do you have a price in mind?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "Wouldn't take less than $1500000",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2424,
+    "contact_name": "Jeffrey Squeo",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "Verified",
+      "Not interested"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 10,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hey there! This is David reaching out. Spotted your property in Columbus online. Can we have a discussion?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello there! This is Lisa here. I found your property in Columbus. Can we discuss it at your convenience?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hey! Noah here. I wanted to touch base with you about your property in Columbus. Have you considered letting it go?",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Jeffrey, are you the right person to ask about 709 Cherry Hollow Rd? -Jack with LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello Jeffrey, Jack w/ LHB here, and hoped to ask something related to 709 Cherry Hollow Rd.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Jeffrey, have you thought about selling your place at 709 Cherry Hollow Rd? Let me know. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "No",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Not a problem at all. Do you think it could be for sale within the next 4 months?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "No",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Understood. Do you have anything or know someone who wants to maybe sell? I usually look for homes that need some work. I pay $1000 for referrals I close on.",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2434,
+    "contact_name": "Hongdong Zheng",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "Verified",
+      "Not interested"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 7,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hey Hongdong, noticed in the county records that you own 1917 Stockwell Dr. Got any plans with that? -Lisa with LHB.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi, this is Adam with LHB. Interested in exploring opportunities for 1917 Stockwell Dr? Let me know if you'd like to chat. Thanks!",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Hongdong, have you thought about selling your property at 1917 Stockwell Dr lately? Happy to chat if you're open to it. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "No,",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Not a problem at all. Do you think it could be for sale within the next 4 months?",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "We don't have plan",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Understood. Do you have anything or know someone who wants to maybe sell? I usually look for homes that need some work. I pay $1000 for referrals I close on.",
+        "sent_at": null
+      }
+    ]
+  },
+  {
+    "conversation_id": 2410,
+    "contact_name": "Thomas Horner",
+    "texter_name": "Khaled Mahmoud Abdelbaky Ali mosa",
+    "account_name": "Noah",
+    "assigned_labels": [
+      "Undefined"
+    ],
+    "funnel_tier": "NF",
+    "guidelines": "(Ask about) \nConditions\nAsking price\nClosing\nmotivation",
+    "agent_id": 1,
+    "msg_count": 5,
+    "messages": [
+      {
+        "sender": "agent",
+        "body": "Hi, this is Jack with LHB. I came across 9417 Avemore Ct and would love to discuss if you'd consider a potential deal.",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hello Thomas, I'd like to discuss your property at 9417 Avemore Ct. Curious about your plans. Jack-LHB",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Hi Thomas, have you considered selling your property at 9417 Avemore Ct? Let me know. -Jack",
+        "sent_at": null
+      },
+      {
+        "sender": "contact",
+        "body": "..",
+        "sent_at": null
+      },
+      {
+        "sender": "agent",
+        "body": "Texting you regarding your property at 9417 Avemore Ct, do you have any plans to sell it soon or down the road?",
+        "sent_at": null
+      }
+    ]
+  }
+]

@@ -1,0 +1,651 @@
+{E89AFD16-B155-4CD5-AF56-DB901D233397}.png<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmarterContact — Label Reference Guide</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       hsl(240,6%,9%);
+      --bg2:      hsl(240,5%,12%);
+      --bg3:      hsl(240,5%,15%);
+      --border:   rgba(255,255,255,.07);
+      --text:     #e4e4e7;
+      --muted:    #71717a;
+      --brand:    #8251EE;
+      --green:    #10B981;
+      --yellow:   #F59E0B;
+      --blue:     #3B82F6;
+      --red:      #EF4444;
+      --orange:   #F97316;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.6;
+    }
+
+    /* ── Header ── */
+    .hero {
+      background: linear-gradient(135deg, hsl(240,6%,11%) 0%, hsl(258,40%,14%) 100%);
+      border-bottom: 1px solid rgba(130,81,238,.25);
+      padding: 56px 40px 48px;
+      text-align: center;
+    }
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(130,81,238,.15); border: 1px solid rgba(130,81,238,.3);
+      color: #a78bfa; font-size: .72rem; font-weight: 600; letter-spacing: .06em;
+      text-transform: uppercase; padding: 4px 12px; border-radius: 99px;
+      margin-bottom: 20px;
+    }
+    .hero h1 {
+      font-size: clamp(1.6rem, 4vw, 2.4rem);
+      font-weight: 700; color: #fff; letter-spacing: -.02em;
+      margin-bottom: 10px;
+    }
+    .hero p {
+      font-size: .95rem; color: var(--muted); max-width: 540px; margin: 0 auto;
+    }
+    .hero-stats {
+      display: flex; justify-content: center; gap: 32px; margin-top: 32px;
+      flex-wrap: wrap;
+    }
+    .stat { text-align: center; }
+    .stat-num { font-size: 1.5rem; font-weight: 700; color: #fff; }
+    .stat-lbl { font-size: .7rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-top: 2px; }
+
+    /* ── Layout ── */
+    .page { max-width: 960px; margin: 0 auto; padding: 48px 24px 80px; }
+
+    /* ── Section headers ── */
+    .section-header {
+      display: flex; align-items: center; gap: 12px;
+      margin: 52px 0 20px;
+    }
+    .section-icon {
+      width: 36px; height: 36px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1rem; flex-shrink: 0;
+    }
+    .section-title { font-size: 1rem; font-weight: 700; color: #fff; }
+    .section-desc  { font-size: .78rem; color: var(--muted); margin-top: 1px; }
+    .section-line  { flex: 1; height: 1px; background: var(--border); }
+
+    /* ── Label cards grid ── */
+    .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+    .cards.wide { grid-template-columns: 1fr; }
+
+    .card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px 20px;
+      transition: border-color .15s, background .15s;
+    }
+    .card:hover { background: var(--bg3); border-color: rgba(255,255,255,.12); }
+
+    .card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+    .card-label {
+      font-size: .88rem; font-weight: 700; color: #fff;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .badge {
+      display: inline-flex; align-items: center;
+      padding: 2px 9px; border-radius: 99px;
+      font-size: .65rem; font-weight: 700; letter-spacing: .04em;
+      text-transform: uppercase; white-space: nowrap;
+    }
+    .card-def  { font-size: .82rem; color: #a1a1aa; margin-bottom: 12px; line-height: 1.55; }
+    .card-example {
+      background: rgba(255,255,255,.04);
+      border-left: 3px solid var(--brand);
+      border-radius: 0 8px 8px 0;
+      padding: 10px 12px;
+      font-size: .78rem; color: #d4d4d8;
+    }
+    .card-example .ex-label { font-size: .65rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+    .card-example .msg { margin: 3px 0; }
+    .card-example .msg .who { color: var(--muted); font-size: .7rem; }
+    .card-example .result { margin-top: 8px; font-size: .72rem; font-weight: 600; }
+
+    /* colour helpers */
+    .c-green  { color: var(--green); }
+    .c-yellow { color: var(--yellow); }
+    .c-blue   { color: var(--blue); }
+    .c-red    { color: var(--red); }
+    .c-orange { color: var(--orange); }
+    .c-brand  { color: var(--brand); }
+    .c-muted  { color: var(--muted); }
+
+    .bg-green  { background: rgba(16,185,129,.12);  color: var(--green);  border: 1px solid rgba(16,185,129,.25); }
+    .bg-yellow { background: rgba(245,158,11,.12);  color: var(--yellow); border: 1px solid rgba(245,158,11,.25); }
+    .bg-blue   { background: rgba(59,130,246,.12);  color: var(--blue);   border: 1px solid rgba(59,130,246,.25); }
+    .bg-red    { background: rgba(239,68,68,.12);   color: var(--red);    border: 1px solid rgba(239,68,68,.25); }
+    .bg-orange { background: rgba(249,115,22,.12);  color: var(--orange); border: 1px solid rgba(249,115,22,.25); }
+    .bg-brand  { background: rgba(130,81,238,.12);  color: #a78bfa;       border: 1px solid rgba(130,81,238,.25); }
+    .bg-muted  { background: rgba(113,113,122,.1);  color: var(--muted);  border: 1px solid rgba(113,113,122,.2); }
+
+    .card-example .ex-border-green  { border-left-color: var(--green); }
+    .card-example .ex-border-yellow { border-left-color: var(--yellow); }
+    .card-example .ex-border-blue   { border-left-color: var(--blue); }
+    .card-example .ex-border-red    { border-left-color: var(--red); }
+    .card-example .ex-border-orange { border-left-color: var(--orange); }
+
+    /* ── Important note ── */
+    .note {
+      background: rgba(130,81,238,.07);
+      border: 1px solid rgba(130,81,238,.2);
+      border-radius: 12px; padding: 16px 20px;
+      font-size: .82rem; color: #c4b5fd;
+      margin-top: 48px; display: flex; gap: 12px; align-items: flex-start;
+    }
+    .note-icon { font-size: 1.1rem; flex-shrink: 0; margin-top: 1px; }
+
+    /* ── Footer ── */
+    footer {
+      text-align: center; padding: 32px 24px;
+      font-size: .72rem; color: var(--muted);
+      border-top: 1px solid var(--border);
+      margin-top: 32px;
+    }
+
+    /* ── Print — keep dark theme ── */
+    @media print {
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Hero ── -->
+<div class="hero">
+  <div class="hero-badge">📋 Internal Reference</div>
+  <h1>SmarterContact Label Guide</h1>
+  <p>Every label your team uses — what it means, when to use it, and a real example for each one.</p>
+  <div class="hero-stats">
+    <div class="stat"><div class="stat-num">6</div><div class="stat-lbl">Lead Stage</div></div>
+    <div class="stat"><div class="stat-num">9</div><div class="stat-lbl">Follow-Up</div></div>
+    <div class="stat"><div class="stat-num">2</div><div class="stat-lbl">Outcome</div></div>
+    <div class="stat"><div class="stat-num">11</div><div class="stat-lbl">Rejection</div></div>
+  </div>
+</div>
+
+<div class="page">
+
+  <!-- ════════════════════════════════════════════
+       SECTION 1 — LEAD STAGE
+  ═════════════════════════════════════════════ -->
+  <div class="section-header">
+    <div class="section-icon bg-green" style="font-size:.7rem; font-weight:800; letter-spacing:-.01em;">01</div>
+    <div>
+      <div class="section-title">Lead Stage Labels</div>
+      <div class="section-desc">How qualified is the lead right now?</div>
+    </div>
+    <div class="section-line"></div>
+  </div>
+
+  <div class="cards">
+
+    <div class="card">
+      <div class="card-top">
+        <div class="card-label">New Lead</div>
+        <span class="badge bg-muted">Stage 0</span>
+      </div>
+      <div class="card-def">First time you reached out. The lead hasn't said anything meaningful yet — or hasn't replied at all.</div>
+      <div class="card-example">
+        <div class="ex-label">Example</div>
+        <div class="msg"><span class="who">Agent →</span> "Hey John, I'd love to chat about your property at 123 Main St. — Jack"</div>
+        <div class="msg"><span class="who">Lead →</span> <em style="color:var(--muted)">(no reply)</em></div>
+        <div class="result c-muted">New Lead</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
+        <div class="card-label">Potential</div>
+        <span class="badge bg-green">Stage 1 · WF</span>
+      </div>
+      <div class="card-def">The lead showed any sign of interest — even soft or hesitant. They didn't say a hard no. Anything with a "but" after it still counts.</div>
+      <div class="card-example">
+        <div class="ex-label">Example</div>
+        <div class="msg"><span class="who">Lead →</span> "Depends on the price I guess…"</div>
+        <div class="msg"><span class="who">Lead →</span> "How does that work?"</div>
+        <div class="msg"><span class="who">Lead →</span> "Maybe, not sure yet"</div>
+        <div class="result c-green">Potential</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
+        <div class="card-label">Warm</div>
+        <span class="badge bg-yellow">Stage 2 · MF</span>
+      </div>
+      <div class="card-def">The lead is genuinely engaged and has shared 1–2 real pieces of information — condition, price range, reason for selling, or timeline.</div>
+      <div class="card-example">
+        <div class="ex-label">Example</div>
+        <div class="msg"><span class="who">Lead →</span> "Yeah the house needs work. Been thinking about selling."</div>
+        <div class="msg" style="font-size:.72rem; color:var(--muted); margin-top:4px;">Agent knows: condition + motivation </div>
+        <div class="result c-yellow">Warm</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
+        <div class="card-label">Hot</div>
+        <span class="badge" style="background:rgba(239,68,68,.12);color:#f87171;border:1px solid rgba(239,68,68,.25);">Stage 3 · NF</span>
+      </div>
+      <div class="card-def">Seriously interested. All 4 key questions are on the table — condition, price, reason, and timeline. This is a real deal conversation.</div>
+      <div class="card-example">
+        <div class="ex-label">Example</div>
+        <div class="msg"><span class="who">Lead →</span> "Roof needs work, want $180k, going through divorce, need to close in 3 months."</div>
+        <div class="msg" style="font-size:.72rem; color:var(--muted); margin-top:4px;">All 4 pillars: condition price motivation timeline </div>
+        <div class="result c-red">Hot</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
+        <div class="card-label">Lead</div>
+        <span class="badge bg-brand">Fully Qualified</span>
+      </div>
+      <div class="card-def">Fully qualified with specific answers to all 4 pillars. You're no longer prospecting — you're negotiating. Ready to be pushed to a closer.</div>
+      <div class="card-example">
+        <div class="ex-label">Example</div>
+        <div class="msg"><span class="who">Lead →</span> "It's a 3/2, needs updates. I'd want around $175k cash. Going through a divorce, trying to close in 60 days."</div>
+        <div class="result c-brand">Lead</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
+        <div class="card-label">Investor</div>
+        <span class="badge bg-muted">Not a Seller</span>
+      </div>
+      <div class="card-def">The person you're talking to is a buyer or investor — not the property owner. They can't sell you anything.</div>
+      <div class="card-example">
+        <div class="ex-label">Example</div>
+        <div class="msg"><span class="who">Lead →</span> "Oh I don't own this, I just buy and flip properties in the area."</div>
+        <div class="result c-muted">Investor</div>
+      </div>
+    </div>
+
+  </div><!-- /cards -->
+
+
+  <!-- ════════════════════════════════════════════
+       SECTION 2 — FOLLOW-UP STAGE
+  ═════════════════════════════════════════════ -->
+  <div class="section-header">
+    <div class="section-icon bg-blue" style="font-size:.7rem; font-weight:800; letter-spacing:-.01em;">02</div>
+    <div>
+      <div class="section-title">Follow-Up Stage Labels</div>
+      <div class="section-desc">What follow-up was sent, and what are you waiting on?</div>
+    </div>
+    <div class="section-line"></div>
+  </div>
+
+  <div class="cards">
+
+    <div class="card">
+      <div class="card-top">
+        <div class="card-label">FU1</div>
+        <span class="badge bg-blue">Same Day</span>
+      </div>
+      <div class="card-def">First follow-up. Sent the same day the lead went quiet after a question.</div>
+      <div class="card-example" style="border-left-color: var(--blue);">
+        <div class="ex-label">Example</div>
+        <div class="msg">Agent asked about condition at 10am. No reply by evening.</div>
+        <div class="msg"><span class="who">Agent →</span> "Hi, just checking in on 123 Main St. Were there any updates?"</div>
+        <div class="result c-blue">FU1</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
+        <div class="card-label">FU2</div>
+        <span class="badge bg-blue">+2 Days</span>
+      </div>
+      <div class="card-def">Second follow-up. Lead still hasn't replied after FU1. Wait 2 days, then send.</div>
+      <div class="card-example" style="border-left-color: var(--blue);">
+        <div class="ex-label">Example</div>
+        <div class="msg">FU1 sent Monday. No response.</div>
+        <div class="msg"><span class="who">Wednesday →</span> "John, is this home something you still want to sell?"</div>
+        <div class="result c-blue">FU2</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
+        <div class="card-label">FU3</div>
+        <span class="badge bg-blue">+2 Days · Final</span>
+      </div>
+      <div class="card-def">Third and final follow-up. Sent 2 days after FU2. After this — stop texting this lead.</div>
+      <div class="card-example" style="border-left-color: var(--blue);">
+        <div class="ex-label">Example</div>
+        <div class="msg">FU2 sent Wednesday. No response.</div>
+        <div class="msg"><span class="who">Friday →</span> "Hi John! Looks like this isn't top of mind. We pay $1,000 referrals if you know anyone. Have a great day!"</div>
+        <div class="result c-blue">FU3 — then stop</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
+        <div class="card-label">WL drip</div>
+        <span class="badge bg-muted">Waiting on Condition</span>
+      </div>
+      <div class="card-def">You asked about the condition of the property. The lead hasn't answered yet. You're in the follow-up sequence waiting on that answer.</div>
+      <div class="card-example">
+        <div class="ex-label">Example</div>
+        <div class="msg"><span class="who">Agent →</span> "Have you done any repairs in the last 4–5 years?"</div>
+        <div class="msg"><span class="who">Lead →</span> <em style="color:var(--muted)">(no reply)</em></div>
+        <div class="result c-muted">WL drip</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
+        <div class="card-label">AP drip</div>
+        <span class="badge bg-muted">Waiting on Price</span>
+      </div>
+      <div class="card-def">You asked what price they're looking for. The lead hasn't answered yet.</div>
+      <div class="card-example">
+        <div class="ex-label">Example</div>
+        <div class="msg"><span class="who">Agent →</span> "If you could sell as-is for cash, where would you need to be on price?"</div>
+        <div class="msg"><span class="who">Lead →</span> <em style="color:var(--muted)">(no reply)</em></div>
+        <div class="result c-muted">AP drip</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
+        <div class="card-label">HL drip</div>
+        <span class="badge bg-muted">Waiting on Timeline</span>
+      </div>
+      <div class="card-def">You asked about their closing timeline. The lead hasn't answered yet.</div>
+      <div class="card-example">
+        <div class="ex-label">Example</div>
+        <div class="msg"><span class="who">Agent →</span> "What kind of timeline would you have in mind for closing?"</div>
+        <div class="msg"><span class="who">Lead →</span> <em style="color:var(--muted)">(no reply)</em></div>
+        <div class="result c-muted">HL drip</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
+        <div class="card-label">Reason FU</div>
+        <span class="badge bg-muted">Waiting on Motivation</span>
+      </div>
+      <div class="card-def">You asked why they want to sell. The lead hasn't answered yet.</div>
+      <div class="card-example">
+        <div class="ex-label">Example</div>
+        <div class="msg"><span class="who">Agent →</span> "Could you share a bit about the reason for selling? Totally understand if it's personal."</div>
+        <div class="msg"><span class="who">Lead →</span> <em style="color:var(--muted)">(no reply)</em></div>
+        <div class="result c-muted">Reason FU</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
+        <div class="card-label">Waiting to be pushed</div>
+        <span class="badge bg-green">Ready to Escalate</span>
+      </div>
+      <div class="card-def">The lead is fully qualified — all 4 pillars are confirmed. The agent is done. This needs to go to the closer now.</div>
+      <div class="card-example">
+        <div class="ex-label">Example</div>
+        <div class="msg">Lead gave: condition price motivation timeline </div>
+        <div class="msg">Agent hasn't handed it off yet.</div>
+        <div class="result c-green">Waiting to be pushed</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
+        <div class="card-label">Pushed to client</div>
+        <span class="badge bg-brand">Handed Off</span>
+      </div>
+      <div class="card-def">Done. The lead has been handed off to the buyer or closer. The agent's job on this one is finished.</div>
+      <div class="card-example">
+        <div class="ex-label">Example</div>
+        <div class="msg">Agent sent the full deal summary to the buyer team.</div>
+        <div class="result c-brand">Pushed to client</div>
+      </div>
+    </div>
+
+  </div><!-- /cards -->
+
+
+  <!-- ════════════════════════════════════════════
+       SECTION 3 — OUTCOME
+  ═════════════════════════════════════════════ -->
+  <div class="section-header">
+    <div class="section-icon bg-yellow" style="font-size:.7rem; font-weight:800; letter-spacing:-.01em;">03</div>
+    <div>
+      <div class="section-title">Outcome Labels</div>
+      <div class="section-desc">What was the final result of this conversation?</div>
+    </div>
+    <div class="section-line"></div>
+  </div>
+
+  <div class="cards">
+
+    <div class="card">
+      <div class="card-top">
+        <div class="card-label">Deal closed</div>
+        <span class="badge bg-green">Closed</span>
+      </div>
+      <div class="card-def">The deal is done. Transaction completed successfully.</div>
+      <div class="card-example" style="border-left-color: var(--green);">
+        <div class="ex-label">Example</div>
+        <div class="msg">Property at 123 Main St. signed, funded, and closed.</div>
+        <div class="result c-green">Deal closed</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
+        <div class="card-label">Sold</div>
+        <span class="badge bg-green">Property Sold</span>
+      </div>
+      <div class="card-def">The property has been sold — confirmed by the lead.</div>
+      <div class="card-example" style="border-left-color: var(--green);">
+        <div class="ex-label">Example</div>
+        <div class="msg"><span class="who">Lead →</span> "We already sold the house last month actually."</div>
+        <div class="result c-green">Sold</div>
+      </div>
+    </div>
+
+  </div><!-- /cards -->
+
+
+  <!-- ════════════════════════════════════════════
+       SECTION 4 — REJECTION
+  ═════════════════════════════════════════════ -->
+  <div class="section-header">
+    <div class="section-icon bg-red" style="font-size:.7rem; font-weight:800; letter-spacing:-.01em;">04</div>
+    <div>
+      <div class="section-title">Rejection &amp; Disqualification Labels</div>
+      <div class="section-desc">Why is this lead dead, paused, or disqualified?</div>
+    </div>
+    <div class="section-line"></div>
+  </div>
+
+  <div class="cards">
+
+    <div class="card">
+      <div class="card-top">
+        <div class="card-label">Not Interested</div>
+        <span class="badge bg-muted">Soft No · Stop</span>
+      </div>
+      <div class="card-def">The lead said no — and you used all 3 rebuttals. They didn't demand removal, they just don't want to sell. Stop texting after this.</div>
+      <div class="card-example">
+        <div class="ex-label">Example</div>
+        <div class="msg">Agent used all 3 rebuttals. Lead kept saying no. Never said "remove me."</div>
+        <div class="result c-muted">Not Interested — stop texting</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
+        <div class="card-label">Verified</div>
+        <span class="badge bg-muted">Confirmed Not Interested</span>
+      </div>
+      <div class="card-def">Not interested confirmed across at least 2 separate contacts. Not just a one-time brush-off — this one is double-confirmed.</div>
+      <div class="card-example">
+        <div class="ex-label">Example</div>
+        <div class="msg"><span class="who">First contact →</span> "Not interested."</div>
+        <div class="msg"><span class="who">Follow-up 2 days later →</span> "Still no, not looking to sell."</div>
+        <div class="result c-muted">Verified</div>
+        <div class="msg" style="margin-top:6px; font-size:.7rem; color:var(--red);">Note: Do NOT use after just one "no"</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
+        <div class="card-label">Maybe Later</div>
+        <span class="badge bg-yellow">Future Pipeline</span>
+      </div>
+      <div class="card-def">Not ready to sell now — but left the door open. Keep them in the pipeline and check back.</div>
+      <div class="card-example" style="border-left-color: var(--yellow);">
+        <div class="ex-label">Example</div>
+        <div class="msg"><span class="who">Lead →</span> "Not right now, maybe in about 6 months."</div>
+        <div class="msg"><span class="who">Agent →</span> "Totally fine, I'll check back in with you."</div>
+        <div class="result c-yellow">Maybe Later</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
+        <div class="card-label">Stopped Responding</div>
+        <span class="badge bg-muted">Ghosted</span>
+      </div>
+      <div class="card-def">The lead was engaged and talking — then just disappeared. No hard no, no opt-out, just silence after the follow-up sequence.</div>
+      <div class="card-example">
+        <div class="ex-label">Example</div>
+        <div class="msg">Lead replied twice, was asking questions — then never responded again after the price question. FU1, FU2, FU3 sent. No response.</div>
+        <div class="result c-muted">Stopped Responding</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
+        <div class="card-label">Bluffer</div>
+        <span class="badge bg-orange">Not Serious</span>
+      </div>
+      <div class="card-def">The lead is not being serious. Usually they throw out a ridiculous price to make you go away — but they never said stop. Don't label as DO Not Call unless they actually used opt-out language.</div>
+      <div class="card-example" style="border-left-color: var(--orange);">
+        <div class="ex-label">Example</div>
+        <div class="msg"><span class="who">Lead →</span> "$2 million. That's what I want." <em style="color:var(--muted)">(house worth ~$150k)</em></div>
+        <div class="result c-orange">Bluffer + Abv MV</div>
+        <div class="msg" style="margin-top:6px; font-size:.7rem; color:var(--red);">Note: Do NOT label Warm, Hot, or DO Not Call</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
+        <div class="card-label">Abv MV</div>
+        <span class="badge bg-orange">Above Market Value</span>
+      </div>
+      <div class="card-def">The lead's price expectation is way too high — not realistic for a cash/as-is deal. Often paired with Bluffer.</div>
+      <div class="card-example" style="border-left-color: var(--orange);">
+        <div class="ex-label">Example</div>
+        <div class="msg"><span class="who">Agent →</span> "Where would you need to be on price?"</div>
+        <div class="msg"><span class="who">Lead →</span> "I want $500k." <em style="color:var(--muted)">(property worth ~$200k)</em></div>
+        <div class="result c-orange">Abv MV</div>
+      </div>
+    </div>
+
+    <div class="card" style="border-color: rgba(239,68,68,.2); background: rgba(239,68,68,.04);">
+      <div class="card-top">
+        <div class="card-label" style="color:#f87171;">DO Not Call</div>
+        <span class="badge bg-red">Hard Stop</span>
+      </div>
+      <div class="card-def">The lead explicitly told you to stop — used clear language like "stop texting", "remove me", or "don't contact me again." This is a compliance issue. Stop immediately — no more messages ever.</div>
+      <div class="card-example" style="border-left-color: var(--red);">
+        <div class="ex-label">Example</div>
+        <div class="msg"><span class="who">Lead →</span> "Stop texting me. Remove me from your list."</div>
+        <div class="msg"><span class="who">Lead →</span> "Do not contact me again."</div>
+        <div class="result c-red">DO Not Call — zero contact from now on</div>
+        <div class="msg" style="margin-top:6px; font-size:.7rem; color:var(--muted);">A plain "No" or "Not interested" is NOT enough for this label</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
+        <div class="card-label">Disqualified</div>
+        <span class="badge bg-muted">Can't Sell</span>
+      </div>
+      <div class="card-def">The lead doesn't qualify — they're not the owner, don't have authority to sell, or the property simply doesn't fit.</div>
+      <div class="card-example">
+        <div class="ex-label">Example</div>
+        <div class="msg"><span class="who">Lead →</span> "Oh this isn't my house, I'm just renting it."</div>
+        <div class="result c-muted">Disqualified</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
+        <div class="card-label">Listed</div>
+        <span class="badge bg-muted">On the Market</span>
+      </div>
+      <div class="card-def">The property is already listed with a real estate agent. Do not pursue — it's not a direct seller situation.</div>
+      <div class="card-example">
+        <div class="ex-label">Example</div>
+        <div class="msg"><span class="who">Lead →</span> "It's already listed with a realtor."</div>
+        <div class="result c-muted">Listed — do not pursue</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
+        <div class="card-label">Duplicate</div>
+        <span class="badge bg-muted">Already Exists</span>
+      </div>
+      <div class="card-def">This contact or property already exists somewhere in the system under another record.</div>
+      <div class="card-example">
+        <div class="ex-label">Example</div>
+        <div class="msg">Agent notices this lead was already worked by a team member last month under a different number.</div>
+        <div class="result c-muted">Duplicate — do not pursue</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
+        <div class="card-label">Wrong Number</div>
+        <span class="badge bg-muted">Wrong Person</span>
+      </div>
+      <div class="card-def">You reached the wrong person entirely — they don't own that property and have no connection to it.</div>
+      <div class="card-example">
+        <div class="ex-label">Example</div>
+        <div class="msg"><span class="who">Lead →</span> "I think you have the wrong number, I don't own any property."</div>
+        <div class="result c-muted">Wrong Number</div>
+      </div>
+    </div>
+
+  </div><!-- /cards -->
+
+
+  <!-- ── Important note ── -->
+  <div class="note">
+    <div class="note-icon" style="font-weight:700; color:#a78bfa; font-size:.85rem;">TIP</div>
+    <div>
+      <strong>Multiple labels are normal — and often required.</strong><br>
+      For example: <strong>Warm + AP drip</strong> means the lead shared some info but you're now waiting on their price.
+      Or <strong>FU2 + WL drip</strong> means you're on the second follow-up waiting for their condition answer.
+      Always use as many labels as apply to accurately reflect where the lead is.
+    </div>
+  </div>
+
+</div><!-- /page -->
+
+<footer>
+  TEXTING Audit Automation &nbsp;·&nbsp; Internal Use Only &nbsp;·&nbsp; Label Reference Guide
+</footer>
+
+</body>
+</html>

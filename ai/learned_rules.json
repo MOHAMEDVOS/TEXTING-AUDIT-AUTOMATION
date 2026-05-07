@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "last_updated": "2026-05-05T21:38:57.983399Z",
+  "rules": [
+    {
+      "rule_text": "Do not flag conversations where the issue is related to an incorrect number, as this is not a valid reason for a flag.",
+      "category": "uncategorized",
+      "source_flags": [
+        "Continued original pitch after wrong number."
+      ],
+      "id": "lr_001",
+      "created_at": "2026-04-28T18:27:44.274705Z",
+      "active": true,
+      "times_applied": 0
+    },
+    {
+      "rule_text": "When the conversation is primarily composed of emojis and lacks engagement, assign the label 'Undefined' instead of 'Potential'.",
+      "category": "Contextual Labeling",
+      "source_flags": [
+        "Undefined",
+        "Potential"
+      ],
+      "id": "lr_002",
+      "created_at": "2026-04-28T22:59:16.875132Z",
+      "active": true,
+      "times_applied": 0
+    },
+    {
+      "rule_text": "Do not assign 'Lead, Pushed' label when the conversation indicates a full lead, instead use 'Warm'.",
+      "category": "uncategorized",
+      "source_flags": [
+        "Lead, Pushed"
+      ],
+      "id": "lr_003",
+      "created_at": "2026-04-29T20:45:39.051589Z",
+      "active": true,
+      "times_applied": 0
+    },
+    {
+      "rule_text": "Do not assign labels based solely on mentions of timelines or financial requests. Consider the context and intent behind the message to accurately categorize the conversation.",
+      "category": "uncategorized",
+      "source_flags": [
+        "Bluffer",
+        "Stopped Responding",
+        "Verified, Abv MV",
+        "Not Interested"
+      ],
+      "id": "lr_004",
+      "created_at": "2026-05-05T17:35:23.456068Z",
+      "active": true,
+      "times_applied": 0
+    },
+    {
+      "rule_text": "Do not assign 'Wrong Number' or 'Not Interested' labels when the caller provides pricing information or inquires about market value, as this may indicate the caller is the owner or interested in selling their property.",
+      "category": "uncategorized",
+      "source_flags": [
+        "Verified, Abv MV",
+        "FU1, WL drip",
+        "Wrong Number",
+        "Not Interested"
+      ],
+      "id": "lr_005",
+      "created_at": "2026-05-05T21:38:57.983182Z",
+      "active": true,
+      "times_applied": 0
+    }
+  ]
+}
