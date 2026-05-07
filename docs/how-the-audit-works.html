@@ -177,48 +177,48 @@
   <p>When you press "Run Audit", here is exactly what happens to each conversation:</p>
 
   <div class="flow" style="max-width: 680px; margin: 40px 0;">
-    <div class="flow-box">
-      <div class="num" style="background:#475569;">1</div>
+    <div class="flow-box" style="background:#1a1f2e; border:1px solid #2d3748; border-radius:14px; padding:22px 28px;">
+      <div class="num" style="background:#475569; width:44px; height:44px; font-size:1.1rem; flex-shrink:0;">1</div>
       <div class="text">
         <h4>Scraper opens SmarterContact</h4>
         <p>Logs in as the agent, opens each conversation, reads every message.</p>
       </div>
     </div>
-    <div class="flow-arrow">↓</div>
-    <div class="flow-box">
-      <div class="num" style="background:#a855f7;">2</div>
+    <div class="flow-arrow" style="color:#475569; font-size:1.2rem; padding:6px 0;">↓</div>
+    <div class="flow-box" style="background:#1a1f2e; border:1px solid #2d3748; border-radius:14px; padding:22px 28px;">
+      <div class="num" style="background:#a855f7; width:44px; height:44px; font-size:1.1rem; flex-shrink:0;">2</div>
       <div class="text">
-        <h4>ML Pre-Filter checks first (free, instant)</h4>
+        <h4>ML Pre-Filter checks first <span style="font-size:0.82rem; font-weight:400; color:#a855f7;">(free, instant)</span></h4>
         <p>3 fast filters check if the conversation is "obviously clean" — if yes, skip expensive AI.</p>
       </div>
     </div>
-    <div class="flow-arrow">↓</div>
-    <div class="flow-box highlight">
-      <div class="num" style="background:#3b82f6;">3</div>
+    <div class="flow-arrow" style="color:#475569; font-size:1.2rem; padding:6px 0;">↓</div>
+    <div class="flow-box" style="background:#1e3a5f; border:1px solid #3b82f6; border-radius:14px; padding:22px 28px;">
+      <div class="num" style="background:#3b82f6; width:44px; height:44px; font-size:1.1rem; flex-shrink:0;">3</div>
       <div class="text">
         <h4>AI reads the full conversation</h4>
         <p>Groq AI reads every message like a manager and applies your company's exact rulebook.</p>
       </div>
     </div>
-    <div class="flow-arrow">↓</div>
-    <div class="flow-box">
-      <div class="num" style="background:#22c55e;">4</div>
+    <div class="flow-arrow" style="color:#475569; font-size:1.2rem; padding:6px 0;">↓</div>
+    <div class="flow-box" style="background:#1a1f2e; border:1px solid #2d3748; border-radius:14px; padding:22px 28px;">
+      <div class="num" style="background:#22c55e; width:44px; height:44px; font-size:1.1rem; flex-shrink:0;">4</div>
       <div class="text">
-        <h4>Scores are calculated (0–100 each)</h4>
+        <h4>Scores are calculated <span style="font-size:0.82rem; font-weight:400; color:#94a3b8;">(0–100 each)</span></h4>
         <p>4 scores are produced: Compliance, Attitude, Professionalism, Script Adherence.</p>
       </div>
     </div>
-    <div class="flow-arrow">↓</div>
-    <div class="flow-box">
-      <div class="num" style="background:#f59e0b; color:#000;">5</div>
+    <div class="flow-arrow" style="color:#475569; font-size:1.2rem; padding:6px 0;">↓</div>
+    <div class="flow-box" style="background:#1a1f2e; border:1px solid #2d3748; border-radius:14px; padding:22px 28px;">
+      <div class="num" style="background:#f59e0b; color:#000; width:44px; height:44px; font-size:1.1rem; flex-shrink:0;">5</div>
       <div class="text">
-        <h4>Red flags are listed (if any)</h4>
+        <h4>Red flags are listed <span style="font-size:0.82rem; font-weight:400; color:#94a3b8;">(if any)</span></h4>
         <p>Any specific mistakes the agent made are listed with an explanation.</p>
       </div>
     </div>
-    <div class="flow-arrow">↓</div>
-    <div class="flow-box">
-      <div class="num" style="background:#ef4444;">6</div>
+    <div class="flow-arrow" style="color:#475569; font-size:1.2rem; padding:6px 0;">↓</div>
+    <div class="flow-box" style="background:#1a1f2e; border:1px solid #2d3748; border-radius:14px; padding:22px 28px;">
+      <div class="num" style="background:#ef4444; width:44px; height:44px; font-size:1.1rem; flex-shrink:0;">6</div>
       <div class="text">
         <h4>Results saved to dashboard</h4>
         <p>Scores, flags, and label accuracy are stored and visible in your reporting dashboard.</p>
@@ -625,7 +625,7 @@
       <div class="tier-side" style="background:#3b82f6;"></div>
       <div class="tier-content">
         <h4>Tier 2 — Similarity Check <span class="tier-badge" style="background:#1e3a5f;color:#60a5fa;">Free · ~5ms</span></h4>
-        <p>Compares this conversation to 911 past conversations. If it looks very similar to conversations that were "clean" before → copy their score. Currently at 911 stored conversations — needs 2,000 to become highly effective.</p>
+        <p>Compares this conversation to 340 past conversations. If it looks very similar to conversations that were "clean" before → copy their score. Currently at 340 stored conversations — needs 2,000 to become highly effective.</p>
       </div>
     </div>
     <div class="tier">
@@ -650,7 +650,7 @@
       <div style="color:#94a3b8; font-size:0.95rem; margin-top:4px;">Current ML accuracy<br>when it short-circuits</div>
     </div>
     <div style="background:#1e2535; border-radius:14px; padding:24px; flex:1; min-width:200px;">
-      <div style="font-size:2.5rem; font-weight:900; color:#3b82f6;">911</div>
+      <div style="font-size:2.5rem; font-weight:900; color:#3b82f6;">340</div>
       <div style="color:#94a3b8; font-size:0.95rem; margin-top:4px;">Conversations in memory<br>Target: 2,000</div>
     </div>
     <div style="background:#1e2535; border-radius:14px; padding:24px; flex:1; min-width:200px;">

@@ -1,69 +1,88 @@
-# SmarterContact Audit Automation — Claude Context
+# Texting Audit Automation — Project Context
 
-## SESSION START — Load Second Brain
-At the start of every session, before anything else:
-1. Read `C:\Users\vos\Desktop\obsidian_brain\index.md`
-2. Read `C:\Users\vos\Desktop\obsidian_brain\01-projects\TEXTING AUDIT AUTOMATION.md`
-3. Read `C:\Users\vos\Desktop\obsidian_brain\03-decisions\Known Gotchas.md`
-
-This is your memory. Use it to understand what was done before, what's in progress, and what gotchas to avoid.
-
----
-
-## Project
-Playwright-based automation that logs into SmarterContact (a React/Chakra UI SPA),
-extracts conversation threads, and scores agent performance using AI.
-
-Entry point: `python main.py --single "AgentName"`
-Core scraper: `scraper/browser_bot.py`
-AI Audit Logic: `ai/analyzer.py`, `ai/scorer.py`
-ML Pre-Filter: `ai/prefilter/pipeline.py`
-Config: `config/settings.py`, `config/agents.json`, `.env`
-Documentation: `docs/audit_workflow.html`, `docs/ml-prefilter-explained.html`, `docs/how-the-audit-works.html`
+## Project Overview
+An advanced, high-performance automated auditing system for SMS/Texting conversations.
+- **Target**: Scrapes SmarterContact (React SPA) conversations.
+- **Audit**: Evaluates agents against 4 metrics: Compliance, Attitude, Professionalism, and Script Adherence.
+- **Efficiency**: Uses a **3-Tier ML Pre-Filter** (Keywords, kNN Similarity, Logistic Regression) to reduce Groq AI costs by skipping "clean" chats.
+- **Tech Stack**: Python 3.10+, Playwright, Groq (Llama 3.3 70B), FastAPI, PostgreSQL.
 
 ---
 
-## Login Fix (April 2026)
-
-### Root cause
-SmarterContact is a React SPA. After clicking Login, there is NO full page navigation —
-the login happens via an AJAX call. Using `wait_for_load_state("load")` or
-`wait_for_load_state("networkidle")` both fail:
-- `"load"` returns immediately (already fired), so `_is_logged_in()` runs before the API responds
-- `"networkidle"` times out because SPAs keep background websocket/polling connections open forever
-
-### Fix in `scraper/browser_bot.py` → `login()` method
-After clicking the Login button, poll every second for up to 20s waiting for the URL
-to leave `/login`. As soon as the URL is no longer `/login`, login succeeded.
-Do NOT check `_is_logged_in()` at this point — the page shows a blank white screen
-while React re-renders. The URL change is sufficient proof.
-
-```python
-for _ in range(20):
-    await asyncio.sleep(1)
-    if "/login" not in self.page.url.lower():
-        logger.info(f"[Worker-{self.worker_id}] ✓ Login successful for {self.agent_name}")
-        return True
-```
-
-### Fix in `extract_conversations()` — navigate after login
-After login, the page is on `app.smartercontact.com/` with a blank React loading screen.
-Do NOT wait for selectors on this page. Navigate directly to the messenger inbox and wait
-for the conversation list to appear:
-
-```python
-inbox_all_url = SMARTERCONTACT_MESSENGER_URL.rstrip("/") + "/inbox/all"
-await self.page.goto(inbox_all_url, wait_until="load", timeout=30000)
-await self.page.wait_for_selector(
-    "div.ReactVirtualized__Grid__innerScrollContainer, [data-test-class='messenger_nav_inbox_all_messages_row']",
-    timeout=20000,
-)
-```
+## Core Rules
+- **Playwright Navigation**: Never use `networkidle` or `wait_for_load_state("networkidle")` — SmarterContact is an SPA that keeps connections open indefinitely. Use `wait_until="load"` or poll for specific URL changes/selectors.
+- **Login Persistence**: After clicking Login, poll URL for `/login` removal. Do NOT check `_is_logged_in()` immediately (React takes 2-3s to render).
+- **AI Key Pool**: Groq keys are in `config/groq_keys.json` (flat list). Dedicated NIM keys (provider: "nim") are in `config/agent_keys.json`. Non-NIM entries in `agent_keys.json` are ignored.
+- **ML Gates**: Prefilter promotion requires FALSE-CLEAN ≤ 5%.
+- **Documentation**: Keep Obsidian Brain (`C:\Users\vos\Desktop\obsidian_brain`) updated with verified selectors and known gotchas.
 
 ---
 
-## Known Selectors (verified April 2026)
+## Tech Stack
+- **Backend**: Python 3.10+, FastAPI, uvicorn
+- **Database**: PostgreSQL (asyncpg, pgvector), SQLite (for some local caching)
+- **Scraping**: Playwright (Async)
+- **AI Models**: Groq (Llama 3.3 70B), Sentence-Transformers (Local), FAISS, XGBoost
+- **Frontend**: FastAPI + Jinja2, Vanilla JS, anime.js, Apple-inspired Custom CSS
 
+---
+
+## Folder Structure
+- `ai/`: Scorer and 3-Tier ML Pre-filter logic (`prefilter/`)
+- `config/`: Settings, API key pools, and agent roster configs
+- `dashboard/`: FastAPI app, HTML templates, and static assets
+- `database/`: Schema definitions and DB helper modules
+- `docs/`: Technical guides (audit workflow, scoring rulebook)
+- `scraper/`: Playwright automation and browser-bot logic
+- `scripts/`: ML training, evaluation, and system utilities
+- `main.py`: Main CLI entry point for running audits
+
+---
+
+## Coding Standards
+
+### Python
+- Use strict typing where possible (type hints).
+- Prefer `async`/`await` for all I/O, database, and browser operations.
+- Handle Groq rate limits using the built-in LRU KeyPoolManager rotation.
+- Log errors using the project's standard logger (`logging.basicConfig` level INFO).
+
+### Frontend (Dashboard)
+- Use **Vanilla JS** for interactivity; avoid adding heavy frameworks.
+- Styling is **Pure CSS** using custom design tokens (Apple/Glassmorphism theme).
+- Keep `index.html` logic modular; use DOM-based event listeners.
+- Use `anime.js` for all micro-animations and transitions.
+
+### Styling
+- **Dark Mode First**: Default theme is Dark (Black/Electric Blue).
+- **Design Tokens**: Use CSS variables for colors and spacing (e.g., `--brand`, `--surface`).
+- **No Inline Styles**: Move complex styles to the `<style>` block.
+
+---
+
+## Naming Conventions
+
+### Files & Folders
+- **Python**: `snake_case.py`
+- **Frontend**: `kebab-case.html`, `snake_case.js`
+- **Folders**: `snake_case/`
+
+### Code
+- **Variables/Functions**: `snake_case` (Python/JS)
+- **Classes**: `PascalCase`
+- **Constants**: `UPPER_SNAKE_CASE`
+
+---
+
+## API Rules
+- **FastAPI Endpoints**: Use standard REST verbs (GET for data, POST for actions, DELETE for resets).
+- **Validation**: Use Pydantic models for request bodies.
+- **Response Format**: Consistent JSON returns: `{"success": true, "data": {...}}` or `{"success": false, "error": "msg"}`.
+- **Error Handling**: Use `HTTPException` with appropriate status codes (404, 400, 500).
+
+---
+
+## SmarterContact Selectors (April 2026)
 | Element | Selector |
 |---|---|
 | Email input on login | `input#email` |
@@ -74,6 +93,8 @@ await self.page.wait_for_selector(
 | Messages inside panel | `p.chakra-text` inside the panel |
 | Conversation rows | `[data-test-class='messenger_nav_inbox_all_messages_row']` |
 | Virtualized list | `div.ReactVirtualized__Grid__innerScrollContainer` |
+| Message Bubbles | `p.chakra-text` inside the chat panel |
+| Inbox Row | `[data-test-class='messenger_nav_inbox_all_messages_row']` |
 
 ---
 
@@ -155,5 +176,3 @@ a key issue.
 **Do NOT:**
 - Put Groq keys in `agent_keys.json` — they'll be logged as warnings and ignored
 - Use `networkidle` waits anywhere (existing rule — SPA login)
-
-

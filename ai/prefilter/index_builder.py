@@ -45,17 +45,24 @@ def fetch_training_rows(conn) -> list[dict]:
     - Always excludes conversations marked invalid in validation_log
     - When PREFILTER_REQUIRE_VALIDATION=true, also requires an explicit
       'valid' entry in validation_log (opt-in mode for trusted data only)
+
+    Returns rows with a `funnel_tier` field (WF/MF/NF) and a
+    `conversation_text` field that is already prefixed with "[WF] " etc.
+    so the embedding is funnel-aware.
     """
     base_sql = """
     SELECT
         c.id                AS conversation_id,
+        COALESCE(ac.funnel_tier, 'NF') AS funnel_tier,
         cs.compliance_score,
         cs.sentiment_score,
         cs.professionalism_score,
         cs.script_adherence_score,
         cs.red_flags,
         STRING_AGG(
-            CASE WHEN LOWER(m.sender) = 'agent' THEN 'AGENT: ' || m.body
+            CASE WHEN LOWER(m.sender) = LOWER(COALESCE(ac.name,'agent'))
+                      OR LOWER(m.sender) = 'agent'
+                 THEN 'AGENT: ' || m.body
                  ELSE 'CONTACT: ' || m.body
             END,
             E'\n' ORDER BY m.sent_at NULLS LAST, m.id
@@ -63,6 +70,7 @@ def fetch_training_rows(conn) -> list[dict]:
     FROM conversations c
     JOIN conversation_scores cs ON cs.conversation_id = c.id
     JOIN contacts ct            ON ct.id = c.contact_id
+    LEFT JOIN accounts ac       ON ac.id = c.agent_id
     LEFT JOIN messages m        ON m.conversation_id = c.id
     WHERE
         cs.model_used IS NOT NULL
@@ -89,14 +97,26 @@ def fetch_training_rows(conn) -> list[dict]:
         """
 
     base_sql += """
-    GROUP BY c.id, cs.compliance_score, cs.sentiment_score,
+    GROUP BY c.id, ac.funnel_tier, ac.name,
+             cs.compliance_score, cs.sentiment_score,
              cs.professionalism_score, cs.script_adherence_score, cs.red_flags
     HAVING STRING_AGG(m.body, '') IS NOT NULL
     """
 
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(base_sql)
-        return list(cur.fetchall())
+        rows = list(cur.fetchall())
+
+    # Prefix each conversation text with its funnel tier tag so the embedding
+    # is funnel-aware. Inference time must apply the same prefix (see tier2_embedding.py).
+    for row in rows:
+        ft = (row.get("funnel_tier") or "NF").upper().strip()
+        if ft not in ("WF", "MF", "NF"):
+            ft = "NF"
+        row["funnel_tier"] = ft
+        row["conversation_text"] = f"[{ft}]\n{row['conversation_text']}"
+
+    return rows
 
 
 def fetch_negative_example_ids(conn) -> set[int]:
@@ -201,6 +221,7 @@ def build(rebuild: bool = False) -> None:
     for r in rows:
         meta.append({
             "conversation_id": int(r["conversation_id"]),
+            "funnel_tier": r.get("funnel_tier", "NF"),
             "is_clean": is_clean(r["red_flags"], invalid_patterns),
             "scores": {
                 "compliance_score": r["compliance_score"],

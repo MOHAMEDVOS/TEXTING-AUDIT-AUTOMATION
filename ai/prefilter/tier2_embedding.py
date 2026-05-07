@@ -95,16 +95,25 @@ def evaluate(
     messages: list[dict],
     agent_name: str,
     contact_name: str,
+    funnel_tier: str = "NF",
 ) -> Optional[PrefilterResult]:
     """
     Look up nearest neighbors. Short-circuit if confidently clean, else None.
+
+    funnel_tier: "WF" | "MF" | "NF" — prepended to the query text so the
+    embedding matches the funnel-prefixed index vectors built by index_builder.
     """
     if not _load_index():
         return None
 
-    text = embedder.conversation_to_text(messages, agent_name)
-    if not text.strip():
+    ft = (funnel_tier or "NF").upper().strip()
+    if ft not in ("WF", "MF", "NF"):
+        ft = "NF"
+
+    base_text = embedder.conversation_to_text(messages, agent_name)
+    if not base_text.strip():
         return None
+    text = f"[{ft}]\n{base_text}"
 
     vec = embedder.embed(text)
     if vec is None:

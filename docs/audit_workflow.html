@@ -317,6 +317,73 @@
     <p class="hero-desc">A clear, simple explanation of how the audit pipeline reads, scores, and reports on every texting conversation — from a fast keyword scan to a full AI review.</p>
   </section>
 
+  <!-- STEP BY STEP -->
+  <section class="section">
+    <p class="section-label">00 — What Happens Step by Step</p>
+    <h2>Press "Run Audit" — Here Is What Happens</h2>
+    <div style="display:flex; flex-direction:column; gap:0; max-width:680px;">
+
+      <div style="display:flex; align-items:center; gap:24px; background:var(--canvas); border:1px solid var(--hairline); border-radius:14px; padding:24px 28px;">
+        <div style="width:44px; height:44px; border-radius:50%; background:var(--dark); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:1rem; flex-shrink:0;">1</div>
+        <div>
+          <p style="font-size:15px; font-weight:700; color:var(--ink); margin-bottom:4px;">Scraper opens SmarterContact</p>
+          <p style="font-size:13px; font-weight:600; color:var(--muted); margin:0;">Logs in as the agent, opens each conversation, reads every message.</p>
+        </div>
+      </div>
+
+      <div style="text-align:center; color:var(--hairline); font-size:20px; line-height:1; padding:6px 0;">↓</div>
+
+      <div style="display:flex; align-items:center; gap:24px; background:var(--canvas); border:1px solid var(--hairline); border-radius:14px; padding:24px 28px;">
+        <div style="width:44px; height:44px; border-radius:50%; background:var(--dark); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:1rem; flex-shrink:0;">2</div>
+        <div>
+          <p style="font-size:15px; font-weight:700; color:var(--ink); margin-bottom:4px;">ML Pre-Filter checks first <span style="font-size:12px; font-weight:600; color:var(--coral);">(free, instant)</span></p>
+          <p style="font-size:13px; font-weight:600; color:var(--muted); margin:0;">3 fast filters check if the conversation is "obviously clean" — if yes, skip expensive AI.</p>
+        </div>
+      </div>
+
+      <div style="text-align:center; color:var(--hairline); font-size:20px; line-height:1; padding:6px 0;">↓</div>
+
+      <div style="display:flex; align-items:center; gap:24px; background:var(--dark); border:1px solid var(--dark); border-radius:14px; padding:24px 28px;">
+        <div style="width:44px; height:44px; border-radius:50%; background:var(--coral); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:1rem; flex-shrink:0;">3</div>
+        <div>
+          <p style="font-size:15px; font-weight:700; color:#fff; margin-bottom:4px;">AI reads the full conversation</p>
+          <p style="font-size:13px; font-weight:600; color:var(--on-dark-soft); margin:0;">Groq AI reads every message like a manager and applies your company's exact rulebook.</p>
+        </div>
+      </div>
+
+      <div style="text-align:center; color:var(--hairline); font-size:20px; line-height:1; padding:6px 0;">↓</div>
+
+      <div style="display:flex; align-items:center; gap:24px; background:var(--canvas); border:1px solid var(--hairline); border-radius:14px; padding:24px 28px;">
+        <div style="width:44px; height:44px; border-radius:50%; background:var(--dark); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:1rem; flex-shrink:0;">4</div>
+        <div>
+          <p style="font-size:15px; font-weight:700; color:var(--ink); margin-bottom:4px;">Scores are calculated <span style="font-size:12px; font-weight:600; color:var(--muted);">(0–100 each)</span></p>
+          <p style="font-size:13px; font-weight:600; color:var(--muted); margin:0;">4 scores are produced: Compliance, Attitude, Professionalism, Script Adherence.</p>
+        </div>
+      </div>
+
+      <div style="text-align:center; color:var(--hairline); font-size:20px; line-height:1; padding:6px 0;">↓</div>
+
+      <div style="display:flex; align-items:center; gap:24px; background:var(--canvas); border:1px solid var(--hairline); border-radius:14px; padding:24px 28px;">
+        <div style="width:44px; height:44px; border-radius:50%; background:var(--amber); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:1rem; flex-shrink:0;">5</div>
+        <div>
+          <p style="font-size:15px; font-weight:700; color:var(--ink); margin-bottom:4px;">Red flags are listed <span style="font-size:12px; font-weight:600; color:var(--muted);">(if any)</span></p>
+          <p style="font-size:13px; font-weight:600; color:var(--muted); margin:0;">Any specific mistakes the agent made are listed with an explanation.</p>
+        </div>
+      </div>
+
+      <div style="text-align:center; color:var(--hairline); font-size:20px; line-height:1; padding:6px 0;">↓</div>
+
+      <div style="display:flex; align-items:center; gap:24px; background:var(--canvas); border:1px solid var(--hairline); border-radius:14px; padding:24px 28px;">
+        <div style="width:44px; height:44px; border-radius:50%; background:var(--success); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:1rem; flex-shrink:0;">6</div>
+        <div>
+          <p style="font-size:15px; font-weight:700; color:var(--ink); margin-bottom:4px;">Results saved to dashboard</p>
+          <p style="font-size:13px; font-weight:600; color:var(--muted); margin:0;">Scores, flags, and label accuracy are stored and visible in your reporting dashboard.</p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
   <!-- FUNNELS -->
   <section class="section">
     <p class="section-label">01 — The Three Funnels</p>

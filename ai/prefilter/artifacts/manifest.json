@@ -1,10 +1,19 @@
 {
   "knn_index": {
-    "built_at": "2026-04-29T03:06:43.894942Z",
-    "n_vectors": 340,
-    "n_clean": 266,
-    "n_flagged": 74,
+    "built_at": "2026-05-07T06:54:57.189224Z",
+    "n_vectors": 443,
+    "n_clean": 349,
+    "n_flagged": 94,
     "embedding_model": "all-MiniLM-L6-v2",
     "dimension": 384
+  },
+  "classifier": {
+    "trained_at": "2026-05-07T16:09:52.309742Z",
+    "n_train": 400,
+    "n_clean": 392,
+    "n_flagged": 8,
+    "n_hard_neg": 8,
+    "embedding_model": "all-MiniLM-L6-v2",
+    "feature_dim": 384
   }
 }

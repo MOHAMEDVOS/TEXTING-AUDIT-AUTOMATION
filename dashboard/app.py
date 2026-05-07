@@ -915,8 +915,9 @@ async def api_delete_agent(agent_id: int):
                 raise HTTPException(status_code=404, detail="Agent not found")
             name, email = row["name"], row["email"]
 
-            await conn.execute("DELETE FROM audited_chats WHERE agent_email = $1", email)
-            await conn.execute("DELETE FROM accounts        WHERE id = $1", agent_id)
+            await conn.execute("DELETE FROM audited_chats  WHERE agent_email = $1", email)
+            await conn.execute("DELETE FROM conversations   WHERE agent_id   = $1", agent_id)
+            await conn.execute("DELETE FROM accounts        WHERE id         = $1", agent_id)
 
         logger.info(f"Deleted agent id={agent_id}: {name} <{email}>")
         return {"status": "ok", "agent_id": agent_id}

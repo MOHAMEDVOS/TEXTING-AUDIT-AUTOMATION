@@ -1,157 +1,139 @@
 """
-Tier 3 — Small classifier on top of embeddings.
+Tier 3 — Trained logistic regression + score regressor on embeddings.
 
-Loads a joblib bundle produced by `python -m ai.prefilter.train`:
-
-  {
-    "flag_clf":   sklearn.LogisticRegression,   # P(this conversation has any red flag)
-    "score_reg":  sklearn.MultiOutputRegressor, # predicts [comp, sent, prof, script]
-    "feature_dim": 384,
-    "model_name":  "all-MiniLM-L6-v2",
-    "trained_at":  "...",
-  }
-
-Decision rule:
-  - flag_prob < PREFILTER_T3_MAX_FLAG_PROB
-    AND all 4 predicted scores ≥ PREFILTER_T3_MIN_SCORE
-    → SHORT-CIRCUIT with predicted scores (no flags).
-  - Otherwise → escalate.
-
-The classifier never decides flags itself — it only decides whether a
-conversation is *safe to skip Groq*. Anything borderline goes to Groq.
+How it works:
+  1. Embed the incoming conversation with sentence-transformers (with [FT] prefix).
+  2. Run through trained flag_clf to get P(red_flag).
+  3. If P < flag_prob_threshold, predict the scores and short-circuit.
+  4. Otherwise, return None to escalate.
 """
 from __future__ import annotations
 
 import logging
-import threading
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
+import joblib
 
 from config import settings
-
 from . import embedder
 from ._pipeline_types import PipelineResult as PrefilterResult
 
 logger = logging.getLogger(__name__)
 
-_bundle = None
+_classifier_bundle = None
+_loaded = False
 _load_failed = False
-_bundle_lock = threading.Lock()
 
 
-def _load_bundle() -> bool:
-    global _bundle, _load_failed
-    if _bundle is not None:
-        return True
+def _load_classifier() -> bool:
+    """Lazily load the trained T3 classifier bundle. Returns True on success."""
+    global _classifier_bundle, _loaded, _load_failed
+
+    if _loaded:
+        return _classifier_bundle is not None
     if _load_failed:
         return False
 
-    with _bundle_lock:
-        # Double-checked: another thread may have loaded while we waited.
-        if _bundle is not None:
-            return True
-        if _load_failed:
-            return False
+    classifier_path = Path(settings.PREFILTER_CLASSIFIER_PATH)
+    if not classifier_path.exists():
+        logger.info(
+            f"[Prefilter T3] No classifier found at {classifier_path}. "
+            f"Run `python -m ai.prefilter.train` to build it."
+        )
+        _load_failed = True
+        return False
 
-        path = Path(settings.PREFILTER_CLASSIFIER_PATH)
-        if not path.exists():
-            logger.info(
-                f"[Prefilter T3] No classifier at {path}. "
-                f"Run `python -m ai.prefilter.train` to build it."
-            )
-            _load_failed = True
-            return False
-
-        try:
-            import joblib  # heavy import
-        except ImportError:
-            logger.warning(
-                "[Prefilter T3] joblib not installed. Install with: pip install joblib"
-            )
-            _load_failed = True
-            return False
-
-        try:
-            _bundle = joblib.load(path)
-            logger.info(
-                f"[Prefilter T3] Loaded classifier (trained {_bundle.get('trained_at', '?')})"
-            )
-            return True
-        except Exception as e:
-            logger.error(f"[Prefilter T3] Failed to load classifier: {e}")
-            _load_failed = True
-            return False
+    try:
+        _classifier_bundle = joblib.load(classifier_path)
+        _loaded = True
+        logger.info(
+            f"[Prefilter T3] Loaded classifier: "
+            f"{_classifier_bundle['n_train']} training examples, "
+            f"dim={_classifier_bundle['feature_dim']}"
+        )
+        return True
+    except Exception as e:
+        logger.error(f"[Prefilter T3] Failed to load classifier: {e}")
+        _load_failed = True
+        return False
 
 
 def evaluate(
     messages: list[dict],
     agent_name: str,
     contact_name: str,
+    funnel_tier: str = "NF",
 ) -> Optional[PrefilterResult]:
-    if not _load_bundle():
+    """
+    Embed conversation and run through trained models.
+    Return short-circuit + scores if confident, else None.
+
+    funnel_tier: "WF" | "MF" | "NF" — prepended to the query text.
+    """
+    if not _load_classifier():
         return None
 
-    text = embedder.conversation_to_text(messages, agent_name)
-    if not text.strip():
+    ft = (funnel_tier or "NF").upper().strip()
+    if ft not in ("WF", "MF", "NF"):
+        ft = "NF"
+
+    # Build funnel-aware text (matching index_builder.py and tier2_embedding.py)
+    base_text = embedder.conversation_to_text(messages, agent_name)
+    if not base_text.strip():
         return None
+    text = f"[{ft}]\n{base_text}"
 
     vec = embedder.embed(text)
     if vec is None:
         return None
 
-    X = np.asarray([vec], dtype=np.float32)
+    query = np.asarray([vec], dtype=np.float32)
 
-    flag_clf = _bundle.get("flag_clf")
-    score_reg = _bundle.get("score_reg")
-    if flag_clf is None or score_reg is None:
-        return None
+    flag_clf = _classifier_bundle["flag_clf"]
+    score_reg = _classifier_bundle["score_reg"]
 
-    try:
-        flag_prob = float(flag_clf.predict_proba(X)[0][1])
-        scores = score_reg.predict(X)[0].tolist()
-    except Exception as e:
-        logger.warning(f"[Prefilter T3] Inference failed for {contact_name}: {e}")
-        return None
+    # Predict flag probability
+    flag_prob = float(flag_clf.predict_proba(query)[0, 1])
 
-    score_dict = {
-        "compliance_score": round(float(scores[0]), 1),
-        "sentiment_score": round(float(scores[1]), 1),
-        "professionalism_score": round(float(scores[2]), 1),
-        "script_adherence_score": round(float(scores[3]), 1),
-    }
-
-    flag_safe = flag_prob < settings.PREFILTER_T3_MAX_FLAG_PROB
-    score_safe = all(v >= settings.PREFILTER_T3_MIN_SCORE for v in score_dict.values())
-
-    if not (flag_safe and score_safe):
-        # Borderline → escalate.
+    # Threshold: if P(flag) >= 0.35, escalate (too risky)
+    # Clean conversations cluster at ~0.30, flagged at ~0.63, so 0.35 is safe
+    flag_prob_threshold = getattr(settings, "PREFILTER_T3_FLAG_PROB_THRESHOLD", 0.35)
+    if flag_prob >= flag_prob_threshold:
         return PrefilterResult(
             tier_hit=3,
             decision="escalate",
-            confidence=1.0 - flag_prob,
-            predicted_scores=score_dict,
-            notes=f"flag_prob={flag_prob:.3f}, scores={score_dict}",
+            confidence=flag_prob,
+            notes=f"flag_prob={flag_prob:.3f} >= {flag_prob_threshold}",
         )
+
+    # Predict scores
+    scores_pred = score_reg.predict(query)[0]
+    avg_scores = {
+        "compliance_score": float(scores_pred[0]),
+        "sentiment_score": float(scores_pred[1]),
+        "professionalism_score": float(scores_pred[2]),
+        "script_adherence_score": float(scores_pred[3]),
+    }
 
     return PrefilterResult(
         tier_hit=3,
         decision="short_circuit",
         confidence=1.0 - flag_prob,
-        predicted_scores=score_dict,
-        notes=f"flag_prob={flag_prob:.3f}",
-        result=_build_result(contact_name, score_dict, flag_prob, messages, agent_name),
+        predicted_scores=avg_scores,
+        notes=f"flag_prob={flag_prob:.3f} < {flag_prob_threshold}",
+        result=_build_result(contact_name, avg_scores, messages, agent_name),
     )
 
 
 def _build_result(
     contact_name: str,
     scores: dict,
-    flag_prob: float,
     messages: list[dict] | None = None,
     agent_name: str = "",
 ) -> dict:
+    """Assemble a Groq-shaped output dict."""
     from . import summary_builder
 
     if messages:
@@ -161,11 +143,8 @@ def _build_result(
         label, label_reason = summary_builder.detect_label(messages, contact_name)
         funnel = summary_builder.detect_funnel_stage(messages)
     else:
-        smart_summary = (
-            f"Classifier predicted no red flags "
-            f"(flag_prob={flag_prob:.2%}) and all four scores above threshold."
-        )
-        label, label_reason = "Lead", "Classifier confident this conversation is clean."
+        smart_summary = "Classified as clean by Tier 3 embedding classifier."
+        label, label_reason = "Lead", "Label deferred — no message data available."
         funnel = "none"
 
     return {

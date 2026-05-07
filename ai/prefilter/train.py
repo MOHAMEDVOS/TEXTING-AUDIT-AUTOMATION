@@ -7,8 +7,8 @@ Trains two models on top of sentence-transformer embeddings:
   score_reg — MultiOutputRegressor(Ridge) that predicts the 4 audit scores
 
 Inputs:
-  - conversations + conversation_scores (filtered to Groq-sourced rows only)
-  - flag_feedback (used to mask false-positive flags)
+  - eval_500_conversations.json (conversation texts)
+  - eval_baseline_v2.json (ground truth: outcome, red_flags, pillars, rebuttal_quality)
 
 Outputs:
   - ai/prefilter/artifacts/classifier.joblib
@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import json
 import logging
 import sys
 from pathlib import Path
@@ -30,13 +31,6 @@ import numpy as np
 from config import settings
 
 from . import embedder
-from .index_builder import (
-    fetch_invalid_flag_patterns,
-    fetch_negative_example_ids,
-    fetch_training_rows,
-    is_clean,
-    _connect,
-)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -44,6 +38,79 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("train")
+
+
+def _load_baseline_training_data() -> tuple[list[dict], dict]:
+    """
+    Load eval_500_conversations.json and eval_baseline_v2.json.
+    Build label map: conversation_id → baseline entry.
+    """
+    conv_path = Path(__file__).parent.parent.parent / "scripts" / "eval_500_conversations.json"
+    baseline_path = Path(__file__).parent.parent.parent / "scripts" / "eval_baseline_v2.json"
+
+    if not conv_path.exists():
+        raise FileNotFoundError(f"Missing {conv_path}. Run eval_baseline_v2.py first.")
+    if not baseline_path.exists():
+        raise FileNotFoundError(f"Missing {baseline_path}. Run eval_baseline_v2.py first.")
+
+    with open(conv_path, "r", encoding="utf-8") as f:
+        conversations = json.load(f)
+    with open(baseline_path, "r", encoding="utf-8") as f:
+        baseline_list = json.load(f)
+
+    baseline_map = {b["conversation_id"]: b for b in baseline_list}
+    return conversations, baseline_map
+
+
+def _infer_scores_from_baseline(baseline: dict) -> dict:
+    """
+    Infer audit scores from baseline outcome, pillars, rebuttal_quality, red_flags.
+    Returns: {compliance_score, sentiment_score, professionalism_score, script_adherence_score}
+    """
+    base_score = 90.0
+    outcome = baseline.get("outcome", "")
+    pillars = baseline.get("pillars_gathered", [])
+    rebuttal = baseline.get("rebuttal_quality", "none")
+    red_flags = baseline.get("red_flags", [])
+
+    # Compliance: penalize for flags, helped by good rebuttal
+    compliance = base_score
+    if red_flags:
+        compliance -= 20  # Has compliance violations
+    if rebuttal == "good":
+        compliance += 5
+    compliance = max(0, min(100, compliance))
+
+    # Sentiment: penalize for "not_interested", helped by "interested"
+    sentiment = base_score
+    if outcome in ("not_interested", "maybe"):
+        sentiment -= 15
+    elif outcome in ("interested", "abv_mv"):
+        sentiment += 10
+    sentiment = max(0, min(100, sentiment))
+
+    # Professionalism: penalize for flags, helped by pillar coverage
+    professionalism = base_score
+    if red_flags:
+        professionalism -= 15
+    if len(pillars) >= 3:
+        professionalism += 5
+    professionalism = max(0, min(100, professionalism))
+
+    # Script adherence: penalize for opt_out/dnc, helped by rebuttal quality
+    script_adherence = base_score
+    if outcome in ("opt_out",):
+        script_adherence -= 20
+    if rebuttal == "good":
+        script_adherence += 5
+    script_adherence = max(0, min(100, script_adherence))
+
+    return {
+        "compliance_score": compliance,
+        "sentiment_score": sentiment,
+        "professionalism_score": professionalism,
+        "script_adherence_score": script_adherence,
+    }
 
 
 def main(test_split: float = 0.0) -> None:
@@ -64,50 +131,69 @@ def main(test_split: float = 0.0) -> None:
         logger.error("sentence-transformers not installed.")
         sys.exit(1)
 
-    logger.info("Connecting to Postgres...")
-    conn = _connect()
-    try:
-        invalid_patterns = fetch_invalid_flag_patterns(conn)
-        rows = fetch_training_rows(conn)
-        negative_ids = fetch_negative_example_ids(conn)
-    finally:
-        conn.close()
-    logger.info(f"Hard negatives (human-rejected): {len(negative_ids)}")
+    # Load eval baseline data
+    conversations, baseline_map = _load_baseline_training_data()
+    logger.info(f"Loaded {len(conversations)} conversations + {len(baseline_map)} baseline entries")
 
-    if len(rows) < 50:
+    # Filter to only conversations with baseline labels
+    labeled = [c for c in conversations if c["conversation_id"] in baseline_map]
+    logger.info(f"Training on {len(labeled)} conversations with baseline labels")
+
+    if len(labeled) < 50:
         logger.error(
-            f"Only {len(rows)} labeled conversations — need ≥50 for a useful classifier."
+            f"Only {len(labeled)} labeled conversations — need ≥50 for a useful classifier."
         )
         sys.exit(1)
 
-    logger.info(f"Training on {len(rows)} conversations")
+    # Build training data with funnel-aware text
+    rows = []
+    for conv in labeled:
+        cid = conv["conversation_id"]
+        baseline = baseline_map[cid]
+        messages = conv["messages"]
+        agent_name = conv.get("account_name", "Agent")
+        funnel_tier = (conv.get("funnel_tier") or "NF").upper().strip()
+        if funnel_tier not in ("WF", "MF", "NF"):
+            funnel_tier = "NF"
 
-    texts = [r["conversation_text"] for r in rows]
+        # Build funnel-aware text (matching index_builder.py and tier2_embedding.py)
+        text = embedder.conversation_to_text(messages, agent_name)
+        text = f"[{funnel_tier}]\n{text}"
+
+        scores = _infer_scores_from_baseline(baseline)
+        red_flags = baseline.get("red_flags", [])
+        is_clean = len([f for f in red_flags if isinstance(f, str) and f.strip()]) == 0
+
+        rows.append({
+            "conversation_id": cid,
+            "text": text,
+            "funnel_tier": funnel_tier,
+            "is_clean": is_clean,
+            "scores": scores,
+            "outcome": baseline.get("outcome", ""),
+        })
+
+    texts = [r["text"] for r in rows]
+    logger.info("Embedding conversations (this may take a minute)...")
     vecs = embedder.embed_batch(texts)
     X = np.asarray(vecs, dtype=np.float32)
 
     # Target: y_flag = 1 if conversation has any real flag, else 0
-    y_flag = np.array(
-        [0 if is_clean(r["red_flags"], invalid_patterns) else 1 for r in rows]
-    )
+    y_flag = np.array([0 if r["is_clean"] else 1 for r in rows], dtype=np.int32)
 
     # Target: y_scores = [comp, sent, prof, script]
-    def _val(r, k):
-        v = r.get(k)
-        return float(v) if v is not None else 90.0  # default for missing scores
-
     y_scores = np.array([
-        [_val(r, "compliance_score"),
-         _val(r, "sentiment_score"),
-         _val(r, "professionalism_score"),
-         _val(r, "script_adherence_score")]
+        [r["scores"]["compliance_score"],
+         r["scores"]["sentiment_score"],
+         r["scores"]["professionalism_score"],
+         r["scores"]["script_adherence_score"]]
         for r in rows
     ], dtype=np.float32)
 
-    # Build sample weights before the split: hard negatives get 2x weight
-    conv_ids = [r["conversation_id"] for r in rows]
+    # Build sample weights: hard negatives (flagged outcomes with no agent error) get 2x weight
     weights_all = np.array(
-        [2.0 if cid in negative_ids else 1.0 for cid in conv_ids],
+        [2.0 if (not r["is_clean"] and r["outcome"] not in ("neutral", "maybe")) else 1.0
+         for r in rows],
         dtype=np.float32,
     )
 
@@ -127,11 +213,11 @@ def main(test_split: float = 0.0) -> None:
     logger.info(f"Class balance — clean: {(yf_tr==0).sum()}, flagged: {(yf_tr==1).sum()}")
 
     n_hard_neg = int((w_tr == 2.0).sum())
-    if n_hard_neg < 10:
+    if n_hard_neg < 5:
         if n_hard_neg > 0:
             logger.warning(
-                f"Only {n_hard_neg} hard negatives — too few to weight reliably, "
-                f"ignoring sample_weight for this run."
+                f"Only {n_hard_neg} hard negatives — not enough to weight reliably, "
+                f"using balanced class weights instead."
             )
         w_tr = None
 
