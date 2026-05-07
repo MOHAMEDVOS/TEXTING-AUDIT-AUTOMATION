@@ -45,3 +45,24 @@ reports/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local development
+.agents/
+.claude/
+.cursor/
+.pytest_cache/
+scratch/
+reports/
+logs/
+*.db
+scripts/
+tests/
+ruflo/
+validation_run.txt
+START.bat
+install_skills.ps1
+ml_training_plan.md
+FLAG TEMPLATE.md
+SKILLS.md
+export_labels_pdf.py
+test_trends_multi_account.py

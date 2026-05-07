@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(cmd /c \"tasklist | findstr /i python\")",
-      "Bash(.venv/Scripts/python.exe -c \"import ai.prompts; print\\('SYSTEM_PROMPT chars:', len\\(ai.prompts.SYSTEM_PROMPT\\)\\); print\\('BATCH_SYSTEM_PROMPT chars:', len\\(ai.prompts.BATCH_SYSTEM_PROMPT\\)\\); print\\('_SINGLE_OUTPUT_SECTION starts with:', repr\\(ai.prompts._SINGLE_OUTPUT_SECTION[:40]\\)\\); sp = ai.prompts.get_system_prompt\\(\\); print\\('single prompt ends with:', repr\\(sp[-60:]\\)\\); bp = ai.prompts.get_system_prompt\\(batch=True\\); print\\('batch prompt ends with:', repr\\(bp[-60:]\\)\\); print\\('OK'\\)\")"
-    ]
-  }
-}
