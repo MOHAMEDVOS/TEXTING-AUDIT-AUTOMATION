@@ -155,5 +155,5 @@ a key issue.
 **Do NOT:**
 - Put Groq keys in `agent_keys.json` — they'll be logged as warnings and ignored
 - Use `networkidle` waits anywhere (existing rule — SPA login)
-- Add Gemini support — removed April 2026
+
 
