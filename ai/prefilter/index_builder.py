@@ -76,6 +76,8 @@ def fetch_training_rows(conn) -> list[dict]:
         cs.model_used IS NOT NULL
         AND cs.model_used <> ''
         AND COALESCE(cs.source, 'groq') NOT IN ('prefilter_t1','prefilter_t2','prefilter_t3')
+        -- Also include T4 results (deterministic, high-quality)
+        -- OR cs.source = 'prefilter_t4'
         -- Never train on conversations the manager marked invalid
         AND NOT EXISTS (
             SELECT 1 FROM validation_log vl
@@ -113,6 +115,51 @@ def fetch_training_rows(conn) -> list[dict]:
         ft = (row.get("funnel_tier") or "NF").upper().strip()
         if ft not in ("WF", "MF", "NF"):
             ft = "NF"
+        row["funnel_tier"] = ft
+        row["conversation_text"] = f"[{ft}]\n{row['conversation_text']}"
+
+    return rows
+
+
+def fetch_promoted_candidates(conn) -> list[dict]:
+    """
+    Fetch promoted semantic candidates to include in the training set.
+    These are high-quality conversations captured by the auto-learner.
+    """
+    sql = """
+    SELECT
+        sc.conversation_id,
+        'NF' AS funnel_tier,
+        sc.compliance_score,
+        sc.sentiment_score,
+        sc.professionalism_score,
+        sc.script_adherence_score,
+        '[]'::jsonb AS red_flags,
+        STRING_AGG(
+            CASE WHEN LOWER(m.sender) = LOWER(COALESCE(ac.name,'agent'))
+                      OR LOWER(m.sender) = 'agent'
+                 THEN 'AGENT: ' || m.body
+                 ELSE 'CONTACT: ' || m.body
+            END,
+            E'\n' ORDER BY m.sent_at NULLS LAST, m.id
+        ) AS conversation_text
+    FROM semantic_candidates sc
+    JOIN conversations c     ON c.id = sc.conversation_id
+    LEFT JOIN accounts ac    ON ac.id = c.agent_id
+    LEFT JOIN messages m     ON m.conversation_id = c.id
+    WHERE sc.promoted = TRUE
+      AND sc.rejected = FALSE
+      AND sc.is_clean = TRUE
+    GROUP BY sc.conversation_id, sc.compliance_score, sc.sentiment_score,
+             sc.professionalism_score, sc.script_adherence_score, ac.name
+    HAVING STRING_AGG(m.body, '') IS NOT NULL
+    """
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(sql)
+        rows = list(cur.fetchall())
+
+    for row in rows:
+        ft = (row.get("funnel_tier") or "NF").upper().strip()
         row["funnel_tier"] = ft
         row["conversation_text"] = f"[{ft}]\n{row['conversation_text']}"
 
@@ -194,6 +241,15 @@ def build(rebuild: bool = False) -> None:
 
         rows = fetch_training_rows(conn)
         logger.info(f"Fetched {len(rows)} scored conversations from DB")
+
+        # Merge promoted semantic candidates (auto-learned)
+        promoted = fetch_promoted_candidates(conn)
+        if promoted:
+            # Deduplicate by conversation_id
+            existing_ids = {r["conversation_id"] for r in rows}
+            new_promoted = [p for p in promoted if p["conversation_id"] not in existing_ids]
+            rows.extend(new_promoted)
+            logger.info(f"Added {len(new_promoted)} promoted semantic candidates to training set")
     finally:
         conn.close()
 
@@ -219,10 +275,24 @@ def build(rebuild: bool = False) -> None:
 
     meta = []
     for r in rows:
+        # Parse red_flags for metadata storage
+        raw_flags = r.get("red_flags") or []
+        if isinstance(raw_flags, str):
+            try:
+                raw_flags = json.loads(raw_flags)
+            except Exception:
+                raw_flags = []
+        clean_flags = [
+            f for f in (raw_flags or [])
+            if isinstance(f, str) and f.strip()
+            and f.strip().lower() not in invalid_patterns
+        ]
+
         meta.append({
             "conversation_id": int(r["conversation_id"]),
             "funnel_tier": r.get("funnel_tier", "NF"),
-            "is_clean": is_clean(r["red_flags"], invalid_patterns),
+            "is_clean": len(clean_flags) == 0,
+            "red_flags": clean_flags,  # ← NEW: store actual flags for T3 multi-label
             "scores": {
                 "compliance_score": r["compliance_score"],
                 "sentiment_score": r["sentiment_score"],

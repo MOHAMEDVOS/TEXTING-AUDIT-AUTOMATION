@@ -259,7 +259,7 @@
     .bbl {
       padding: 10px 15px; font-size: .84rem; line-height: 1.47;
       overflow-wrap: break-word; white-space: pre-wrap;
-      letter-spacing: -0.01em;
+      letter-spacing: -0.01em; position: relative;
     }
     .bbl-contact {
       background: var(--contact-bubble-bg); color: var(--contact-bubble-color);
@@ -270,7 +270,26 @@
       background: var(--agent-bubble-bg); color: var(--agent-bubble-color);
       border-radius: 18px 4px 18px 18px;
     }
-    .bbl-time { font-size: .58rem; color: var(--text-muted); margin-top: 3px; }
+    /* Telegram-style inline time — inside bubble, bottom-right */
+    .bbl-time {
+      display: inline; float: right; font-size: .6rem;
+      color: rgba(255,255,255,.55); margin: 6px 0 -4px 12px;
+      line-height: 1; letter-spacing: .01em; white-space: nowrap;
+    }
+    .bbl-contact .bbl-time { color: rgba(255,255,255,.45); }
+    [data-theme="light"] .bbl-contact .bbl-time { color: rgba(0,0,0,.35); }
+    /* Telegram-style date separator pill */
+    .chat-date-sep {
+      text-align: center; margin: 14px 0 8px;
+    }
+    .chat-date-sep span {
+      display: inline-block; font-size: .62rem; font-weight: 600;
+      color: rgba(255,255,255,.6); background: rgba(255,255,255,.08);
+      border-radius: 99px; padding: 3px 14px; letter-spacing: .02em;
+    }
+    [data-theme="light"] .chat-date-sep span {
+      color: rgba(0,0,0,.45); background: rgba(0,0,0,.06);
+    }
 
     /* ── Score bar ── */
     .sbar { height: 3px; background: var(--surface-border); border-radius: 99px; overflow: hidden; }
@@ -648,22 +667,7 @@
     <span id="stat-unread"></span>
   </div>
 
-  <!-- ML Training Progress -->
-  <div id="ml-progress-wrap" title="Groq-scored conversations used to train the ML pre-filter"
-    style="display:flex; flex-direction:column; align-items:center; gap:3px; cursor:default;">
-    <div style="display:flex; align-items:center; gap:6px;">
-      <span style="font-size:.58rem; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--text-muted);">ML Training</span>
-      <span id="ml-prog-label" style="font-size:.65rem; font-weight:700; color:var(--brand); letter-spacing:-0.01em;">— / 500</span>
-    </div>
-    <div style="width:140px; height:5px; border-radius:99px; background:var(--surface-border); overflow:hidden;">
-      <div id="ml-prog-bar" style="height:100%; width:0%; border-radius:99px; background:linear-gradient(90deg,#2563eb,#38bdf8); transition:width .6s ease;"></div>
-    </div>
-    <div style="display:flex; align-items:center; gap:8px;">
-      <span id="ml-prog-pct" style="font-size:.55rem; color:var(--text-muted);">0%</span>
-      <span style="font-size:.55rem; color:var(--surface-border);">·</span>
-      <span id="ml-prog-validated" style="font-size:.55rem; color:var(--text-muted);">0 validated</span>
-    </div>
-  </div>
+
 
   <!-- Actions -->
   <div style="display:flex; align-items:center; gap:8px;">
@@ -1047,6 +1051,14 @@
           </div>
           <div style="padding-top:20px; display:flex; align-items:center; gap:8px;">
             <div id="assign-msg" style="font-size:.8125rem; min-height:18px;"></div>
+            <button onclick="clearAssignments()"
+              title="Clear all assignments for this date"
+              style="padding:9px 18px; font-size:.84rem; font-weight:400; border-radius:980px; background:transparent; color:var(--danger); border:1px solid var(--danger); cursor:pointer; display:inline-flex; align-items:center; gap:6px; transition:.15s; letter-spacing:-0.01em;"
+              onmouseover="this.style.background='var(--danger)';this.style.color='#fff'"
+              onmouseout="this.style.background='transparent';this.style.color='var(--danger)'">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+              Clear All
+            </button>
             <button onclick="saveAssignments()" class="settings-btn" style="padding:10px 20px;">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
               Save All
@@ -1416,6 +1428,7 @@
 let allAgents      = [];
 let filteredAgents = [];
 let processStatus  = {};
+let processStatusDetails = {};
 let keyAssignments = {};
 let selectedAgent  = null;
 let agentConvos    = [];
@@ -1433,6 +1446,15 @@ function _normEmail(email) {
 const esc = s => String(s || "")
   .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
   .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+
+function statusDetail(name) {
+  return processStatusDetails[name] || {};
+}
+
+function statusMessage(name, fallback = "") {
+  const d = statusDetail(name);
+  return d.message || d.stage || fallback;
+}
 
 function scoreClass(v) {
   if (v == null) return "sc-m";
@@ -1551,12 +1573,23 @@ function updateStats() {
   const avg     = scored.length
     ? (scored.reduce((s, a) => s + a.overall_score, 0) / scored.length).toFixed(1)
     : "—";
-  const flagged = scored.filter(a => (a.red_flags || []).length > 0).length;
   const unread  = allAgents.reduce((s, a) => s + (a.unread_messages_left || 0), 0);
+
+  // Fetch real-time flag count from conversation_scores
+  fetch('/api/flags/realtime')
+    .then(r => r.json())
+    .then(data => {
+      const totalFlagged = data.reduce((sum, d) => sum + d.flagged, 0);
+      document.getElementById("stat-flagged").textContent = totalFlagged;
+    })
+    .catch(() => {
+      // Fallback to per-agent count
+      const flagged = scored.filter(a => (a.red_flags || []).length > 0).length;
+      document.getElementById("stat-flagged").textContent = flagged;
+    });
 
   document.getElementById("stat-agents").textContent  = allAgents.length;
   document.getElementById("stat-avg").textContent     = avg;
-  document.getElementById("stat-flagged").textContent = flagged;
   document.getElementById("stat-unread").textContent  = unread;
 }
 
@@ -1692,7 +1725,10 @@ async function runSelectedAgents() {
         body: JSON.stringify({ agent_name: name, ...params }),
       });
       const data = await res.json();
-      if (data.status === "started") processStatus[name] = "running";
+      if (data.status === "started") {
+        processStatus[name] = "running";
+        processStatusDetails[name] = { state: "running", message: "Starting audit" };
+      }
     } catch (e) {
       console.warn("Failed to start", name, e);
     }
@@ -1717,7 +1753,8 @@ async function runSelectedAgents() {
 // ── Sidebar rendering ─────────────────────────────────────────────────────────
 function filterAgents(q) {
   const lq = q.toLowerCase().trim();
-  filteredAgents = lq ? allAgents.filter(a => (a.name || "").toLowerCase().includes(lq)) : allAgents;
+  const assigned = allAgents.filter(a => !!_getAssignedTexter(a.email));
+  filteredAgents = lq ? assigned.filter(a => (a.name || "").toLowerCase().includes(lq)) : assigned;
   renderSidebar();
 }
 
@@ -1742,9 +1779,13 @@ function renderSidebar() {
 
     let statusHtml = "";
     if (status === "running") {
-      statusHtml = `<span class="pls" style="width:6px;height:6px;border-radius:50%;background:#2563EB;display:inline-block;margin-right:3px;vertical-align:middle;"></span><span style="color:#2563EB;font-weight:600;font-size:.65rem;">Auditing…</span>`;
+      const msg = statusMessage(a.name, "Auditing...");
+      statusHtml = `<span class="pls" style="width:6px;height:6px;border-radius:50%;background:#2563EB;display:inline-block;margin-right:3px;vertical-align:middle;"></span><span title="${esc(msg)}" style="color:#2563EB;font-weight:600;font-size:.65rem;">${esc(msg)}</span>`;
     } else if (status === "done") {
       statusHtml = `<span style="color:#059669;font-weight:600;font-size:.65rem;">✓ Done</span>`;
+    } else if (status === "failed") {
+      const msg = statusMessage(a.name, "Audit failed");
+      statusHtml = `<span title="${esc(msg)}" style="color:#ef4444;font-weight:700;font-size:.65rem;">Failed: ${esc(msg)}</span>`;
     }
 
     const avClass = agentAv(a.name);
@@ -1809,6 +1850,8 @@ function renderSidebar() {
 
 // ── Select Agent ──────────────────────────────────────────────────────────────
 async function selectAgent(id) {
+  // Always reload agent list so scores reflect latest audit result
+  await loadAgents();
   const agent = allAgents.find(a => a.id === id);
   if (!agent) return;
 
@@ -1834,9 +1877,10 @@ async function selectAgent(id) {
 
     agentConvos = data.conversations || [];
     agentConvos.sort((a, b) => {
-      const af = (a.analysis?.red_flags || []).length;
-      const bf = (b.analysis?.red_flags || []).length;
-      return bf - af;
+      const af = issueCount(a.analysis);
+      const bf = issueCount(b.analysis);
+      if (af !== bf) return bf - af;
+      return convoDateValue(b) - convoDateValue(a);
     });
     renderConvoList();
     renderFunnelPill();
@@ -1909,6 +1953,56 @@ function renderFunnelPill() {
   el.textContent = parts.join(" · ");
 }
 
+function convoDateValue(convo) {
+  const raw = convo?.audit_date || convo?.extracted_at || "";
+  const value = raw ? Date.parse(raw) : NaN;
+  return Number.isNaN(value) ? 0 : value;
+}
+
+function auditMethod(source) {
+  const normalized = String(source || "").toLowerCase();
+  if (normalized.startsWith("prefilter")) return "ML";
+  return "AI";
+}
+
+// Total issue count: red_flags array + label wrong (label_correct===false)
+function issueCount(a) {
+  const flagCount = (a?.red_flags || []).length;
+  const labelWrong = (a?.label_correct === false &&
+                      a?.label_assigned !== a?.label_should_be) ? 1 : 0;
+  return flagCount + labelWrong;
+}
+
+function auditMethodPill(source) {
+  const method = auditMethod(source);
+  const cls = method === "ML" ? "pill-y" : "pill-m";
+  const title = method === "ML" ? "Scored by ML prefilter" : "Scored by AI model";
+  return `<span class="pill ${cls}" title="${title}" style="font-size:.68rem;">${method}</span>`;
+}
+
+function labelValidityHtml(a, compact = false) {
+  if (!a || a.label_correct == null) return "";
+  const assigned = a.label_assigned || "";
+  const shouldBe = a.label_should_be || "?";
+  const sameLabel = assigned === shouldBe;
+  const size = compact ? ".66rem" : ".73rem";
+
+  if (a.label_correct === true || (a.label_correct === false && sameLabel)) {
+    return `<span style="font-size:${size};color:#059669;font-weight:700;">✓ Correct ${assigned ? `<em>${esc(assigned)}</em>` : ""}</span>`;
+  }
+
+  return `<span style="font-size:${size};color:#DC2626;font-weight:700;">✗ ${esc(assigned || "Label")} → should be <strong>${esc(shouldBe)}</strong>${!compact && a.label_reason ? ` <span style="color:#64748B;font-style:italic;">· ${esc(a.label_reason)}</span>` : ""}</span>`;
+}
+
+function mlLabelStatusHtml(a, compact = false) {
+  const checked = labelValidityHtml(a, compact);
+  if (checked) return checked;
+  if (auditMethod(a?.source) !== "ML" || !a?.label_assigned) return "";
+
+  const size = compact ? ".66rem" : ".73rem";
+  return `<span style="font-size:${size};color:var(--text-muted);font-weight:700;">ML label only <em>${esc(a.label_assigned)}</em></span>`;
+}
+
 
 // ── Conversation list ─────────────────────────────────────────────────────────
 function renderConvoList() {
@@ -1930,8 +2024,10 @@ function renderConvoList() {
     const a     = c.analysis || {};
     const svs   = [a.compliance, a.sentiment, a.professionalism, a.script_adherence].filter(x => x != null);
     const score = svs.length ? svs.reduce((s, v) => s + v, 0) / svs.length : null;
-    const flags = (a.red_flags || []).length;
+    const flags = issueCount(a);
     const msgs  = c.parsed_messages || [];
+    const method = auditMethod(a.source);
+    const mlLabelStatus = method === "ML" ? mlLabelStatusHtml(a, true) : "";
 
     // Label tag (Lovable style chip)
     const labelText = a.label_assigned || (c.assigned_labels?.[0]) || null;
@@ -1963,11 +2059,15 @@ function renderConvoList() {
             ${labelHtml}
             ${a.funnel_stage_reached ? `<span style="font-size:.68rem;color:var(--text-secondary);">· ${esc(a.funnel_stage_reached)}</span>` : ""}
           </div>
+          ${mlLabelStatus ? `<div style="margin-bottom:3px;">${mlLabelStatus}</div>` : ""}
           ${preview ? `<div style="font-size:.68rem;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(preview)}</div>` : ""}
         </div>
         <!-- Score badge -->
         <div style="flex-shrink:0; display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
-          ${score != null ? `<span class="pill ${pillClass(score)}">${fmtScore(score)}</span>` : ""}
+          <div style="display:flex;align-items:center;gap:5px;">
+            ${score != null ? `<span class="pill ${pillClass(score)}">${fmtScore(score)}</span>` : ""}
+            ${Object.keys(a).length ? auditMethodPill(a.source) : ""}
+          </div>
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="#94A3B8" style="width:13px;height:13px;"><path fill-rule="evenodd" d="M8.22 5.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd"/></svg>
         </div>
       </div>`;
@@ -2035,6 +2135,34 @@ function renderChatMessages(msgs, convo) {
   const contactInit = fmtInit(convo.contact_name || "Contact");
   const html = [];
 
+  // Telegram-style time formatter: "2026-05-08T19:43:00+00:00" → "7:43 PM"
+  function fmtMsgTime(raw) {
+    if (!raw) return "";
+    try {
+      // If already "HH:MM AM/PM", return as-is
+      if (/^\d{1,2}:\d{2}\s*(AM|PM)$/i.test(raw.trim())) return raw.trim();
+      const d = new Date(raw);
+      if (isNaN(d)) return raw;
+      let h = d.getHours(), m = d.getMinutes();
+      const ampm = h >= 12 ? "PM" : "AM";
+      h = h % 12 || 12;
+      return `${h}:${String(m).padStart(2, "0")} ${ampm}`;
+    } catch { return raw; }
+  }
+  // Extract date string for separator: "May 8, 2026"
+  function fmtMsgDate(raw) {
+    if (!raw) return "";
+    try {
+      // If it looks like a day name date ("Thursday, March 26, 2026"), use as-is
+      if (/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)/i.test(raw.trim())) return raw.trim();
+      const d = new Date(raw);
+      if (isNaN(d)) return "";
+      return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    } catch { return ""; }
+  }
+
+  let lastDateShown = "";
+
   msgs.forEach((msg, i) => {
     const isAgent   = msg.sender !== "Contact" && msg.sender !== "System";
     const wrapCls   = isAgent ? "bw-right"       : "bw-left";
@@ -2047,10 +2175,23 @@ function renderChatMessages(msgs, convo) {
       ? `<div class="${avCls}">${init}</div>`
       : `<div style="width:30px;flex-shrink:0;"></div>`;
 
-    const timeAlign  = isAgent ? "right" : "left";
     const wrapRClass = isAgent ? "bbl-wrap bbl-wrap-r" : "bbl-wrap";
     const senderLabel = showAv
       ? `<div class="bbl-sender">${esc(msg.sender)}</div>`
+      : "";
+
+    // Telegram-style date separator — show when date changes
+    const rawTime = msg.time || "";
+    const dateStr = fmtMsgDate(rawTime) || (msg.date ? fmtMsgDate(msg.date) : "");
+    if (dateStr && dateStr !== lastDateShown) {
+      lastDateShown = dateStr;
+      html.push(`<div class="chat-date-sep"><span>${esc(dateStr)}</span></div>`);
+    }
+
+    // Clean time for inside the bubble
+    const cleanTime = fmtMsgTime(rawTime);
+    const timeInBubble = cleanTime
+      ? `<span class="bbl-time">${esc(cleanTime)}</span>`
       : "";
 
     html.push(`
@@ -2058,8 +2199,7 @@ function renderChatMessages(msgs, convo) {
         ${avHtml}
         <div class="${wrapRClass}">
           ${senderLabel}
-          <div class="${bubbleCls}">${esc(msg.message)}</div>
-          ${msg.time ? `<div class="bbl-time" style="text-align:${timeAlign};">${esc(msg.time)}</div>` : ""}
+          <div class="${bubbleCls}">${esc(msg.message)}${timeInBubble}</div>
         </div>
       </div>`);
   });
@@ -2128,11 +2268,11 @@ function renderAiAnalysis(a, invalidatedFlags, isValidated) {
       <div class="metric-tip">${scoreDescriptions[lbl] || ''}</div>
     </div>`).join("");
 
-  let labelBadge = "";
+  let labelBadge = mlLabelStatusHtml(a);
   const _labelWrong = a.label_correct === false && a.label_assigned !== a.label_should_be;
-  if      (a.label_correct === true || (a.label_correct === false && !_labelWrong))  labelBadge = `<span style="font-size:.73rem;color:#059669;font-weight:600;">✓ Correct — <em>${esc(a.label_assigned || "")}</em></span>`;
-  else if (_labelWrong) labelBadge = `<span style="font-size:.73rem;color:#DC2626;font-weight:600;">✗ ${esc(a.label_assigned || "")} → should be <strong>${esc(a.label_should_be || "?")}</strong>${a.label_reason ? ` <span style="color:#64748B;font-style:italic;">· ${esc(a.label_reason)}</span>` : ""}</span>`;
-  else if (a.label_assigned)          labelBadge = `<span style="font-size:.73rem;color:var(--text-secondary);">${esc(a.label_assigned)}</span>`;
+  if      (!labelBadge && (a.label_correct === true || (a.label_correct === false && !_labelWrong)))  labelBadge = `<span style="font-size:.73rem;color:#059669;font-weight:600;">✓ Correct — <em>${esc(a.label_assigned || "")}</em></span>`;
+  else if (!labelBadge && _labelWrong) labelBadge = `<span style="font-size:.73rem;color:#DC2626;font-weight:600;">✗ ${esc(a.label_assigned || "")} → should be <strong>${esc(a.label_should_be || "?")}</strong>${a.label_reason ? ` <span style="color:#64748B;font-style:italic;">· ${esc(a.label_reason)}</span>` : ""}</span>`;
+  else if (!labelBadge && a.label_assigned)          labelBadge = `<span style="font-size:.73rem;color:var(--text-secondary);">${esc(a.label_assigned)}</span>`;
 
   const flags   = a.red_flags || [];
   const pillars = a.pillars_gathered || [];
@@ -2140,7 +2280,8 @@ function renderAiAnalysis(a, invalidatedFlags, isValidated) {
   el.innerHTML = `
     <div style="padding:.6rem 1.1rem;background:var(--surface-subtle);border-bottom:1px solid var(--surface-border);display:flex;align-items:center;gap:8px;">
       <div style="width:5px;height:5px;border-radius:50%;background:var(--brand);flex-shrink:0;"></div>
-      <span style="font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--brand);">AI Audit Analysis</span>
+      <span style="font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--brand);">Audit Analysis</span>
+      ${auditMethodPill(a.source)}
     </div>
 
     <div style="padding:.875rem 1.1rem;">
@@ -2230,6 +2371,36 @@ function updateRunButton() {
   }
 }
 
+function updateRunButton() {
+  const btn = document.getElementById("btn-run-ag");
+  const bar = document.getElementById("run-bar");
+  if (!btn || !selectedAgent) return;
+  const status = processStatus[selectedAgent.name] || "idle";
+  if (status === "running") {
+    const msg = statusMessage(selectedAgent.name, "Running...");
+    btn.disabled = true;
+    btn.innerHTML = `<span class="pls" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#2563EB;vertical-align:middle;margin-right:5px;"></span>${esc(msg)}`;
+    btn.style.color = "#2563EB"; btn.style.borderColor = "rgba(37,99,235,.35)"; btn.style.cursor = "not-allowed";
+    if (bar) bar.style.display = "block";
+  } else if (status === "done") {
+    btn.disabled = false;
+    btn.innerHTML = `Done - Run Again`;
+    btn.style.color = "#059669"; btn.style.borderColor = "rgba(5,150,105,.4)"; btn.style.cursor = "pointer";
+    if (bar) bar.style.display = "none";
+  } else if (status === "failed") {
+    const msg = statusMessage(selectedAgent.name, "Audit failed");
+    btn.disabled = false;
+    btn.innerHTML = `Failed: ${esc(msg)} - Run Again`;
+    btn.style.color = "#ef4444"; btn.style.borderColor = "rgba(239,68,68,.45)"; btn.style.cursor = "pointer";
+    if (bar) bar.style.display = "none";
+  } else {
+    btn.disabled = false;
+    btn.innerHTML = `Run Audit`;
+    btn.style.color = "#2563EB"; btn.style.borderColor = "rgba(37,99,235,.35)"; btn.style.cursor = "pointer";
+    if (bar) bar.style.display = "none";
+  }
+}
+
 function getRunParams() {
   return {
     date_filter: document.getElementById("date-filter").value,
@@ -2249,6 +2420,7 @@ async function runAgent(name, evt) {
     if (data.status === "already_running") { toast(`${name} is already running`); return; }
     if (data.status === "started") {
       processStatus[name] = "running";
+      processStatusDetails[name] = { state: "running", message: "Starting audit" };
       renderSidebar(); updateRunButton();
       toast(`Audit started for ${name}`);
     } else {
@@ -2548,6 +2720,8 @@ async function openDetailedConversation(conversationId) {
         label_reason:      a.label_reason,
         red_flags:         a.red_flags || [],
         summary:           a.summary || "",
+        model_used:        a.model_used,
+        source:            a.source,
       },
     };
 
@@ -2820,11 +2994,18 @@ async function pollStatus() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const payload = await res.json();
     const data = payload.statuses || payload;
+    const details = payload.status_details || {};
     keyAssignments = payload.key_assignments || {};
 
     let changed = false;
     for (const [name, state] of Object.entries(data)) {
       if (processStatus[name] !== state) { processStatus[name] = state; changed = true; }
+      const detail = details[name];
+      if (detail) {
+        const before = JSON.stringify(processStatusDetails[name] || {});
+        processStatusDetails[name] = detail;
+        if (before !== JSON.stringify(detail)) changed = true;
+      }
     }
     renderKeyAssignments();
 
@@ -2833,8 +3014,20 @@ async function pollStatus() {
 
     if (changed) {
       renderSidebar(); updateRunButton();
-      const justDone = Object.entries(data).some(([, s]) => s === "done");
-      if (justDone) { await loadAgents(); await loadMlStats(); }
+      const finished = Object.entries(data).some(([, s]) => s === "done" || s === "failed");
+      if (finished) {
+        await loadAgents();
+        if (selectedAgent) {
+          const refreshed = allAgents.find(a => a.id === selectedAgent.id);
+          if (refreshed) {
+            selectedAgent = refreshed;
+            renderAgentScores(refreshed);
+            await selectAgent(refreshed.id);
+          }
+        }
+        renderSidebar();
+        updateRunButton();
+      }
     }
   } catch (e) {
     console.warn("pollStatus error:", e);
@@ -2844,23 +3037,7 @@ async function pollStatus() {
 
 
 // ── Load agents ───────────────────────────────────────────────────────────────
-async function loadMlStats() {
-  try {
-    const res  = await fetch("/api/ml/stats");
-    if (!res.ok) return;
-    const d    = await res.json();
-    const pct  = Math.min(d.pct, 100);
-    document.getElementById("ml-prog-label").textContent     = `${d.groq_scored.toLocaleString()} / ${d.target.toLocaleString()}`;
-    document.getElementById("ml-prog-bar").style.width       = pct + "%";
-    document.getElementById("ml-prog-pct").textContent       = pct + "%";
-    document.getElementById("ml-prog-validated").textContent = `${d.validated} validated`;
-    // Turn bar green once target reached
-    if (d.groq_scored >= d.target) {
-      document.getElementById("ml-prog-bar").style.background = "linear-gradient(90deg,#059669,#34d399)";
-      document.getElementById("ml-prog-label").style.color    = "#059669";
-    }
-  } catch (_) {}
-}
+
 
 async function loadAgents() {
   try {
@@ -2880,7 +3057,8 @@ async function loadAgents() {
     });
 
     allAgents      = data;
-    filteredAgents = data;
+    // Filter to only show accounts with an assigned texter today in the sidebar
+    filteredAgents = data.filter(a => !!_getAssignedTexter(a.email));
 
     updateStats();
     renderKeyAssignments();
@@ -2942,12 +3120,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   showView("vw-empty");
   await loadRoster();
   await loadGroqKeys();
-  await loadAgents();
   await refreshTodayAssignments();
-  await loadMlStats();
+  await loadAgents();
   pollStatus();
-  // Refresh ML stats every 5 minutes while dashboard is open
-  setInterval(loadMlStats, 5 * 60 * 1000);
 });
 
 async function refreshTodayAssignments() {
@@ -2965,6 +3140,10 @@ async function refreshTodayAssignments() {
       };
     }
   } catch (_) {}
+  // Refresh sidebar if we have agent data loaded
+  if (typeof allAgents !== 'undefined' && allAgents.length) {
+    filterAgents(document.getElementById("srch")?.value || "");
+  }
 }
 
 // Returns the texter assigned to an agent's account email today, or null
@@ -3434,6 +3613,47 @@ async function saveAssignments() {
     setTimeout(() => { if (msgEl) msgEl.textContent = ""; }, 4000);
     // Keep assignment cache in sync
     await refreshTodayAssignments();
+  }
+}
+
+async function clearAssignments() {
+  const dateEl = document.getElementById("assign-date");
+  const date   = dateEl ? dateEl.value : _todayISO();
+  const msgEl  = document.getElementById("assign-msg");
+
+  if (!confirm(`Are you sure you want to clear ALL assignments for ${date}?`)) return;
+
+  try {
+    const res = await fetch(`/api/assignments?date=${encodeURIComponent(date)}`, {
+      method: "DELETE"
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Failed to clear");
+
+    if (msgEl) {
+      msgEl.style.color = "#059669";
+      msgEl.textContent = `✓ Assignments cleared for ${date}`;
+      setTimeout(() => { if (msgEl) msgEl.textContent = ""; }, 4000);
+    }
+    
+    // Immediate UI feedback
+    const rows = document.querySelectorAll("#assign-list [data-email]");
+    rows.forEach(row => {
+      const sel = row.querySelector(".assign-select");
+      const groqSel = row.querySelector(".groq-key-select");
+      if (sel) sel.value = "";
+      if (groqSel) groqSel.value = "";
+      _onAssignChange(sel || groqSel);
+    });
+
+    await loadAssignments();
+    await refreshTodayAssignments();
+  } catch (err) {
+    if (msgEl) {
+      msgEl.style.color = "#dc2626";
+      msgEl.textContent = "Error: " + err.message;
+    }
+    alert("Error clearing assignments: " + err.message);
   }
 }
 

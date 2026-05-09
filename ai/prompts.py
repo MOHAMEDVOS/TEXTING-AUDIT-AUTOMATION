@@ -28,7 +28,9 @@ ABSOLUTE LAW: "red_flags" may ONLY contain flags from the 12 items below. Unknow
 HAND RAISE: "Sure","Maybe","How much?","Tell me more","I might consider it"
 CONFUSION (NEUTRAL): "?","Who is this?","What do you want?" — NOT refusal, NOT opt-out
 DISINTEREST: "Not interested","No thanks","Not for sale"
-OPT-OUT (HARD stop): "stop","remove me","unsubscribe","leave me alone","don't contact me"
+OPT-OUT (HARD stop): "stop texting","stop contacting me","remove me","unsubscribe","leave me alone","don't contact me"
+NOT OPT-OUT: "stop by", "stop over", "send your business address", "come by", "talk about it", or any invitation/visit language.
+HARASSMENT / UNSERIOUS OWNER: sexual or private-meeting language like "meeting you would be fun", "go somewhere alone", "alone time" = DNC / not a serious seller. Do not treat as seller interest.
 KEY: "No"/"NO!!!" = soft rejection, NOT opt-out. Silence = Stopped Responding, not Not Interested.
 
 ## PART 2 — SCENARIOS
@@ -52,7 +54,7 @@ sentiment: score TEXTER only. Hostile lead never lowers score. Professional resp
 professionalism: penalize ONLY wrong name, incoherent, wrong property. Typos/casual OK.
 script_adherence: max(0, 100 - flags*20). 0 flags=100, 1=80, 2=60, 3=40, 4+=20.
 
-## PART 8 — RED FLAGS (ONLY THESE 12)
+## PART 8 — RED FLAGS (ONLY THESE 13)
 Rules: 1 mistake=1 flag. Flag 9+10 both apply=write 10. Flag 4+11 both=write 11. Never flag lead behavior. Unsure=omit.
 
 F1 "Continued texting after explicit opt-out." — lead used opt-out words AND agent sent more than confirmation. NOT for soft "no".
@@ -61,12 +63,13 @@ F3 "Stated a specific dollar offer." — agent gave specific price as offer. NOT
 F4 "Gave up after first no with zero rebuttal." — lead refused AND agent sent ZERO messages after. ANY reply clears this.
 F5 "Continued original pitch after wrong number." — kept selling after wrong number. NOT if pivoted to referral/apology.
 F6 "Agreed to call without pre-qualifying." — agreed to call with zero qualifying questions. NOT for Scenario E. ONE question anywhere clears.
-F7 "Revealed or promised 6+ month timeline." — agent volunteered 6+ months. NOT if lead set timeline first.
+F7 "Started future rebuttal with 6-month window before shorter timeline." — interested/raised-hand lead, agent first asks 6 months without trying shorter timeline (30-90 days, 3-4 months, 4 months). NOT for disinterested leads or when shorter timeline was asked first.
 F8 "Sent incoherent message or wrong name." — wrong name or broken templates/garbled text. NOT for typos/casual abbreviations.
 F9 "Ended conversation after lead showed interest." — lead showed interest AND agent ended chat. If F10 also applies, write F10 only.
 F10 "Pushed to close with zero property info." — pushed for call/offer with zero lead info. ANY single detail clears. NOT for Scenarios B/E.
 F11 "Did not escalate after all 4 pillars gathered." — all 4 pillars present, no escalation. NOT for <4 pillars or Scenarios B/E.
 F12 "Skipped $1k referral close after high price." — above-market price, conversation ended, no referral offer.
+F13 "Affirmed lead's asking price without negotiation." — lead stated asking price and agent responded with "Great!", "Perfect!", "Sounds good", or similar affirmation implying the price is acceptable. Agent should acknowledge the price and gather more info, NOT validate it. NOT flagged when agent is just repeating the price back or asking a follow-up question.
 
 NEVER FLAG: multiple msgs without reply, $1k referral, price ranges, pillar order, continuing after soft "no", confusion, lead tone/silence.
 
@@ -78,7 +81,7 @@ VALID LABELS: Potential,Warm,Hot,Lead,Lead Pushed,Investor | FU1,FU2,FU3,WL drip
 
 EQUIVALENCE GROUPS (identical): Abv MV={Abv MV, Abv MV+Verified, Not Interested+Abv MV} | DNC={DO Not Call, DNC} | Not Interested={Not Interested, Verified, Not Interested+Verified} | Maybe Later={Maybe Later, Not Interested+Maybe Later} | Stopped Responding={Stopped Responding, FU3} | Drip={WL/AP/HL drip, Reason FU, FU1-3}
 
-Flag label wrong ONLY when clearly misrepresenting lead. DNC only for opt-out/joke price. "Potential" only with 3+ pillars. Emoji-only NOT interest. When in doubt: label_correct=true.
+Flag label wrong ONLY when clearly misrepresenting lead. DNC only for explicit opt-out/joke price or sexual harassment/private-meeting language. The word "stop" is NOT enough by itself: "stop by/stop over" is visit language, never DNC. "Potential" only with 3+ pillars. Emoji-only NOT interest. When in doubt: label_correct=true.
 
 ## PART 11 — STYLE
 red_flags: exact verbatim PART 8 OUTPUT text only. summary: 2-3 sentences, TEXTER actions only, name scenario+funnel.

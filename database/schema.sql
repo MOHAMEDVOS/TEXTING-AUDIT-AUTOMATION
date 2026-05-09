@@ -213,3 +213,44 @@ CREATE TABLE IF NOT EXISTS api_keys (
 );
 
 CREATE INDEX IF NOT EXISTS idx_api_keys_provider ON api_keys(provider);
+
+-- ── semantic_candidates (auto-learning queue) ────────────────────────────────
+CREATE TABLE IF NOT EXISTS semantic_candidates (
+    id                      SERIAL PRIMARY KEY,
+    conversation_id         INTEGER REFERENCES conversations(id) ON DELETE CASCADE,
+    funnel_tier             TEXT,
+    embedding_hash          TEXT NOT NULL,
+    top_similarity          DOUBLE PRECISION,
+    nearest_conversation_id INTEGER,
+    compliance_score        DOUBLE PRECISION,
+    sentiment_score         DOUBLE PRECISION,
+    professionalism_score   DOUBLE PRECISION,
+    script_adherence_score  DOUBLE PRECISION,
+    distinctive_phrases     JSONB,
+    is_clean                BOOLEAN DEFAULT TRUE,
+    promoted                BOOLEAN DEFAULT FALSE,
+    promoted_at             TIMESTAMPTZ,
+    rejected                BOOLEAN DEFAULT FALSE,
+    rejected_reason         TEXT,
+    capture_reason          TEXT DEFAULT 'novelty',
+    created_at              TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(embedding_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_sem_cand_promoted ON semantic_candidates(promoted, rejected, created_at);
+CREATE INDEX IF NOT EXISTS idx_sem_cand_conv     ON semantic_candidates(conversation_id);
+
+-- ── audit_overrides (Phase B+ — tracks manager Groq rescores) ────────────────
+CREATE TABLE IF NOT EXISTS audit_overrides (
+    id                  SERIAL PRIMARY KEY,
+    conversation_id     INTEGER REFERENCES conversations(id) ON DELETE CASCADE,
+    ml_result           JSONB NOT NULL,
+    groq_result         JSONB NOT NULL,
+    requested_by        TEXT,
+    requested_at        TIMESTAMPTZ DEFAULT NOW(),
+    disagreement_summary TEXT
+);
+
+-- ── prefilter_decisions additions ────────────────────────────────────────────
+-- conversation_scores.source tracks which tier/provider produced the result
+-- Values: 'groq' | 'prefilter_t1' | 'prefilter_t2' | 'prefilter_t3' | 'prefilter_t4' | 'groq_override'
+ALTER TABLE conversation_scores ADD COLUMN IF NOT EXISTS source TEXT;

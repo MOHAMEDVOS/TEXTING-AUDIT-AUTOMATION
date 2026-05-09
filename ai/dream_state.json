@@ -1,8 +1,8 @@
 {
-  "last_run_at": "2026-05-05T21:38:57.984691Z",
-  "last_feedback_consumed_up_to": "2026-05-05T14:39:06.277598-04:00Z",
-  "total_rules_generated": 25,
-  "total_feedback_consumed": 125,
+  "last_run_at": "2026-05-08T01:27:40.726211Z",
+  "last_feedback_consumed_up_to": "2026-05-07T20:11:39.792914-04:00Z",
+  "total_rules_generated": 27,
+  "total_feedback_consumed": 127,
   "runs": [
     {
       "ran_at": "2026-04-24T03:02:07.230155Z",
@@ -85,6 +85,18 @@
     {
       "ran_at": "2026-05-05T21:38:57.984691Z",
       "feedback_entries": 6,
+      "clusters": 1,
+      "new_rules": 1
+    },
+    {
+      "ran_at": "2026-05-07T20:57:46.035834Z",
+      "feedback_entries": 1,
+      "clusters": 1,
+      "new_rules": 1
+    },
+    {
+      "ran_at": "2026-05-08T01:27:40.726211Z",
+      "feedback_entries": 1,
       "clusters": 1,
       "new_rules": 1
     }

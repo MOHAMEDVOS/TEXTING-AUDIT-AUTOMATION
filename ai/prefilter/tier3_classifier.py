@@ -1,11 +1,12 @@
 """
-Tier 3 — Trained logistic regression + score regressor on embeddings.
+Tier 3 — Trained logistic regression + score regressor + multi-label flag predictor.
 
 How it works:
   1. Embed the incoming conversation with sentence-transformers (with [FT] prefix).
   2. Run through trained flag_clf to get P(red_flag).
-  3. If P < flag_prob_threshold, predict the scores and short-circuit.
-  4. Otherwise, return None to escalate.
+  3. If label_clf exists, predict which specific flags are present.
+  4. If P < flag_prob_threshold AND min predicted score >= threshold, short-circuit.
+  5. Otherwise, return None to escalate.
 """
 from __future__ import annotations
 
@@ -65,6 +66,7 @@ def evaluate(
     agent_name: str,
     contact_name: str,
     funnel_tier: str = "NF",
+    assigned_labels: list[str] | None = None,
 ) -> Optional[PrefilterResult]:
     """
     Embed conversation and run through trained models.
@@ -99,7 +101,7 @@ def evaluate(
 
     # Threshold: if P(flag) >= 0.35, escalate (too risky)
     # Clean conversations cluster at ~0.30, flagged at ~0.63, so 0.35 is safe
-    flag_prob_threshold = getattr(settings, "PREFILTER_T3_FLAG_PROB_THRESHOLD", 0.35)
+    flag_prob_threshold = settings.PREFILTER_T3_MAX_FLAG_PROB
     if flag_prob >= flag_prob_threshold:
         return PrefilterResult(
             tier_hit=3,
@@ -117,13 +119,58 @@ def evaluate(
         "script_adherence_score": float(scores_pred[3]),
     }
 
+    # ── Multi-label flag prediction (if available) ────────────────────
+    predicted_flags = []
+    label_clf = _classifier_bundle.get("label_clf")
+    active_flag_labels = _classifier_bundle.get("active_flag_labels", [])
+    label_confidence = settings.PREFILTER_T3_LABEL_CONFIDENCE
+
+    if label_clf is not None and active_flag_labels:
+        try:
+            # predict_proba returns probabilities for each active label
+            label_probs = label_clf.predict_proba(query)
+            # label_probs may be a list of arrays (one per class) or a 2D array
+            if isinstance(label_probs, list):
+                # OneVsRest returns list of arrays, each (1, 2) shaped
+                for i, probs in enumerate(label_probs):
+                    if i < len(active_flag_labels):
+                        p_positive = float(probs[0, 1]) if probs.shape[1] == 2 else float(probs[0, 0])
+                        if p_positive >= label_confidence:
+                            predicted_flags.append(active_flag_labels[i])
+            else:
+                # 2D array: (1, n_labels)
+                for i, p in enumerate(label_probs[0]):
+                    if i < len(active_flag_labels) and float(p) >= label_confidence:
+                        predicted_flags.append(active_flag_labels[i])
+        except Exception as e:
+            logger.debug(f"[Prefilter T3] Multi-label prediction failed (non-fatal): {e}")
+
+    min_score = min(avg_scores.values())
+    min_score_threshold = settings.PREFILTER_T3_MIN_SCORE
+
+    # If predicted scores are too low, escalate
+    if min_score < min_score_threshold:
+        return PrefilterResult(
+            tier_hit=3,
+            decision="escalate",
+            confidence=1.0 - flag_prob,
+            notes=f"min_score={min_score:.1f} < {min_score_threshold}",
+        )
+
     return PrefilterResult(
         tier_hit=3,
         decision="short_circuit",
         confidence=1.0 - flag_prob,
         predicted_scores=avg_scores,
-        notes=f"flag_prob={flag_prob:.3f} < {flag_prob_threshold}",
-        result=_build_result(contact_name, avg_scores, messages, agent_name),
+        notes=(
+            f"flag_prob={flag_prob:.3f} < {flag_prob_threshold}, "
+            f"min_score={min_score:.1f}, "
+            f"predicted_flags={len(predicted_flags)}"
+        ),
+        result=_build_result(
+            contact_name, avg_scores, messages, agent_name,
+            assigned_labels, predicted_flags=predicted_flags,
+        ),
     )
 
 
@@ -132,19 +179,24 @@ def _build_result(
     scores: dict,
     messages: list[dict] | None = None,
     agent_name: str = "",
+    assigned_labels: list[str] | None = None,
+    predicted_flags: list[str] | None = None,
 ) -> dict:
     """Assemble a Groq-shaped output dict."""
     from . import summary_builder
+
+    # Use the label the texter actually set — never guess
+    label = (assigned_labels or [""])[0].strip() if assigned_labels else ""
+    from .label_validator import validate_label
+    label_check = validate_label(messages, label)
 
     if messages:
         smart_summary = summary_builder.build_summary(
             messages, agent_name, contact_name, scores, model_used="prefilter_t3",
         )
-        label, label_reason = summary_builder.detect_label(messages, contact_name)
         funnel = summary_builder.detect_funnel_stage(messages)
     else:
         smart_summary = "Classified as clean by Tier 3 embedding classifier."
-        label, label_reason = "Lead", "Label deferred — no message data available."
         funnel = "none"
 
     return {
@@ -156,10 +208,10 @@ def _build_result(
         "pillars_gathered": [],
         "rebuttals_used": [],
         "label_assigned": label,
-        "label_correct": True,
-        "label_should_be": label,
-        "label_reason": label_reason,
-        "red_flags": [],
+        "label_correct": label_check["label_correct"],
+        "label_should_be": label_check["label_should_be"],
+        "label_reason": label_check["label_reason"],
+        "red_flags": predicted_flags or [],
         "actions_triggered": [],
         "summary": smart_summary,
         "model_used": "prefilter_t3",

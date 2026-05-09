@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "last_updated": "2026-05-05T21:38:57.983399Z",
+  "last_updated": "2026-05-08T01:27:40.723689Z",
   "rules": [
     {
       "rule_text": "Do not flag conversations where the issue is related to an incorrect number, as this is not a valid reason for a flag.",
@@ -61,6 +61,29 @@
       ],
       "id": "lr_005",
       "created_at": "2026-05-05T21:38:57.983182Z",
+      "active": true,
+      "times_applied": 0
+    },
+    {
+      "rule_text": "Do not assign 'Not Interested' when a user is negotiating price, even if the proposed price is above market value. Consider the context of the conversation to determine genuine interest. Ensure the label reflects the user's intent, not just the price discussion.",
+      "category": "Intent Identification",
+      "source_flags": [
+        "Abv MV",
+        "Not Interested"
+      ],
+      "id": "lr_006",
+      "created_at": "2026-05-07T20:57:46.033339Z",
+      "active": true,
+      "times_applied": 0
+    },
+    {
+      "rule_text": "Do not flag conversations as revealing or promising a timeline if the owner has not explicitly agreed or confirmed the information.",
+      "category": "uncategorized",
+      "source_flags": [
+        "Revealed or promised 6+ month timeline"
+      ],
+      "id": "lr_007",
+      "created_at": "2026-05-08T01:27:40.723561Z",
       "active": true,
       "times_applied": 0
     }

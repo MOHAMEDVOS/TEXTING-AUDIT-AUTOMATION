@@ -80,21 +80,24 @@ PREFILTER_ENABLED       = os.getenv("PREFILTER_ENABLED", "true").lower() == "tru
 # Shadow mode: prefilter runs and records decisions to prefilter_decisions,
 # but the result is DISCARDED — Groq still produces the final score.
 # Use this to evaluate accuracy before flipping any tier live.
-PREFILTER_SHADOW_MODE   = os.getenv("PREFILTER_SHADOW_MODE", "true").lower() == "true"
+PREFILTER_SHADOW_MODE   = os.getenv("PREFILTER_SHADOW_MODE", "false").lower() == "true"
 
 # Per-tier live switches (only honored when PREFILTER_SHADOW_MODE=False).
 # Conservative default: only Tier 1 short-circuits live initially.
 PREFILTER_T1_LIVE       = os.getenv("PREFILTER_T1_LIVE", "true").lower() == "true"
 PREFILTER_T2_LIVE       = os.getenv("PREFILTER_T2_LIVE", "false").lower() == "true"
 PREFILTER_T3_LIVE       = os.getenv("PREFILTER_T3_LIVE", "false").lower() == "true"
+PREFILTER_T4_LIVE       = os.getenv("PREFILTER_T4_LIVE", "true").lower() == "true"
 
 # Tier 2 confidence: cosine-similarity threshold + min cluster size.
-PREFILTER_T2_SIM_THRESHOLD = float(os.getenv("PREFILTER_T2_SIM_THRESHOLD", "0.92"))
+PREFILTER_T2_SIM_THRESHOLD = float(os.getenv("PREFILTER_T2_SIM_THRESHOLD", "0.85"))
 PREFILTER_T2_MIN_NEIGHBORS = int(os.getenv("PREFILTER_T2_MIN_NEIGHBORS", "3"))
 
 # Tier 3 confidence: max flag-probability + min predicted score across all 4 dims.
-PREFILTER_T3_MAX_FLAG_PROB = float(os.getenv("PREFILTER_T3_MAX_FLAG_PROB", "0.15"))
+# Calibrated 2026-05-07 on 500-conv test: clean ~0.30, flagged ~0.63 → 0.35 = safe gap.
+PREFILTER_T3_MAX_FLAG_PROB = float(os.getenv("PREFILTER_T3_MAX_FLAG_PROB", "0.35"))
 PREFILTER_T3_MIN_SCORE     = float(os.getenv("PREFILTER_T3_MIN_SCORE",     "75"))
+PREFILTER_T3_LABEL_CONFIDENCE = float(os.getenv("PREFILTER_T3_LABEL_CONFIDENCE", "0.7"))
 
 # Embedding model (sentence-transformers, downloaded on first use).
 PREFILTER_EMBEDDING_MODEL = os.getenv("PREFILTER_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
@@ -115,3 +118,13 @@ PREFILTER_FLAG_ROUTING_ENABLED = os.getenv("PREFILTER_FLAG_ROUTING_ENABLED", "tr
 # ~50 manager validations exist; flipping it on with zero validations
 # empties the index.
 PREFILTER_REQUIRE_VALIDATION = os.getenv("PREFILTER_REQUIRE_VALIDATION", "false").lower() == "true"
+
+# ─── Semantic Auto-Learning ─────────────────────────────────
+SEMANTIC_LEARNING_ENABLED = os.getenv("SEMANTIC_LEARNING_ENABLED", "true").lower() == "true"
+SEMANTIC_MIN_SCORE        = float(os.getenv("SEMANTIC_MIN_SCORE",        "88.0"))
+SEMANTIC_MAX_SIMILARITY   = float(os.getenv("SEMANTIC_MAX_SIMILARITY",   "0.75"))
+SEMANTIC_MIN_PROMOTE      = int(os.getenv("SEMANTIC_MIN_PROMOTE",        "5"))
+SEMANTIC_MAX_PER_RUN      = int(os.getenv("SEMANTIC_MAX_PER_RUN",        "50"))
+SEMANTIC_REBUILD_TIMEOUT  = int(os.getenv("SEMANTIC_REBUILD_TIMEOUT",    "300"))
+SEMANTIC_TRAIN_TIMEOUT    = int(os.getenv("SEMANTIC_TRAIN_TIMEOUT",      "600"))
+

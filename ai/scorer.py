@@ -14,6 +14,7 @@ import psycopg2
 
 from config.settings import DATABASE_URL
 from ai.analyzer import analyze_conversation
+from ai.prefilter.label_validator import _label_key as _lk
 
 logger = logging.getLogger(__name__)
 
@@ -231,57 +232,61 @@ async def score_agent_conversations(
             f"(falling back to global prompt)"
         )
 
-    logger.info(f"[Scorer] ── {agent_name} — scoring {len(conversations)} conversation(s) individually")
+    logger.info(f"[Scorer] ── {agent_name} — scoring {len(conversations)} conversation(s) in parallel")
     per_convo: list[dict] = []
     total = len(conversations)
 
-    for idx, convo in enumerate(conversations, 1):
+    # Limit concurrent analysis to avoid overwhelming local models or threads
+    semaphore = asyncio.Semaphore(15)
+
+    async def _process_convo(idx: int, convo: dict) -> dict | None:
         parsed = convo.get("parsed_messages") or []
         contact = convo.get("contact_name") or "Contact"
         labels = convo.get("assigned_labels") or []
 
         if not parsed:
             logger.info(f"[Scorer] {agent_name} [{idx}/{total}] {contact} — no messages, skipping")
-            continue
+            return None
 
-        if idx > 1:
-            # Groq free-tier TPM is 6,000 (8b) or 12,000 (70b).
-            # Each call uses ~5-8K tokens. With N keys, safe interval = 60/N.
-            # 15 keys → 4s min, but 8s gives headroom to avoid 429 cascades
-            # that waste daily TPD budget on retries.
-            await asyncio.sleep(8)
+        async with semaphore:
+            logger.info(
+                f"[Scorer] {agent_name} [{idx}/{total}] {contact} — "
+                f"scoring ({len(parsed)} msgs, labels={labels or 'none'})"
+            )
 
-        logger.info(
-            f"[Scorer] {agent_name} [{idx}/{total}] {contact} — "
-            f"scoring ({len(parsed)} msgs, labels={labels or 'none'})"
-        )
+            result = await asyncio.to_thread(
+                analyze_conversation,
+                parsed,
+                agent_name,
+                contact,
+                assigned_labels=labels,
+                funnel_tier=funnel_tier,
+                guidelines=guidelines,
+                pinned_key=pinned_key,
+                conversation_id=convo.get("conversation_id"),
+                db_pool=pool,
+            )
 
-        result = await asyncio.to_thread(
-            analyze_conversation,
-            parsed,
-            agent_name,
-            contact,
-            assigned_labels=labels,
-            funnel_tier=funnel_tier,
-            guidelines=guidelines,
-            pinned_key=pinned_key,
-            conversation_id=convo.get("conversation_id"),
-            db_pool=pool,
-        )
+            if convo.get("conversation_id") and not result.get("conversation_id"):
+                result["conversation_id"] = convo["conversation_id"]
 
-        if convo.get("conversation_id") and not result.get("conversation_id"):
-            result["conversation_id"] = convo["conversation_id"]
+            result["red_flags"] = _filter_flags(result.get("red_flags") or [], invalid_patterns)
 
-        result["red_flags"] = _filter_flags(result.get("red_flags") or [], invalid_patterns)
+            score = result.get("compliance_score")
+            flags = len(result.get("red_flags") or [])
+            funnel = result.get("funnel_stage_reached") or "?"
+            logger.info(
+                f"[Scorer] {agent_name} [{idx}/{total}] {contact} — "
+                f"adherence={score} funnel={funnel} flags={flags}"
+            )
+            return result
 
-        score = result.get("compliance_score")
-        flags = len(result.get("red_flags") or [])
-        funnel = result.get("funnel_stage_reached") or "?"
-        logger.info(
-            f"[Scorer] {agent_name} [{idx}/{total}] {contact} — "
-            f"adherence={score} funnel={funnel} flags={flags}"
-        )
-        per_convo.append(result)
+    coros = [_process_convo(idx, convo) for idx, convo in enumerate(conversations, 1)]
+    results = await asyncio.gather(*coros)
+
+    for r in results:
+        if r is not None:
+            per_convo.append(r)
 
     if not per_convo:
         logger.warning(f"[Scorer] {agent_name}: all conversations had empty parsed_messages")
@@ -306,7 +311,12 @@ async def score_agent_conversations(
             wrong  = (r.get("label_assigned") or "").strip()
             should = (r.get("label_should_be") or "").strip()
             # AI sometimes returns label_correct=false but identical values — ignore it
-            if not wrong or not should or wrong.lower() == should.lower():
+            # Also treat semantically equivalent labels (Decision Maker, Verified, etc.) as correct
+            if not wrong or not should or _lk(wrong) == _lk(should):
+                r["label_correct"] = True
+                continue
+            # Routing hints are not real labels — never show as a flag
+            if "groq" in should.lower() or "needs groq" in should.lower():
                 r["label_correct"] = True
                 continue
             # AI can hallucinate non-existent labels; ignore those wrong-label claims.
@@ -405,13 +415,10 @@ async def score_agent_conversations(
                     prev_details = {}
 
                 prev_pc = prev_details.get("per_conversation", [])
-                # Deduplicate by contact name — new run's data wins for duplicates
-                prev_contacts = {(pc.get("contact") or "").lower().strip() for pc in prev_pc}
-                new_pc = [
-                    pc for pc in details["per_conversation"]
-                    if (pc.get("contact") or "").lower().strip() not in prev_contacts
-                ]
-                merged_pc = prev_pc + new_pc
+                # New run's data wins for duplicates — filter old entries for contacts in new run
+                new_contacts = {(pc.get("contact") or "").lower().strip() for pc in details["per_conversation"]}
+                prev_pc_kept = [pc for pc in prev_pc if (pc.get("contact") or "").lower().strip() not in new_contacts]
+                merged_pc = prev_pc_kept + details["per_conversation"]
                 merged_count = len(merged_pc)
 
                 # Weighted average of scores across all conversations
@@ -507,38 +514,47 @@ async def score_agent_conversations(
                 conv_id = r.get("conversation_id")
                 if conv_id:
                     model_used = r.get("model_used") or ""
-                    if model_used.startswith("prefilter_"):
-                        source = model_used  # 'prefilter_t1' | 'prefilter_t2' | 'prefilter_t3'
+                    if model_used.startswith("prefilter_t1"):
+                        source = "prefilter_t1"
+                    elif model_used.startswith("prefilter_t2"):
+                        source = "prefilter_t2"
+                    elif model_used.startswith("prefilter_t3"):
+                        source = "prefilter_t3"
+                    elif model_used.startswith("prefilter_t4"):
+                        source = "prefilter_t4"
                     elif model_used.lower().startswith("nim"):
                         source = "nim"
                     else:
                         source = "groq"
-                    await conn.execute(
-                        """INSERT INTO conversation_scores
-                               (conversation_id, compliance_score, sentiment_score,
-                                professionalism_score, script_adherence_score,
-                                funnel_stage, pillars_gathered, rebuttals_used,
-                                label_assigned, label_correct, label_should_be, label_reason,
-                                red_flags, actions_triggered, summary, model_used, source)
-                           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14,$15,$16,$17)""",
-                        conv_id,
-                        r.get("compliance_score"),
-                        r.get("sentiment_score"),
-                        r.get("professionalism_score"),
-                        r.get("script_adherence_score"),
-                        r.get("funnel_stage_reached"),
-                        r.get("pillars_gathered") or [],
-                        r.get("rebuttals_used") or [],
-                        r.get("label_assigned"),
-                        r.get("label_correct"),
-                        r.get("label_should_be"),
-                        r.get("label_reason"),
-                        json.dumps(r.get("red_flags") or []),
-                        r.get("actions_triggered") or [],
-                        r.get("summary"),
-                        r.get("model_used"),
-                        source,
-                    )
+                    try:
+                        await conn.execute(
+                            """INSERT INTO conversation_scores
+                                   (conversation_id, compliance_score, sentiment_score,
+                                    professionalism_score, script_adherence_score,
+                                    funnel_stage, pillars_gathered, rebuttals_used,
+                                    label_assigned, label_correct, label_should_be, label_reason,
+                                    red_flags, actions_triggered, summary, model_used, source)
+                               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14,$15,$16,$17)""",
+                            conv_id,
+                            r.get("compliance_score"),
+                            r.get("sentiment_score"),
+                            r.get("professionalism_score"),
+                            r.get("script_adherence_score"),
+                            r.get("funnel_stage_reached"),
+                            r.get("pillars_gathered") or [],
+                            r.get("rebuttals_used") or [],
+                            r.get("label_assigned"),
+                            r.get("label_correct"),
+                            r.get("label_should_be"),
+                            r.get("label_reason"),
+                            json.dumps(r.get("red_flags") or []),
+                            r.get("actions_triggered") or [],
+                            r.get("summary"),
+                            r.get("model_used"),
+                            source,
+                        )
+                    except Exception as _e:
+                        logger.error(f"[Scorer] Failed to write conversation_scores for conv_id={conv_id}: {_e}")
 
             # ── Write trend snapshot ──────────────────────────────────────
             # Resolve the assigned texter name from account_assignments
@@ -621,6 +637,20 @@ async def score_agent_conversations(
             asyncio.get_event_loop().run_in_executor(None, run_dream_worker)
     except Exception as _e:
         logger.warning(f"[Scorer] dream_worker check failed (non-fatal): {_e}")
+
+    # ── Semantic auto-promote (self-learning pipeline) ──────────────────────
+    try:
+        from config.settings import SEMANTIC_LEARNING_ENABLED
+        if SEMANTIC_LEARNING_ENABLED:
+            from ai.prefilter.semantic_learner import auto_promote
+            promote_result = await asyncio.to_thread(auto_promote)
+            if promote_result.get("promoted", 0) > 0:
+                logger.info(
+                    f"[Scorer] Semantic auto-promote: {promote_result['promoted']} "
+                    f"candidates promoted, rebuild={'✓' if promote_result.get('rebuild_triggered') else '✗'}"
+                )
+    except Exception as _e:
+        logger.warning(f"[Scorer] semantic auto-promote failed (non-fatal): {_e}")
 
     return {
         "overall_score": overall,

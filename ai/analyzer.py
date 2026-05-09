@@ -652,6 +652,8 @@ def analyze_conversation(
             agent_name,
             contact_name,
             conversation_id=conversation_id,
+            funnel_tier=funnel_tier or "NF",
+            assigned_labels=assigned_labels or [],
             db_pool=db_pool,
         )
         if prefilter_result is not None:
@@ -984,8 +986,8 @@ def _run_with_pinned_groq_key(
             )
             if pinned_rate_limits >= _PINNED_FALLBACK_AFTER_429S:
                 if strict_assignment:
-                    # In strict mode we MUST stay on the pinned key — wait for it
-                    # to cool down rather than failing or rotating to the pool.
+                    # In strict mode, wait once for the key to recover, then fall
+                    # back to the shared pool if it's still exhausted.
                     wait_s = (e.retry_after or _DEFAULT_COOLDOWN)
                     wait_s = min(max(wait_s, 10), 120)  # clamp 10-120s
                     logger.warning(
@@ -993,7 +995,7 @@ def _run_with_pinned_groq_key(
                         f"— strict mode: waiting {wait_s:.0f}s for cooldown (429 #{pinned_rate_limits})"
                     )
                     time.sleep(wait_s)
-                    pinned_rate_limits = 0  # reset counter after waiting
+                    # Don't reset pinned_rate_limits — allow fallback after next 429
                     continue
                 logger.warning(
                     f"[Analyzer] Pinned Groq fallback engaged for {contact_name} "
@@ -1036,206 +1038,28 @@ _PILLAR_FLAG_RE = re.compile(r"did(?:n'?t| not) gather\s+([a-z _-]+?)\s+pillar",
 _REFERRAL_RE = re.compile(r"referral", re.I)
 _DOLLAR_RE    = re.compile(r"\$[\d]", re.I)
 
-_WHITELIST_FLAG_OUTPUTS = [
-    "Continued texting after explicit opt-out.",
-    "Used threatening, profane, or deceptive language.",
-    "Stated a specific dollar offer.",
-    "Gave up after first no with zero rebuttal.",
-    "Continued original pitch after wrong number.",
-    "Agreed to call without pre-qualifying.",
-    "Revealed or promised 6+ month timeline.",
-    "Sent incoherent message or wrong name.",
-    "Ended conversation after lead showed interest.",
-    "Pushed to close with zero property info.",
-    "Did not escalate after all 4 pillars gathered.",
-    "Skipped $1k referral close after high price.",
-]
-
-_FLAG_REMAP_RULES: list[tuple[re.Pattern[str], str]] = [
-    # Common casing/quoting paraphrases observed in local runs
-    (
-        re.compile(r"(?i)\bgave\s*up\b.*\bfirst\b.*\bno\b"),
-        "Gave up after first no with zero rebuttal.",
-    ),
-    (
-        re.compile(r"(?i)\bgave\s*up\b.*\bzero\b.*\brebuttal\b"),
-        "Gave up after first no with zero rebuttal.",
-    ),
-    (
-        re.compile(r"(?i)\bwrong\s*number\b.*\bkept\b.*\b(sell|selling|pitch|pushing)\b"),
-        "Continued original pitch after wrong number.",
-    ),
-    (
-        re.compile(r"(?i)\breveal(ed|ing)?\b.*\b6\b.*\bmonth"),
-        "Revealed or promised 6+ month timeline.",
-    ),
-    (
-        re.compile(r"(?i)\bpromis(ed|ing)?\b.*\b6\b.*\bmonth"),
-        "Revealed or promised 6+ month timeline.",
-    ),
-    (
-        re.compile(r"(?i)\bcontinued\b.*\b(opt\s*[- ]?out|unsubscribe|stop\s+text|remove\s+me|leave\s+me\s+alone)\b"),
-        "Continued texting after explicit opt-out.",
-    ),
-]
-
-_OPTOUT_TEXT_RE = re.compile(
-    r"\b(stop|stop\s+text|stop\s+these\s+texts|remove\s+me|unsubscribe|leave\s+me\s+alone|don't\s+contact\s+me|take\s+me\s+off\s+your\s+list|no\s+more\s+text|dont\s+text\s+me|don't\s+text\s+me)\b",
-    re.I,
+# ── Shared guard imports (authoritative source: ai.prefilter._guards) ────────
+# All deterministic guard logic lives in _guards.py and is shared with Tier 4.
+from ai.prefilter._guards import (
+    WHITELIST_FLAG_OUTPUTS as _WHITELIST_FLAG_OUTPUTS,
+    OPTOUT_TEXT_RE as _OPTOUT_TEXT_RE,
+    SOFT_NO_RE as _SOFT_NO_RE,
+    DNC_LABEL_RE as _DNC_LABEL_RE,
+    DNC_JOKE_PRICE_RE as _DNC_JOKE_PRICE_RE,
+    FLAG_REMAP_RULES as _FLAG_REMAP_RULES,
+    _canon_flag_text,
+    normalize_red_flags as _normalize_red_flags,
+    agent_continued_after_opt_out as _agent_continued_after_opt_out,
+    last_message_from_contact as _last_message_from_contact,
+    agent_replied_after_first_soft_no as _agent_replied_after_first_soft_no,
+    contact_has_explicit_opt_out as _contact_has_explicit_opt_out,
+    contact_has_dnc_joke_price as _contact_has_dnc_joke_price,
+    apply_label_guards as _apply_label_guards,
 )
-
-_SOFT_NO_RE = re.compile(r"\b(no|nope|not interested|no thanks|not for sale)\b", re.I)
-_DNC_LABEL_RE = re.compile(r"\b(do\s*not\s*call|dnc)\b", re.I)
-
-
-def _canon_flag_text(text: str) -> str:
-    t = text.lower().strip()
-    t = t.replace('"', "").replace("'", "")
-    t = re.sub(r"[^\w\s$+.-]", " ", t)
-    t = re.sub(r"\s+", " ", t).strip().rstrip(".")
-    return t
-
 
 _WHITELIST_CANON = {_canon_flag_text(x): x for x in _WHITELIST_FLAG_OUTPUTS}
 
 
-def _remap_flag_to_whitelist(text: str) -> str | None:
-    """Map common paraphrases to exact whitelist OUTPUT lines."""
-    for pattern, output in _FLAG_REMAP_RULES:
-        if pattern.search(text):
-            return output
-    return None
-
-
-def _normalize_red_flags(flags) -> list[str]:
-    """Normalize + strictly enforce whitelist flag outputs."""
-    if not flags or not isinstance(flags, list):
-        return []
-    pillars: list[str] = []
-    kept: list[str] = []
-    for f in flags:
-        if not isinstance(f, str):
-            continue
-        if _REFERRAL_RE.search(f) and _DOLLAR_RE.search(f):
-            continue  # always a hallucination — $1k referral close is correct scripted behaviour
-        m = _PILLAR_FLAG_RE.search(f)
-        if m:
-            pillars.append(m.group(1).strip().lower())
-        else:
-            kept.append(f.strip())
-    if pillars:
-        seen, ordered = set(), []
-        for p in pillars:
-            if p not in seen:
-                seen.add(p)
-                ordered.append(p)
-        if len(ordered) >= 2:
-            kept.append(f"Missed pillars: {', '.join(ordered)}.")
-    seen_keys, out = set(), []
-    for f in kept:
-        remapped = _remap_flag_to_whitelist(f)
-        key = _canon_flag_text(remapped or f)
-        canonical = _WHITELIST_CANON.get(key)
-        if not canonical:
-            continue
-        key = _canon_flag_text(canonical)
-        if key and key not in seen_keys:
-            seen_keys.add(key)
-            out.append(canonical)
-    return out
-
-
-def _agent_continued_after_opt_out(messages: list[dict]) -> bool:
-    """
-    Deterministic guard for FLAG 1.
-
-    Returns True only if:
-      - a Contact message contains explicit opt-out language, AND
-      - there exists a later non-contact message after that opt-out.
-    """
-    optout_idx: int | None = None
-    for i, m in enumerate(messages or []):
-        sender = (m.get("sender") or "").strip().lower()
-        text = (m.get("message") or m.get("body") or "").strip()
-        if sender in ("contact", "lead") and _OPTOUT_TEXT_RE.search(text):
-            optout_idx = i
-            break
-    if optout_idx is None:
-        return False
-    for later in (messages or [])[optout_idx + 1 :]:
-        sender = (later.get("sender") or "").strip().lower()
-        if sender and sender not in ("contact", "lead"):
-            return True
-    return False
-
-
-def _last_message_from_contact(messages: list[dict]) -> bool:
-    """True when the final message in sequence is from the contact/lead."""
-    if not messages:
-        return False
-    last_sender = (messages[-1].get("sender") or "").strip().lower()
-    return last_sender in ("contact", "lead")
-
-
-def _agent_replied_after_first_soft_no(messages: list[dict]) -> bool:
-    """
-    Deterministic guard for FLAG 4.
-
-    Returns True only if:
-      - a Contact message contains a soft refusal ("no", "not interested", etc.), AND
-      - there exists a later non-contact message after that refusal.
-    """
-    no_idx: int | None = None
-    for i, m in enumerate(messages or []):
-        sender = (m.get("sender") or "").strip().lower()
-        text = (m.get("message") or m.get("body") or "").strip()
-        if sender in ("contact", "lead") and _SOFT_NO_RE.search(text):
-            no_idx = i
-            break
-    if no_idx is None:
-        return False
-    for later in (messages or [])[no_idx + 1 :]:
-        sender = (later.get("sender") or "").strip().lower()
-        if sender and sender not in ("contact", "lead"):
-            return True
-    return False
-
-
-def _contact_has_explicit_opt_out(messages: list[dict]) -> bool:
-    """True when any contact/lead message contains explicit opt-out wording."""
-    for m in messages or []:
-        sender = (m.get("sender") or "").strip().lower()
-        text = (m.get("message") or m.get("body") or "").strip()
-        if sender in ("contact", "lead") and _OPTOUT_TEXT_RE.search(text):
-            return True
-    return False
-
-
-def _apply_label_guards(result: dict, messages: list[dict]) -> None:
-    """
-    Deterministic label guard:
-    Explicit opt-out by contact => correct label must be DO Not Call.
-    """
-    if not isinstance(result, dict):
-        return
-    if not _contact_has_explicit_opt_out(messages):
-        return
-
-    assigned = str(result.get("label_assigned") or "").strip()
-    assigned_is_dnc = bool(_DNC_LABEL_RE.search(assigned))
-    if assigned_is_dnc:
-        result["label_correct"] = True
-        result["label_should_be"] = assigned or "DO Not Call"
-        result["label_reason"] = (
-            "Contact used explicit opt-out language; assigned label is in DNC group."
-        )
-        return
-
-    result["label_correct"] = False
-    result["label_should_be"] = "DO Not Call"
-    result["label_reason"] = (
-        "Contact used explicit opt-out language, so the correct label is DO Not Call."
-    )
 
 
 def _finalize_result(raw: str, pk: "PooledKey", contact_name: str) -> dict:
@@ -1542,7 +1366,8 @@ def _run_batch_with_pinned_groq_key(
             pinned_rate_limits += 1
             if pinned_rate_limits >= _PINNED_FALLBACK_AFTER_429S:
                 if strict_assignment:
-                    # Strict mode: wait for cooldown, then retry the pinned key.
+                    # Strict mode: wait once for the key to recover, then fall
+                    # back to the shared pool if it's still exhausted.
                     wait_s = (e.retry_after or _DEFAULT_COOLDOWN)
                     wait_s = min(max(wait_s, 10), 120)  # clamp 10-120s
                     logger.warning(
@@ -1550,7 +1375,7 @@ def _run_batch_with_pinned_groq_key(
                         f"— strict mode: waiting {wait_s:.0f}s for cooldown (429 #{pinned_rate_limits})"
                     )
                     time.sleep(wait_s)
-                    pinned_rate_limits = 0  # reset counter after waiting
+                    # Don't reset pinned_rate_limits — allow fallback after next 429
                     continue
                 logger.warning(
                     f"[Analyzer] Batch pinned fallback engaged for key […{key_suffix}] "

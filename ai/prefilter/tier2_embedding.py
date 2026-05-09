@@ -96,6 +96,7 @@ def evaluate(
     agent_name: str,
     contact_name: str,
     funnel_tier: str = "NF",
+    assigned_labels: list[str] | None = None,
 ) -> Optional[PrefilterResult]:
     """
     Look up nearest neighbors. Short-circuit if confidently clean, else None.
@@ -184,7 +185,7 @@ def evaluate(
             f"top sim={top_sim:.3f}, "
             f"{len(clean_close)} clean neighbors avg-pooled"
         ),
-        result=_build_result(contact_name, avg_scores, clean_close, messages, agent_name),
+        result=_build_result(contact_name, avg_scores, clean_close, messages, agent_name, assigned_labels),
     )
 
 
@@ -204,15 +205,19 @@ def _build_result(
     neighbors: list[dict],
     messages: list[dict] | None = None,
     agent_name: str = "",
+    assigned_labels: list[str] | None = None,
 ) -> dict:
     """Assemble a Groq-shaped output dict with smart summary."""
     from . import summary_builder
+
+    label = (assigned_labels or [""])[0].strip() if assigned_labels else ""
+    from .label_validator import validate_label
+    label_check = validate_label(messages, label)
 
     if messages:
         smart_summary = summary_builder.build_summary(
             messages, agent_name, contact_name, scores, model_used="prefilter_t2",
         )
-        label, label_reason = summary_builder.detect_label(messages, contact_name)
         funnel = summary_builder.detect_funnel_stage(messages)
     else:
         neighbor_ids = [n["conversation_id"] for n in neighbors[:3]]
@@ -220,7 +225,6 @@ def _build_result(
             f"This conversation closely matches {len(neighbors)} "
             f"previously-audited clean threads (IDs: {neighbor_ids})."
         )
-        label, label_reason = "Lead", "Label deferred — no message data available."
         funnel = "none"
 
     return {
@@ -232,9 +236,9 @@ def _build_result(
         "pillars_gathered": [],
         "rebuttals_used": [],
         "label_assigned": label,
-        "label_correct": True,
-        "label_should_be": label,
-        "label_reason": label_reason,
+        "label_correct": label_check["label_correct"],
+        "label_should_be": label_check["label_should_be"],
+        "label_reason": label_check["label_reason"],
         "red_flags": [],
         "actions_triggered": [],
         "summary": smart_summary,

@@ -15,6 +15,63 @@ logger = logging.getLogger(__name__)
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 
 
+_MONTH_MAP = {
+    "january": 1, "february": 2, "march": 3, "april": 4,
+    "may": 5, "june": 6, "july": 7, "august": 8,
+    "september": 9, "october": 10, "november": 11, "december": 12,
+}
+
+def _parse_msg_datetime(msg: dict) -> datetime | None:
+    """
+    Combine the scraper's separate 'date' and 'time' fields into a datetime.
+
+    Scraped format:
+      msg["date"] = "Thursday, March 26, 2026"  (empty "" for today's messages)
+      msg["time"] = "05:59 PM"
+
+    If 'sent_at' or 'timestamp' already holds an ISO string, use that directly.
+    Falls back to today's date when 'date' is empty (same-session messages).
+    Returns None only when no usable time field exists.
+    """
+    # Already a full ISO datetime (e.g. from DB re-read or test fixtures)
+    for key in ("sent_at", "timestamp"):
+        raw = msg.get(key)
+        if raw and isinstance(raw, datetime):
+            return raw
+        if raw:
+            try:
+                return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            except Exception:
+                pass
+
+    time_str = (msg.get("time") or "").strip()
+    if not time_str:
+        return None
+
+    date_str = (msg.get("date") or "").strip()
+    if date_str:
+        # Parse "Thursday, March 26, 2026"
+        try:
+            parts = date_str.replace(",", "").split()
+            # parts = ["Thursday", "March", "26", "2026"]
+            month = _MONTH_MAP.get(parts[1].lower())
+            day = int(parts[2])
+            year = int(parts[3])
+            msg_date = date(year, month, day)
+        except Exception:
+            msg_date = datetime.now().date()
+    else:
+        # Empty date = today's messages scraped in current session
+        msg_date = datetime.now().date()
+
+    try:
+        t = datetime.strptime(time_str, "%I:%M %p")
+        return datetime(msg_date.year, msg_date.month, msg_date.day,
+                        t.hour, t.minute)
+    except Exception:
+        return None
+
+
 class Database:
     """Async PostgreSQL database for storing audit data."""
 
@@ -171,13 +228,7 @@ class Database:
                     for msg in parsed_messages:
                         sender = msg.get("sender", "unknown")
                         body = msg.get("message") or msg.get("text") or ""
-                        sent_at_str = msg.get("time") or msg.get("timestamp")
-                        sent_at = None
-                        if sent_at_str:
-                            try:
-                                sent_at = datetime.fromisoformat(str(sent_at_str))
-                            except Exception:
-                                sent_at = None
+                        sent_at = _parse_msg_datetime(msg)
 
                         await conn.execute(
                             """INSERT INTO messages (conversation_id, sender, body, sent_at)
@@ -240,7 +291,7 @@ class Database:
                 """SELECT sender, body AS message, sent_at AS time
                    FROM messages
                    WHERE conversation_id = $1
-                   ORDER BY sent_at ASC, id ASC""",
+                   ORDER BY sent_at ASC NULLS FIRST, id ASC""",
                 conversation_id,
             )
             return [dict(r) for r in rows]
@@ -269,12 +320,17 @@ class Database:
                 agent_email, contact_name, message_preview,
             )
 
-    async def cleanup_failed_audits(self) -> int:
+    async def cleanup_failed_audits(self, agent_id: int | None = None) -> int:
         """
         Remove conversations that failed to score so the next run retries them.
         Covers two failure modes:
           1. Rate-limit skips  — summary = 'Analysis skipped: Could not score...' + NULL scores
           2. Ghost rows        — conversation exists but no score row was ever written
+
+        When `agent_id` is provided, cleanup is scoped to that agent only — critical
+        for parallel runs where multiple subprocesses each have in-flight conversations
+        that haven't been scored yet. Without scoping, one subprocess finishing first
+        will delete another's still-being-scored rows, causing FK violations.
 
         Deletes from audited_chats (dedup cache) and conversations (cascades to scores+messages).
         Also strips failed entries from audit_scores.details so UI counts are correct.
@@ -286,64 +342,78 @@ class Database:
         _EXCLUDE  = "%request stayed too large%"
         count = 0
 
+        # Build agent scope clauses (parameterized via $3 if agent_id provided)
+        agent_clause_cs   = " AND c.agent_id = $3" if agent_id is not None else ""
+        agent_clause_conv = " AND agent_id = $3" if agent_id is not None else ""
+        params_full = (_PATTERN, _EXCLUDE, agent_id) if agent_id is not None else (_PATTERN, _EXCLUDE)
+
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 # ── Case 1: rate-limit skips (have a score row, all scores NULL, skip summary) ──
                 row = await conn.fetchrow(
-                    """SELECT COUNT(*) AS n FROM conversation_scores
-                       WHERE summary LIKE $1 AND summary NOT LIKE $2
-                         AND compliance_score IS NULL AND sentiment_score IS NULL""",
-                    _PATTERN, _EXCLUDE,
+                    f"""SELECT COUNT(*) AS n FROM conversation_scores cs
+                        JOIN conversations c ON c.id = cs.conversation_id
+                        WHERE cs.summary LIKE $1 AND cs.summary NOT LIKE $2
+                          AND cs.compliance_score IS NULL AND cs.sentiment_score IS NULL
+                          {agent_clause_cs}""",
+                    *params_full,
                 )
                 count += row["n"] if row else 0
 
                 await conn.execute(
-                    """DELETE FROM audited_chats ac
-                       WHERE EXISTS (
-                           SELECT 1 FROM conversation_scores cs
-                           JOIN conversations c ON c.id = cs.conversation_id
-                           JOIN accounts a      ON a.id = c.agent_id
-                           JOIN contacts co     ON co.id = c.contact_id
-                           WHERE cs.summary LIKE $1 AND cs.summary NOT LIKE $2
-                             AND cs.compliance_score IS NULL AND cs.sentiment_score IS NULL
-                             AND ac.agent_email = a.email AND ac.contact_name = co.name
-                       )""",
-                    _PATTERN, _EXCLUDE,
+                    f"""DELETE FROM audited_chats ac
+                        WHERE EXISTS (
+                            SELECT 1 FROM conversation_scores cs
+                            JOIN conversations c ON c.id = cs.conversation_id
+                            JOIN accounts a      ON a.id = c.agent_id
+                            JOIN contacts co     ON co.id = c.contact_id
+                            WHERE cs.summary LIKE $1 AND cs.summary NOT LIKE $2
+                              AND cs.compliance_score IS NULL AND cs.sentiment_score IS NULL
+                              AND ac.agent_email = a.email AND ac.contact_name = co.name
+                              {agent_clause_cs}
+                        )""",
+                    *params_full,
                 )
                 await conn.execute(
-                    """DELETE FROM conversations WHERE id IN (
-                           SELECT conversation_id FROM conversation_scores
-                           WHERE summary LIKE $1 AND summary NOT LIKE $2
-                             AND compliance_score IS NULL AND sentiment_score IS NULL
-                       )""",
-                    _PATTERN, _EXCLUDE,
+                    f"""DELETE FROM conversations WHERE id IN (
+                            SELECT cs.conversation_id FROM conversation_scores cs
+                            JOIN conversations c ON c.id = cs.conversation_id
+                            WHERE cs.summary LIKE $1 AND cs.summary NOT LIKE $2
+                              AND cs.compliance_score IS NULL AND cs.sentiment_score IS NULL
+                              {agent_clause_cs}
+                        )""",
+                    *params_full,
                 )
 
                 # ── Case 2: ghost rows — extracted but scoring never ran ──
+                # CRITICAL: must be scoped to one agent during parallel runs, otherwise
+                # this deletes another subprocess's not-yet-scored conversations.
+                ghost_params = (agent_id,) if agent_id is not None else ()
+                ghost_where_conv = f"WHERE is_archived = FALSE AND id NOT IN (SELECT conversation_id FROM conversation_scores){' AND agent_id = $1' if agent_id is not None else ''}"
+                ghost_where_join = f"WHERE c.is_archived = FALSE AND c.id NOT IN (SELECT conversation_id FROM conversation_scores){' AND c.agent_id = $1' if agent_id is not None else ''}"
+
                 ghost_row = await conn.fetchrow(
-                    """SELECT COUNT(*) AS n FROM conversations
-                       WHERE is_archived = FALSE
-                         AND id NOT IN (SELECT conversation_id FROM conversation_scores)"""
+                    f"SELECT COUNT(*) AS n FROM conversations {ghost_where_conv}",
+                    *ghost_params,
                 )
                 ghost_count = ghost_row["n"] if ghost_row else 0
                 count += ghost_count
 
                 if ghost_count > 0:
                     await conn.execute(
-                        """DELETE FROM audited_chats ac
-                           WHERE EXISTS (
-                               SELECT 1 FROM conversations c
-                               JOIN accounts a  ON a.id = c.agent_id
-                               JOIN contacts co ON co.id = c.contact_id
-                               WHERE c.is_archived = FALSE
-                                 AND c.id NOT IN (SELECT conversation_id FROM conversation_scores)
-                                 AND ac.agent_email = a.email AND ac.contact_name = co.name
-                           )"""
+                        f"""DELETE FROM audited_chats ac
+                            WHERE EXISTS (
+                                SELECT 1 FROM conversations c
+                                JOIN accounts a  ON a.id = c.agent_id
+                                JOIN contacts co ON co.id = c.contact_id
+                                {ghost_where_join}
+                                  AND ac.agent_email = a.email AND ac.contact_name = co.name
+                            )""",
+                        *ghost_params,
                     )
                     await conn.execute(
-                        """DELETE FROM conversations
-                           WHERE is_archived = FALSE
-                             AND id NOT IN (SELECT conversation_id FROM conversation_scores)"""
+                        f"DELETE FROM conversations {ghost_where_conv}",
+                        *ghost_params,
                     )
 
         # ── Sync audit_scores.details to match live conversation_scores ──────────

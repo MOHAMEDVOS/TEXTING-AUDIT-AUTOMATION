@@ -1,9 +1,11 @@
 """
 Offline: train the Tier 3 classifier.
 
-Trains two models on top of sentence-transformer embeddings:
+Trains three models on top of sentence-transformer embeddings:
 
   flag_clf  — LogisticRegression that predicts P(conversation has a real red flag)
+  label_clf — OneVsRestClassifier(LogisticRegression) for multi-label flag prediction
+              (predicts which of the 12 whitelist flags are present)
   score_reg — MultiOutputRegressor(Ridge) that predicts the 4 audit scores
 
 Inputs:
@@ -59,6 +61,21 @@ def _load_baseline_training_data() -> tuple[list[dict], dict]:
         baseline_list = json.load(f)
 
     baseline_map = {b["conversation_id"]: b for b in baseline_list}
+
+    scripts_dir = Path(__file__).parent.parent.parent / "scripts"
+    for synthetic_path in sorted(scripts_dir.glob("synthetic_*_training.json")):
+        with open(synthetic_path, "r", encoding="utf-8") as f:
+            synthetic = json.load(f)
+        synthetic_conversations = synthetic.get("conversations", [])
+        synthetic_baselines = synthetic.get("baselines", [])
+        conversations.extend(synthetic_conversations)
+        baseline_map.update({b["conversation_id"]: b for b in synthetic_baselines})
+        logger.info(
+            "Loaded %s synthetic conversations from %s",
+            len(synthetic_conversations),
+            synthetic_path.name,
+        )
+
     return conversations, baseline_map
 
 
@@ -119,6 +136,7 @@ def main(test_split: float = 0.0) -> None:
     try:
         from sklearn.linear_model import LogisticRegression, Ridge
         from sklearn.multioutput import MultiOutputRegressor
+        from sklearn.multiclass import OneVsRestClassifier
         from sklearn.metrics import (
             accuracy_score, classification_report, mean_absolute_error,
         )
@@ -126,6 +144,9 @@ def main(test_split: float = 0.0) -> None:
     except ImportError as e:
         logger.error(f"scikit-learn / joblib missing: {e}")
         sys.exit(1)
+
+    # Import the whitelist for multi-label target construction
+    from ai.prefilter._guards import WHITELIST_FLAG_OUTPUTS, _canon_flag_text
 
     if embedder.get_model() is None:
         logger.error("sentence-transformers not installed.")
@@ -171,6 +192,7 @@ def main(test_split: float = 0.0) -> None:
             "is_clean": is_clean,
             "scores": scores,
             "outcome": baseline.get("outcome", ""),
+            "red_flags_raw": [f for f in red_flags if isinstance(f, str) and f.strip()],
         })
 
     texts = [r["text"] for r in rows]
@@ -196,6 +218,26 @@ def main(test_split: float = 0.0) -> None:
          for r in rows],
         dtype=np.float32,
     )
+
+    # ── Multi-label targets for flag prediction ────────────────────
+    # Build binary matrix: rows x 12 whitelist flags
+    flag_labels = WHITELIST_FLAG_OUTPUTS  # The 12 canonical flag strings
+    flag_canon_map = {_canon_flag_text(f): i for i, f in enumerate(flag_labels)}
+    n_labels = len(flag_labels)
+
+    y_multilabel = np.zeros((len(rows), n_labels), dtype=np.int32)
+    for row_idx, r in enumerate(rows):
+        raw_flags = r.get("red_flags_raw", [])
+        for flag_text in raw_flags:
+            if not isinstance(flag_text, str):
+                continue
+            canon = _canon_flag_text(flag_text)
+            if canon in flag_canon_map:
+                y_multilabel[row_idx, flag_canon_map[canon]] = 1
+
+    # Count how many rows have at least one flag label
+    n_with_labels = int((y_multilabel.sum(axis=1) > 0).sum())
+    logger.info(f"Multi-label targets: {n_with_labels}/{len(rows)} rows have ≥1 flag label")
 
     # Train/test split (optional)
     if test_split > 0:
@@ -233,6 +275,34 @@ def main(test_split: float = 0.0) -> None:
     score_reg = MultiOutputRegressor(Ridge(alpha=1.0))
     score_reg.fit(X_tr, ys_tr)
 
+    # ── Multi-label flag classifier ─────────────────────────────────
+    label_clf = None
+    active_cols = []
+    if n_with_labels >= 10:
+        if test_split > 0:
+            from sklearn.model_selection import train_test_split as _tts
+            ym_tr = y_multilabel[:X_tr.shape[0]]
+        else:
+            ym_tr = y_multilabel
+
+        logger.info("Training multi-label flag classifier (OneVsRest LogReg)...")
+        # Only train on columns that have at least 2 positive examples
+        active_cols = [i for i in range(n_labels) if ym_tr[:, i].sum() >= 2]
+        if active_cols:
+            label_clf = OneVsRestClassifier(
+                LogisticRegression(max_iter=1000, class_weight="balanced", C=1.0)
+            )
+            label_clf.fit(X_tr, ym_tr[:, active_cols])
+            logger.info(
+                f"Multi-label classifier trained on {len(active_cols)}/{n_labels} active flag types"
+            )
+        else:
+            logger.warning("No flag types have enough examples for multi-label training")
+    else:
+        logger.info(
+            f"Skipping multi-label classifier: only {n_with_labels} rows with labels (need ≥10)"
+        )
+
     # ── Holdout metrics ─────────────────────────────────────────────
     if X_te is not None:
         yf_pred = flag_clf.predict(X_te)
@@ -253,16 +323,24 @@ def main(test_split: float = 0.0) -> None:
             logger.info(f"Score regressor MAE [{k:<16}]: {mae:.2f}")
 
     # ── Save bundle ─────────────────────────────────────────────────
+    active_flag_labels = (
+        [flag_labels[i] for i in active_cols] if (label_clf and active_cols) else []
+    )
     bundle = {
-        "flag_clf":    flag_clf,
-        "score_reg":   score_reg,
-        "feature_dim": int(X.shape[1]),
-        "model_name":  settings.PREFILTER_EMBEDDING_MODEL,
-        "trained_at":  datetime.datetime.utcnow().isoformat() + "Z",
-        "n_train":     int(len(yf_tr)),
-        "n_clean":     int((yf_tr == 0).sum()),
-        "n_flagged":   int((yf_tr == 1).sum()),
-        "n_hard_neg":  n_hard_neg,
+        "flag_clf":           flag_clf,
+        "score_reg":          score_reg,
+        "label_clf":          label_clf,           # NEW: multi-label classifier
+        "flag_labels":        flag_labels,          # NEW: all 12 whitelist flag strings
+        "active_flag_labels": active_flag_labels,   # NEW: subset with enough training data
+        "feature_dim":        int(X.shape[1]),
+        "model_name":         settings.PREFILTER_EMBEDDING_MODEL,
+        "trained_at":         datetime.datetime.utcnow().isoformat() + "Z",
+        "n_train":            int(len(yf_tr)),
+        "n_clean":            int((yf_tr == 0).sum()),
+        "n_flagged":          int((yf_tr == 1).sum()),
+        "n_hard_neg":         n_hard_neg,
+        "n_multilabel":       n_with_labels,
+        "n_active_labels":    len(active_flag_labels),
     }
 
     out = Path(settings.PREFILTER_CLASSIFIER_PATH)

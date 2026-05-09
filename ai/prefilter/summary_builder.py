@@ -6,6 +6,10 @@ agent behavior, topic signals) and builds a descriptive summary that
 reads like Groq output — not a mechanical "Tier X said clean" message.
 
 Used by all three tiers when short-circuiting.
+
+Message-type classifier (Phase 1 — SMS Script training):
+  Distinguishes rebuttals / follow-ups / pillar questions so the ML
+  never conflates them the way the old `_count_rebuttals` helper did.
 """
 from __future__ import annotations
 
@@ -16,7 +20,8 @@ from typing import Optional
 # ── Tone / intent detection patterns ─────────────────────────────────────────
 
 _HOSTILE_PATTERNS = [
-    re.compile(r"\b(fuck|shit|damn|hell|stfu|wtf|idiot|stupid)\b", re.I),
+    re.compile(r"\b(fuck|shit|damn|hell|stfu|wtf|idiot|stupid|suck|scam|spam|harass)\b", re.I),
+    re.compile(r"\b(stop\s+(texting|calling|contacting)|leave\s+me\s+alone|do\s+not\s+contact)\b", re.I),
     re.compile(r"[\U0001F621\U0001F620\U0001F92C\U0001F595]"),  # angry/rude emoji
 ]
 
@@ -24,6 +29,8 @@ _NOT_INTERESTED_PATTERNS = [
     re.compile(r"\b(not\s+interested|no\s+thanks?|nah|nope|pass)\b", re.I),
     re.compile(r"\b(don'?t\s+want|not\s+selling|not\s+for\s+sale)\b", re.I),
     re.compile(r"\b(never|absolutely\s+not)\b", re.I),
+    # Bare "no" as a standalone reply (whole message or very short)
+    re.compile(r"^no[.!]?\s*$", re.I | re.MULTILINE),
 ]
 
 _MAYBE_PATTERNS = [
@@ -32,8 +39,14 @@ _MAYBE_PATTERNS = [
 ]
 
 _SOLD_PATTERNS = [
+    # Bare "Sold" as a standalone reply (whole message or very short) — most common case
+    re.compile(r"^\s*sold[.!]?\s*$", re.I | re.MULTILINE),
+    # Compound sold phrases
     re.compile(r"\b(already\s+sold|just\s+sold|under\s+contract|sold\s+it)\b", re.I),
     re.compile(r"\b(closing\s+soon|in\s+escrow|have\s+an?\s+agent)\b", re.I),
+    # "it's sold" / "it was sold" / "property is sold"
+    re.compile(r"\b(it'?s?\s+sold|was\s+sold|is\s+sold|property\s+sold)\b", re.I),
+    re.compile(r"\bno\s+longer\s+(available|for\s+sale|on\s+the\s+market)\b", re.I),
 ]
 
 _WRONG_NUMBER_PATTERNS = [
@@ -53,6 +66,16 @@ _POSITIVE_PATTERNS = [
     re.compile(r"\b(yes|yeah|yep|sure|ok(ay)?|sounds?\s+good)\b", re.I),
     re.compile(r"\b(tell\s+me\s+more|how\s+(much|does\s+it))\b", re.I),
     re.compile(r"\b(interested|what'?s?\s+the\s+offer)\b", re.I),
+    # Potential reversal: contact asks agent for their price/offer after saying No
+    re.compile(r"\bhow\s*[?.!,]*\s*much\s+(do|would|will|can)\s+you\s+(want|pay|offer|give)\b", re.I),
+    re.compile(r"\bwhat\s+(would|do|will|can)\s+you\s+(pay|offer|give)\b", re.I),
+    re.compile(r"\bwhat'?s?\s+(your|the)\s+offer\b", re.I),
+    re.compile(r"\bwhat\s+are\s+you\s+(willing|able)\s+to\s+pay\b", re.I),
+    re.compile(r"\bmake\s+(me\s+)?an?\s+offer\b", re.I),
+    re.compile(r"\bwhat\s+are\s+you\s+offering\b", re.I),
+    re.compile(r"\bhow\s*[?.!,]*\s*much.{0,30}\bwant\s+to\s+pay\b", re.I),
+    re.compile(r"\bwhat.{0,20}\b(offer|buying\s+for|purchase\s+price)\b", re.I),
+    re.compile(r"\bmuch\s+(do|would|will|can)\s+you\s+(want|pay|offer|give)\b", re.I),
 ]
 
 
@@ -61,15 +84,30 @@ def _classify_contact_tone(contact_msgs: list[dict]) -> str:
     if not contact_msgs:
         return "silent"
 
-    all_text = " ".join(m.get("body", "") for m in contact_msgs)
+    all_text = " ".join(m.get("body") or m.get("message", "") for m in contact_msgs)
+    # Per-message texts for patterns that need per-message matching (e.g. bare "No")
+    msg_texts = [m.get("body") or m.get("message", "") for m in contact_msgs]
 
-    if any(p.search(all_text) for p in _HOSTILE_PATTERNS):
+    # Hostility check: run on all_text AND last message — last msg wins over earlier positives
+    last_text = msg_texts[-1] if msg_texts else ""
+    if any(p.search(all_text) for p in _HOSTILE_PATTERNS) or any(p.search(last_text) for p in _HOSTILE_PATTERNS):
         return "hostile"
     if any(p.search(all_text) for p in _WRONG_NUMBER_PATTERNS):
         return "wrong_number"
     if any(p.search(all_text) for p in _SOLD_PATTERNS):
         return "already_sold"
-    if any(p.search(all_text) for p in _NOT_INTERESTED_PATTERNS):
+
+    # Reversal check: if any later message is a positive/price-inquiry signal,
+    # the contact recovered from an initial No → classify as potential,
+    # even if an earlier message matched not_interested.
+    later_texts = msg_texts[1:] if len(msg_texts) > 1 else msg_texts
+    later_joined = " ".join(later_texts)
+    if any(p.search(later_joined) for p in _POSITIVE_PATTERNS):
+        return "potential"
+
+    # Not-interested: check all_text AND each individual message (catches bare "No")
+    if any(p.search(all_text) for p in _NOT_INTERESTED_PATTERNS) or \
+       any(p.search(t) for t in msg_texts for p in _NOT_INTERESTED_PATTERNS):
         return "not_interested"
     if any(p.search(all_text) for p in _POSITIVE_PATTERNS):
         return "interested"
@@ -77,8 +115,8 @@ def _classify_contact_tone(contact_msgs: list[dict]) -> str:
         return "maybe"
 
     # Check if all messages are very short (emoji, one word, etc.)
-    if all(len((m.get("body") or "").strip()) < 10 for m in contact_msgs):
-        if any(_EMOJI_ONLY.match((m.get("body") or "").strip()) for m in contact_msgs):
+    if all(len((m.get("body") or m.get("message") or "").strip()) < 10 for m in contact_msgs):
+        if any(_EMOJI_ONLY.match((m.get("body") or m.get("message") or "").strip()) for m in contact_msgs):
             return "emoji_only"
         return "brief"
 
@@ -89,7 +127,7 @@ def _describe_agent_opening(agent_msgs: list[dict]) -> str:
     """Describe how the agent opened the conversation."""
     if not agent_msgs:
         return ""
-    first = (agent_msgs[0].get("body") or "").strip()
+    first = (agent_msgs[0].get("body") or agent_msgs[0].get("message") or "").strip()
     if len(first) < 20:
         return "sent a brief initial message"
     if any(w in first.lower() for w in ["hi ", "hey ", "hello", "good morning", "good afternoon"]):
@@ -99,24 +137,566 @@ def _describe_agent_opening(agent_msgs: list[dict]) -> str:
     return "sent an initial outreach message"
 
 
+# ── SMS Script message-type patterns ─────────────────────────────────────────
+# Source: SMS script.txt — three distinct agent message types:
+#   1. REBUTTAL  — direct response to contact saying "No"
+#   2. FOLLOW-UP — scheduled check-in when contact stopped replying
+#   3. PILLAR Q  — qualifying question (condition / price / timeline / motivation)
+
+# Rebuttal anchors — phrases the script prescribes after each "No"
+_REBUTTAL_PATTERNS = [
+    re.compile(r"\bno\s+worries\b.{0,60}\b(sell|selling|sale)\b", re.I),
+    re.compile(r"\bnot\s+a\s+problem\b.{0,80}\b(flexible|timeline|process|whenever)\b", re.I),
+    re.compile(r"\bwhenever\s+you\s+are\s+ready\b", re.I),
+    re.compile(r"\bdo\s+you\s+think\s+it\s+could\s+be\s+for\s+sale.{0,40}\b6\s+months\b", re.I),
+    re.compile(r"\bunderstood\b.{0,80}\b(referral|know\s+someone|\$1.?000)\b", re.I),
+    # Generic rebuttal openers the script uses
+    re.compile(r"\b(we('re)?\s+very\s+flexible|start\s+the\s+process\s+whenever)\b", re.I),
+    # 2nd-rebuttal variant: flexible + 6-month reference even without "sell"
+    re.compile(r"\bvery\s+flexible\b.{0,120}\b(6\s+months?|six\s+months?)\b", re.I),
+    re.compile(r"\b(6\s+months?|six\s+months?)\b.{0,60}\bflexible\b", re.I),
+    # Fallback: polite continuation phrase after a "No" with no FU/pillar match
+    re.compile(r"\bno\s+worries\s+at\s+all\b", re.I),
+    re.compile(r"\btotally\s+understandable\b", re.I),
+]
+
+# Follow-up track anchors — WL / AP / HL / Reason FU
+_FOLLOW_UP_PATTERNS = [
+    # WL (Waiting List — after condition)
+    re.compile(r"\bjust\s+checking\s+in\b.{0,60}\b(updates?|everything\s+still\s+look)\b", re.I),
+    re.compile(r"\bstill\s+want\s+to\s+sell\b", re.I),
+    re.compile(r"\bno\s+longer\s+thinking\s+about\s+selling\b", re.I),
+    # AP (After Price)
+    re.compile(r"\bprice\s+in\s+mind\b.{0,60}\bwant\s+for\b", re.I),
+    re.compile(r"\bi\s+can\s+get\s+you\s+a\s+price\b", re.I),
+    re.compile(r"\bstill\s+thinking\s+to\s+possibly\s+sell\b", re.I),
+    # HL (Hold — after timeline)
+    re.compile(r"\bsell\s+soon\s+or\s+down\s+the\s+road\b", re.I),
+    re.compile(r"\bget\s+a\s+price\s+over\s+to\s+you\b", re.I),
+    re.compile(r"\bdon'?t\s+want\s+to\s+be\s+a\s+bother\b", re.I),
+    # Reason FU (after motivation)
+    re.compile(r"\bit'?s\s+okay\s+if.{0,40}\bstill\s+want\s+to\s+sell\b", re.I),
+    re.compile(r"\bchecking\s+in\s+one\s+last\s+time\b", re.I),
+    re.compile(r"\bif\s+you'?re\s+still\s+thinking\s+about\s+the\s+sale\b", re.I),
+    # Generic FU signals
+    re.compile(r"\btouching\s+base\b", re.I),
+    re.compile(r"\breaching\s+back\b", re.I),
+    re.compile(r"\bjust\s+checking\s+(in|on)\b", re.I),
+]
+
+# Pillar question anchors (already detected in tier1_phrases_v2, mirrored here)
+_PILLAR_Q_PATTERNS = [
+    # Condition
+    re.compile(r"\bdone\s+any\s+(repairs?|updates?|upgrades?|renovation)\b", re.I),
+    re.compile(r"\b(beds?|baths?|bedroom|bathroom)\b.{0,40}\b(correct|right|confirm)\b", re.I),
+    re.compile(r"\brepairs?\s+in\s+the\s+last\s+\d+\s+(to\s+\d+\s+)?years?\b", re.I),
+    # Price
+    re.compile(r"\bwhere.{0,30}\bneed\s+to\s+be\s+on\s+price\b", re.I),
+    re.compile(r"\bsell\s+your\s+home\s+as.?is.{0,60}\bcovere?d\s+all.{0,30}\bclosing\s+costs\b", re.I),
+    # Motivation
+    re.compile(r"\breason\s+for\s+selling\b", re.I),
+    re.compile(r"\bcould\s+you\s+share.{0,30}\breason\b", re.I),
+    re.compile(r"\bwhat\s+is\s+it\s+that'?s\s+making\s+you\s+consider\b", re.I),
+    # Timeline
+    re.compile(r"\bwhat\s+kind\s+of\s+timeline.{0,30}\bclosing\b", re.I),
+    re.compile(r"\bdo\s+you\s+think\s+we\s+can\s+do\s+the\s+closing\s+within\b", re.I),
+]
+
+# Contact "No" signals — used to decide if the NEXT agent message is a rebuttal
+_CONTACT_NO_PATTERNS = [
+    re.compile(r"^\s*no[.!?]?\s*$", re.I | re.MULTILINE),
+    re.compile(r"\bnot\s+interested\b", re.I),
+    re.compile(r"\bnot\s+(selling|for\s+sale|now|ready)\b", re.I),
+    re.compile(r"\bnever\b", re.I),
+    re.compile(r"\bnope\b", re.I),
+    re.compile(r"\bno\s+thank(s|\s+you)?\b", re.I),
+    re.compile(r"\babsolutely\s+not\b", re.I),
+    re.compile(r"\bdon'?t\s+want\s+to\s+sell\b", re.I),
+]
+
+def _is_contact_no(body: str) -> bool:
+    """True if this contact message is a refusal/No."""
+    return any(p.search(body) for p in _CONTACT_NO_PATTERNS)
+
+
+# ── Phase 4: Above Market Value — agent response detection ───────────────────
+# Source: SMS script.txt § Evaluate asking price:
+#   "If above market: 'I appreciate the reply, but that is going to be more
+#    than I can pay. If by chance you know anyone looking to sell, I pay $1,000
+#    on all referrals I close on!' (End conversation)"
+#
+# Two detections:
+#   1. Agent sent the referral-close → correct script behaviour
+#   2. Agent kept pushing after high price → script violation (FLAG 15)
+
+_AGENT_REFERRAL_CLOSE_RE = re.compile(
+    r"\b(more\s+than\s+i\s+can\s+pay"
+    r"|that.{0,30}going\s+to\s+be\s+more\s+than"
+    r"|appreciate\s+the\s+reply.{0,60}more\s+than"
+    r"|out\s+of\s+(my|our)\s+(price\s+)?range"
+    r"|too\s+(high|much)\s+for\s+(me|us)"
+    r"|can'?t\s+go\s+that\s+high"
+    r"|unfortunately.{0,40}(too\s+high|out\s+of.{0,15}range|more\s+than)"
+    r"|outside\s+(my|our)\s+budget"
+    r"|\$\s*1[,.]?000\s+(for\s+)?(referral|anyone|any\s+home)"
+    r"|pay\s+\$?\s*1[,.]?000.{0,30}referral"
+    r"|referral.{0,30}\$?\s*1[,.]?000)\b",
+    re.I,
+)
+
+# Agent keeps pushing the deal after the contact stated a high price
+# (any selling/closing language AFTER the price message)
+_AGENT_KEPT_PUSHING_RE = re.compile(
+    r"\b(what\s+kind\s+of\s+timeline"
+    r"|when.{0,20}closing"
+    r"|reason\s+for\s+selling"
+    r"|we\s+can\s+still\s+work"
+    r"|let\s+me\s+see\s+what\s+i\s+can\s+do"
+    r"|i'?ll\s+get\s+back\s+to\s+you"
+    r"|i\s+can\s+get\s+you\s+a\s+price"
+    r"|push\s+the\s+lead"
+    r"|we'?re\s+very\s+flexible)\b",
+    re.I,
+)
+
+# Contact price patterns — any dollar amount the contact states
+_CONTACT_PRICE_RE = re.compile(
+    r"(?:\$\s*)(\d[\d,]*)\s*(k|thousand|million|mil|m)?\b",
+    re.I,
+)
+_CONTACT_PRICE_WORD_RE = re.compile(
+    r"\b((a|one|two|three|four|five|six|seven|eight|nine|ten)\s+)?"
+    r"(million|mil)\b",
+    re.I,
+)
+_WORD_NUMS = {
+    "a": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+}
+
+
+def _parse_contact_price(body: str) -> float | None:
+    """Extract dollar amount from a contact message. Returns None if no price found."""
+    body_lower = body.lower()
+
+    # Word form: "a million", "two million"
+    wm = _CONTACT_PRICE_WORD_RE.search(body_lower)
+    if wm:
+        mult_word = (wm.group(2) or "one").lower()
+        return _WORD_NUMS.get(mult_word, 1) * 1_000_000
+
+    # Numeric form: "$500k", "$1,200,000", "$2M"
+    for m in _CONTACT_PRICE_RE.finditer(body):
+        num_str = m.group(1).replace(",", "")
+        unit = (m.group(2) or "").lower()
+        try:
+            num = float(num_str)
+        except ValueError:
+            continue
+        if unit in ("k", "thousand"):
+            return num * 1_000
+        elif unit in ("million", "mil", "m"):
+            return num * 1_000_000
+        else:
+            return num
+    return None
+
+
+def detect_abv_mv_response(messages: list[dict]) -> dict:
+    """
+    Detect above-market price scenarios and validate agent response.
+
+    Returns:
+      {
+        'contact_stated_price': bool,
+        'price_amount': float | None,
+        'agent_did_referral_close': bool,
+        'agent_kept_pushing': bool,
+        'price_msg_index': int | None,
+      }
+
+    Source: SMS script.txt § Evaluate asking price.
+    """
+    result = {
+        "contact_stated_price": False,
+        "price_amount": None,
+        "agent_did_referral_close": False,
+        "agent_kept_pushing": False,
+        "price_msg_index": None,
+    }
+
+    # Step 1: Find the contact's price statement
+    price_idx: int | None = None
+    for i, m in enumerate(messages):
+        sender = (m.get("sender") or "").lower()
+        body = (m.get("body") or m.get("message") or "").strip()
+        if sender != "contact" or not body:
+            continue
+        price = _parse_contact_price(body)
+        if price is not None:
+            result["contact_stated_price"] = True
+            result["price_amount"] = price
+            result["price_msg_index"] = i
+            price_idx = i
+            break  # Use the FIRST price statement
+
+    if price_idx is None:
+        return result
+
+    # Step 2: Check agent messages AFTER the price statement
+    for m in messages[price_idx + 1:]:
+        sender = (m.get("sender") or "").lower()
+        body = (m.get("body") or m.get("message") or "").strip()
+        if sender in ("contact", "system", "") or not body:
+            continue
+
+        # Did agent do the referral close?
+        if _AGENT_REFERRAL_CLOSE_RE.search(body):
+            result["agent_did_referral_close"] = True
+
+        # Did agent keep pushing the deal instead?
+        if _AGENT_KEPT_PUSHING_RE.search(body):
+            result["agent_kept_pushing"] = True
+
+    return result
+
+
+# ── Phase 2: Follow-up track detection ───────────────────────────────────────
+# Source: SMS script.txt — 4 FU tracks, each triggered by the last pillar asked.
+#
+#   WL (Waiting List)  — agent last asked about CONDITION  → "any updates?"
+#   AP (After Price)   — agent last asked about PRICE      → "had a price in mind?"
+#   HL (Hold)          — agent last asked about TIMELINE   → "sell soon or down the road?"
+#   Reason             — agent last asked about MOTIVATION → "reason for selling?"
+#
+# The track determines which FU messages (FU1/FU2/FU3) are correct.
+
+# Per-pillar agent-question anchors (used to detect last pillar asked)
+_PILLAR_CONDITION_RE = re.compile(
+    r"\b(done\s+any\s+(repairs?|updates?|upgrades?|renovation)"
+    r"|repairs?\s+in\s+the\s+last\s+\d+"
+    r"|beds?\s*[/,]?\s*baths?.{0,40}\b(correct|right|confirm)"
+    r"|confirm.{0,40}\b(beds?|baths?|bedroom|bathroom)"
+    r"|what.{0,30}condition\b"
+    r"|needs?\s+(work|repair|updating))\b",
+    re.I,
+)
+_PILLAR_PRICE_RE = re.compile(
+    r"\b(where.{0,30}need\s+to\s+be\s+on\s+price"
+    r"|sell.{0,40}as.?is.{0,60}closing\s+costs"
+    r"|how\s+much.{0,30}(want|asking|expect)"
+    r"|what.{0,30}(price|asking\s+price|asking\s+for)"
+    r"|had\s+a\s+price\s+in\s+mind)\b",
+    re.I,
+)
+_PILLAR_TIMELINE_RE = re.compile(
+    r"\b(what\s+kind\s+of\s+timeline"
+    r"|when.{0,30}(looking\s+to\s+sell|close|move)"
+    r"|sell\s+soon\s+or\s+down\s+the\s+road"
+    r"|closing\s+within\b"
+    r"|how\s+soon)\b",
+    re.I,
+)
+_PILLAR_MOTIVATION_RE = re.compile(
+    r"\b(reason\s+for\s+selling"
+    r"|could\s+you\s+share.{0,30}reason"
+    r"|what\s+is\s+it\s+that.{0,20}making\s+you\s+consider"
+    r"|why.{0,30}(selling|looking\s+to\s+sell)"
+    r"|mind\s+(if\s+i\s+ask|me\s+asking).{0,40}reason)\b",
+    re.I,
+)
+
+# Map pillar → FU track name (matches label_validator._AI_REQUIRED_LABELS)
+_PILLAR_TO_TRACK = {
+    "condition": "wl drip",
+    "price":     "ap drip",
+    "timeline":  "hl drip",
+    "motivation":"reason fu",
+}
+
+# FU message patterns per track (FU1/FU2/FU3 check phrases from SMS script)
+_FU_TRACK_PATTERNS: dict[str, list[re.Pattern]] = {
+    "wl drip": [
+        re.compile(r"\bjust\s+checking\s+in\b.{0,80}\b(updates?|everything\s+still\s+look)\b", re.I),
+        re.compile(r"\bstill\s+want\s+to\s+sell\b", re.I),
+        re.compile(r"\bno\s+longer\s+thinking\s+about\s+selling\b", re.I),
+    ],
+    "ap drip": [
+        re.compile(r"\bprice\s+in\s+mind\b", re.I),
+        re.compile(r"\bi\s+can\s+get\s+you\s+a\s+price\b", re.I),
+        re.compile(r"\bstill\s+thinking\s+to\s+possibly\s+sell\b", re.I),
+    ],
+    "hl drip": [
+        re.compile(r"\bsell\s+soon\s+or\s+down\s+the\s+road\b", re.I),
+        re.compile(r"\bget\s+a\s+price\s+over\s+to\s+you\b", re.I),
+        re.compile(r"\bdon'?t\s+want\s+to\s+be\s+a\s+bother\b", re.I),
+    ],
+    "reason fu": [
+        re.compile(r"\bit'?s\s+okay\s+if.{0,60}\bstill\s+want\s+to\s+sell\b", re.I),
+        re.compile(r"\bchecking\s+in\s+one\s+last\s+time\b", re.I),
+        re.compile(r"\bif\s+you'?re\s+still\s+thinking\s+about\s+the\s+sale\b", re.I),
+    ],
+}
+
+
+def detect_fu_track(messages: list[dict]) -> str | None:
+    """
+    Identify which follow-up track the conversation is on.
+
+    Walks messages in order; the LAST pillar question asked by the agent
+    before contact stopped replying determines the track:
+      'wl drip'   — last pillar was condition
+      'ap drip'   — last pillar was price
+      'hl drip'   — last pillar was timeline
+      'reason fu' — last pillar was motivation
+
+    Returns None when:
+      - No pillar was asked (no follow-up warranted yet)
+      - Contact is still actively replying (not in FU stage)
+
+    Source: SMS script.txt § Follow-up sequences.
+    """
+    last_pillar: str | None = None
+    last_agent_pillar_idx: int = -1
+    contact_replied_after_last_pillar = False
+
+    for i, m in enumerate(messages):
+        sender = (m.get("sender") or "").lower()
+        body   = (m.get("body") or m.get("message") or "").strip()
+        if not body:
+            continue
+
+        if sender == "contact":
+            if last_agent_pillar_idx >= 0:
+                # Contact said something after the last pillar question
+                contact_replied_after_last_pillar = True
+            continue
+
+        if sender in ("system", ""):
+            continue
+
+        # Agent message — check which pillar it asks about
+        if _PILLAR_CONDITION_RE.search(body):
+            last_pillar = "condition"
+            last_agent_pillar_idx = i
+            contact_replied_after_last_pillar = False
+        elif _PILLAR_PRICE_RE.search(body):
+            last_pillar = "price"
+            last_agent_pillar_idx = i
+            contact_replied_after_last_pillar = False
+        elif _PILLAR_TIMELINE_RE.search(body):
+            last_pillar = "timeline"
+            last_agent_pillar_idx = i
+            contact_replied_after_last_pillar = False
+        elif _PILLAR_MOTIVATION_RE.search(body):
+            last_pillar = "motivation"
+            last_agent_pillar_idx = i
+            contact_replied_after_last_pillar = False
+
+    # No pillar ever asked → not in FU territory
+    if last_pillar is None:
+        return None
+
+    # Contact replied after the last pillar → conversation still active, not FU stage
+    if contact_replied_after_last_pillar:
+        return None
+
+    return _PILLAR_TO_TRACK.get(last_pillar)
+
+
+def validate_fu_label(messages: list[dict], assigned_label: str) -> dict:
+    """
+    Validate FU-category labels (WL Drip / AP Drip / HL Drip / Reason FU).
+
+    Returns:
+      {
+        'label_correct': bool | None,
+        'label_should_be': str | None,
+        'label_reason': str,
+        'fu_track': str | None,       # detected track
+        'fu_messages_match': bool,    # True if agent sent correct FU messages
+      }
+
+    If the track cannot be determined, returns label_correct=None (defer to Groq).
+    """
+    norm_label = re.sub(r"\s+", " ", (assigned_label or "").strip()).lower()
+    track = detect_fu_track(messages)
+
+    if track is None:
+        return {
+            "label_correct": None,
+            "label_should_be": None,
+            "label_reason": "Could not determine FU track from conversation.",
+            "fu_track": None,
+            "fu_messages_match": False,
+        }
+
+    # Check that the assigned label matches the detected track
+    label_correct = norm_label == track
+
+    # Check that the agent actually sent the right FU messages for this track
+    agent_bodies = [
+        (m.get("body") or m.get("message") or "")
+        for m in messages
+        if (m.get("sender") or "").lower() not in ("contact", "system", "")
+    ]
+    combined_agent = " ".join(agent_bodies)
+    track_patterns = _FU_TRACK_PATTERNS.get(track, [])
+    fu_messages_match = any(p.search(combined_agent) for p in track_patterns)
+
+    if label_correct:
+        reason = (
+            f"ML detected '{track}' track (last pillar asked → {track}). "
+            f"Agent FU messages {'match' if fu_messages_match else 'do NOT match'} expected track."
+        )
+    else:
+        reason = (
+            f"ML detected '{track}' track but label is '{norm_label}'. "
+            f"Expected label: '{track}'."
+        )
+
+    return {
+        "label_correct": label_correct,
+        "label_should_be": track,
+        "label_reason": reason,
+        "fu_track": track,
+        "fu_messages_match": fu_messages_match,
+    }
+
+
+
+def classify_agent_message(body: str, prev_contact_said_no: bool) -> str:
+    """
+    Classify a single agent message as one of:
+      'opener'         — first outreach to the contact
+      'rebuttal'       — direct response to a contact 'No'
+      'follow_up'      — scheduled check-in (WL/AP/HL/Reason FU track)
+      'pillar_question'— qualifying question (condition/price/timeline/motivation)
+      'other'          — acknowledgement, call scheduling, wrap-up, etc.
+
+    Source: SMS script.txt — the three message types are distinct in the script.
+    """
+    body_l = body.lower()
+
+    # Pillar questions take priority — even when prev contact said No,
+    # an agent asking a qualifying question is NOT a rebuttal.
+    if any(p.search(body) for p in _PILLAR_Q_PATTERNS):
+        return "pillar_question"
+
+    # Follow-up patterns — scheduled check-ins, not rebuttals.
+    if any(p.search(body) for p in _FOLLOW_UP_PATTERNS):
+        return "follow_up"
+
+    # Rebuttal — ONLY when the previous contact message was a refusal.
+    if prev_contact_said_no and any(p.search(body) for p in _REBUTTAL_PATTERNS):
+        return "rebuttal"
+
+    # Opener heuristic — short initial outreach
+    if any(w in body_l for w in ["i'd love to chat", "opportunities for your property",
+                                  "love to chat about", "reaching out regarding"]):
+        return "opener"
+
+    return "other"
+
+
+def classify_agent_messages(messages: list[dict]) -> dict:
+    """
+    Walk all messages in order and classify each agent message.
+    Returns a summary dict:
+      {
+        'rebuttals':        int,   # true rebuttals after contact No
+        'follow_ups':       int,   # scheduled FU check-ins
+        'pillar_questions': int,   # qualifying questions
+        'openers':          int,
+        'other':            int,
+        'rebuttal_count_exceeded': bool,  # > 3 rebuttals = script violation
+      }
+    """
+    counts = {"rebuttals": 0, "follow_ups": 0, "pillar_questions": 0,
+              "openers": 0, "other": 0}
+
+    # classify_agent_message returns singular forms; map them to the plural
+    # dict keys so counts[msg_type] increments the right bucket.
+    _KEY_MAP = {
+        "rebuttal":       "rebuttals",
+        "follow_up":      "follow_ups",
+        "pillar_question":"pillar_questions",
+        "opener":         "openers",
+        "other":          "other",
+    }
+
+    prev_contact_said_no = False
+
+    for m in messages:
+        sender = (m.get("sender") or "").lower()
+        body   = (m.get("body") or m.get("message") or "").strip()
+        if not body:
+            continue
+
+        if sender == "contact":
+            prev_contact_said_no = _is_contact_no(body)
+            continue
+
+        if sender in ("system", ""):
+            continue
+
+        # Agent message — classify and increment the correct plural key
+        msg_type = classify_agent_message(body, prev_contact_said_no)
+        key = _KEY_MAP.get(msg_type, "other")
+        counts[key] += 1
+        # Reset after agent responds; next contact reply will set it fresh
+        prev_contact_said_no = False
+
+    counts["rebuttal_count_exceeded"] = counts["rebuttals"] > 3
+    return counts
+
+
 def _count_rebuttals(agent_msgs: list[dict], contact_msgs: list[dict]) -> int:
-    """Estimate how many rebuttals the agent used (agent messages after first contact reply)."""
+    """Legacy shim — kept for callers that pass separate lists.
+    Use classify_agent_messages(all_messages) for accurate results."""
     if not contact_msgs:
         return 0
-    # Count agent messages that came after the first contact message
-    first_contact_idx = None
-    all_msgs_ordered = []
-    # We don't have guaranteed ordering, so count agent msgs after first contact body
-    return max(0, len(agent_msgs) - 1)  # subtract the opening message
+    return max(0, len(agent_msgs) - 1)
 
 
 def _detect_referral_close(agent_msgs: list[dict]) -> bool:
     """Check if agent mentioned referral or $1k."""
     for m in agent_msgs:
-        body = (m.get("body") or "").lower()
+        body = (m.get("body") or m.get("message") or "").lower()
         if any(w in body for w in ["referral", "refer", "$1k", "$1,000", "1000 for"]):
             return True
     return False
+
+
+def _q(msg: dict, max_len: int = 68) -> str:
+    """Return a quoted, truncated snippet from a single message dict."""
+    body = (msg.get("body") or msg.get("message") or "").strip()
+    if len(body) > max_len:
+        body = body[:max_len].rstrip() + "..."
+    return f'"{body}"'
+
+
+def _find_first(msgs: list[dict], patterns: list) -> dict | None:
+    """Return the first message whose body matches any pattern."""
+    for m in msgs:
+        body = m.get("body") or m.get("message") or ""
+        if any(p.search(body) for p in patterns):
+            return m
+    return None
+
+
+def _pillars_from_text(text: str) -> list[str]:
+    text = text.lower()
+    found = []
+    if any(kw in text for kw in ["condition", "repairs", "roof", "needs work", "updated", "gut"]):
+        found.append("condition")
+    if any(kw in text for kw in ["how much", "price", "offer", "worth", "value"]):
+        found.append("price")
+    if any(kw in text for kw in ["6 month", "timeline", "when", "soon", "asap", "down the road"]):
+        found.append("timeline")
+    if any(kw in text for kw in ["why sell", "motivation", "moving", "divorce", "inherited", "job"]):
+        found.append("motivation")
+    return found
 
 
 def build_summary(
@@ -128,141 +708,205 @@ def build_summary(
     model_used: str = "prefilter",
 ) -> str:
     """
-    Build a descriptive, Groq-style summary from conversation content.
+    Build a rich, bullet-point summary from conversation content.
 
-    Returns a 1-3 sentence summary that describes what actually happened,
-    matching the style of Groq's AI audit summaries.
+    Each bullet captures a key fact with actual quoted snippets from the
+    conversation so the reviewer can understand what happened at a glance.
+    Format:
+        * Contact said: "..."
+        * Texter rebutted with 2 follow-up messages
+        * Contact then asked: "..." -> Potential
     """
-    agent_msgs = [m for m in messages if (m.get("sender") or "").lower() == "agent"]
-    contact_msgs = [m for m in messages if (m.get("sender") or "").lower() != "agent"]
+    agent_msgs   = [m for m in messages if (m.get("sender") or "").lower() != "contact"]
+    contact_msgs = [m for m in messages if (m.get("sender") or "").lower() == "contact"]
 
-    tone = _classify_contact_tone(contact_msgs)
-    opening = _describe_agent_opening(agent_msgs)
+    tone         = _classify_contact_tone(contact_msgs)
     has_referral = _detect_referral_close(agent_msgs)
-    n_agent = len(agent_msgs)
-    n_contact = len(contact_msgs)
-    total_turns = n_agent + n_contact
+    n_agent      = len(agent_msgs)
+    n_contact    = len(contact_msgs)
+    # Use the real classifier — not the old "every agent msg = rebuttal" hack
+    msg_classification = classify_agent_messages(messages)
+    rebuttals    = msg_classification["rebuttals"]
+    follow_ups   = msg_classification["follow_ups"]
+    pillar_qs    = msg_classification["pillar_questions"]
 
-    parts: list[str] = []
+    bullets: list[str] = []
 
-    # ── Opening: what stage / scenario ───────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────
     if tone == "silent":
         if n_agent == 1:
-            parts.append(
-                f"No funnel stage reached. Texter {opening} "
-                f"and received no response from {contact_name}."
-            )
+            bullets.append(f"Texter sent an initial outreach to {contact_name}")
         else:
-            parts.append(
-                f"No funnel stage reached. Texter {opening} "
-                f"and sent {n_agent} messages total, "
-                f"but {contact_name} never responded."
-            )
-        parts.append("No compliance issues in a one-sided outreach.")
+            bullets.append(f"Texter sent {n_agent} messages — {contact_name} never replied")
+        bullets.append("No contact engagement — one-sided outreach")
+        if has_referral:
+            bullets.append("Referral close included in outreach")
+        bullets.append("No rule violations detected")
 
+    # ─────────────────────────────────────────────────────────────────────────
     elif tone == "hostile":
-        contact_snippet = _get_snippet(contact_msgs[-1])
-        parts.append(
-            f"No funnel stage reached. Texter {opening} "
-            f"but received a hostile response from {contact_name}."
-        )
-        if contact_snippet:
-            parts.append(f"Contact replied with: \"{contact_snippet}\".")
-        parts.append(
-            "Texter handled the situation without escalation. "
-            "No compliance violations."
-        )
+        hostile_msg = _find_first(contact_msgs, _HOSTILE_PATTERNS) or contact_msgs[-1]
+        bullets.append(f"Contact replied: {_q(hostile_msg)} — hostile language detected")
+        bullets.append("Texter did not escalate — handled professionally")
+        bullets.append("Conversation ended without compliance violations")
 
+    # ─────────────────────────────────────────────────────────────────────────
     elif tone == "wrong_number":
-        parts.append(
-            f"Wrong number scenario. {contact_name} indicated this is not their property. "
-        )
+        wn_msg = _find_first(contact_msgs, _WRONG_NUMBER_PATTERNS) or contact_msgs[0]
+        bullets.append(f"Contact said: {_q(wn_msg)}")
+        bullets.append(f"{contact_name} is not the property owner or indicated wrong number")
         if has_referral:
-            parts.append(
-                "Texter apologized and pivoted to a referral ask."
-            )
+            bullets.append("Texter pivoted to referral close")
         else:
-            parts.append("Texter acknowledged and ended the conversation.")
+            bullets.append("Texter acknowledged and closed the conversation")
 
+    # ─────────────────────────────────────────────────────────────────────────
     elif tone == "already_sold":
-        parts.append(
-            f"No funnel stage reached. {contact_name} indicated the property "
-            f"is already sold or under contract."
-        )
+        sold_msg = _find_first(contact_msgs, _SOLD_PATTERNS) or contact_msgs[0]
+        bullets.append(f"Contact said: {_q(sold_msg)}")
+        bullets.append("Property is already sold or under contract")
         if has_referral:
-            parts.append("Texter pivoted to a referral close.")
+            bullets.append("Texter pivoted to referral close")
         else:
-            parts.append("Texter acknowledged and closed out.")
+            bullets.append("Texter acknowledged and ended conversation")
 
+    # ─────────────────────────────────────────────────────────────────────────
+    elif tone == "potential":
+        # Step 1: find the initial NI message
+        ni_msg = _find_first(contact_msgs, _NOT_INTERESTED_PATTERNS)
+        if ni_msg:
+            bullets.append(f"{contact_name} initially said: {_q(ni_msg)}")
+
+        # Step 2: texter's rebuttal breakdown (rebuttals vs follow-ups vs pillar questions)
+        if rebuttals == 1:
+            bullets.append("Texter sent 1 professional rebuttal to keep the conversation open")
+        elif rebuttals == 2:
+            bullets.append("Texter sent 2 script-prescribed rebuttals before contact reconsidered")
+        elif rebuttals >= 3:
+            bullets.append(f"Texter sent {rebuttals} rebuttals" +
+                           (" — exceeded 3-rebuttal max (script violation)" if rebuttals > 3 else ""))
+        if follow_ups:
+            bullets.append(f"Texter also sent {follow_ups} scheduled follow-up message(s)")
+        if pillar_qs:
+            bullets.append(f"Texter asked {pillar_qs} qualifying question(s) (pillar questions)")
+
+        # Step 3: find the reversal message (post-NI positive/price inquiry)
+        found_ni = False
+        reversal_msg = None
+        for m in contact_msgs:
+            body = m.get("body") or m.get("message") or ""
+            if not found_ni and _find_first([m], _NOT_INTERESTED_PATTERNS):
+                found_ni = True
+                continue
+            if found_ni and any(p.search(body) for p in _POSITIVE_PATTERNS):
+                reversal_msg = m
+                break
+
+        if reversal_msg:
+            bullets.append(f"Contact then asked: {_q(reversal_msg)}")
+            bullets.append(
+                f"Price inquiry after initial decline — {contact_name} is open to hearing a number (Potential)"
+            )
+        else:
+            bullets.append(
+                f"Contact showed renewed engagement after initial decline — labeled Potential"
+            )
+
+    # ─────────────────────────────────────────────────────────────────────────
     elif tone == "not_interested":
-        rebuttals = max(0, n_agent - 1)
-        if rebuttals >= 1:
-            parts.append(
-                f"No funnel stage reached. Texter {opening} and {contact_name} "
-                f"expressed disinterest. Texter used {rebuttals} follow-up "
-                f"message{'s' if rebuttals > 1 else ''} before ending the conversation."
-            )
-        else:
-            parts.append(
-                f"No funnel stage reached. Texter {opening} and {contact_name} "
-                f"expressed disinterest."
-            )
+        ni_msg = _find_first(contact_msgs, _NOT_INTERESTED_PATTERNS) or contact_msgs[0]
+        bullets.append(f"{contact_name} said: {_q(ni_msg)}")
+        # Accurate breakdown: true rebuttals vs follow-ups vs pillar questions
+        if rebuttals == 0 and follow_ups == 0:
+            bullets.append("Texter sent initial outreach only — no rebuttal attempted")
+        elif rebuttals == 1:
+            bullets.append("Texter sent 1 rebuttal then closed cleanly")
+        elif rebuttals == 2:
+            bullets.append("Texter sent 2 rebuttals then closed cleanly")
+        elif rebuttals == 3:
+            bullets.append("Texter used all 3 script-prescribed rebuttals then closed")
+        elif rebuttals > 3:
+            bullets.append(f"Texter sent {rebuttals} rebuttals — exceeded 3-rebuttal script maximum")
+        if follow_ups:
+            bullets.append(f"Texter also sent {follow_ups} follow-up message(s) during silence")
+        if pillar_qs:
+            bullets.append(f"Texter asked {pillar_qs} qualifying question(s)")
         if has_referral:
-            parts.append("Referral close was included.")
+            bullets.append("Referral close included")
+        bullets.append("Contact did not reverse — conversation concluded")
 
-    elif tone == "interested" or tone == "maybe":
-        if tone == "interested":
-            parts.append(
-                f"Early funnel engagement. Texter {opening} and {contact_name} "
-                f"showed interest."
-            )
-        else:
-            parts.append(
-                f"Early funnel engagement. Texter {opening} and {contact_name} "
-                f"expressed tentative interest."
-            )
-        if n_agent > 2:
-            parts.append(
-                f"Texter followed up with {n_agent - 1} additional messages "
-                f"to qualify the lead."
-            )
+    # ─────────────────────────────────────────────────────────────────────────
+    elif tone == "interested":
+        first_pos = _find_first(contact_msgs, _POSITIVE_PATTERNS) or contact_msgs[0]
+        bullets.append(f"{contact_name} replied: {_q(first_pos)}")
+        all_text = " ".join(
+            (m.get("body") or m.get("message") or "") for m in messages
+        )
+        pillars = _pillars_from_text(all_text)
+        if pillars:
+            bullets.append(f"Topics discussed: {', '.join(pillars)}")
+        # Breakdown: pillar questions asked vs total agent messages
+        if pillar_qs:
+            bullets.append(f"Texter asked {pillar_qs} qualifying question(s) to gather pillars")
+        bullets.append(
+            f"Texter sent {n_agent} total messages to qualify the lead"
+            + (" — referral close included" if has_referral else "")
+        )
 
+    # ─────────────────────────────────────────────────────────────────────────
+    elif tone == "maybe":
+        maybe_msg = _find_first(contact_msgs, _MAYBE_PATTERNS) or contact_msgs[0]
+        bullets.append(f"{contact_name} said: {_q(maybe_msg)}")
+        bullets.append("Contact expressed tentative or future interest")
+        if follow_ups:
+            bullets.append(f"Texter sent {follow_ups} scheduled follow-up message(s)")
+        if pillar_qs:
+            bullets.append(f"Texter asked {pillar_qs} qualifying question(s)")
+        bullets.append(
+            f"Texter sent {n_agent} total qualifying messages"
+            + (" — referral close included" if has_referral else "")
+        )
+
+    # ─────────────────────────────────────────────────────────────────────────
     elif tone == "emoji_only":
-        parts.append(
-            f"No funnel stage reached. Texter {opening} and {contact_name} "
-            f"replied only with an emoji reaction, no text."
-        )
+        if contact_msgs:
+            bullets.append(f"Contact replied only with emoji: {_q(contact_msgs[-1])}")
+        bullets.append("No substantive text engagement from contact")
         if n_agent > 1:
-            parts.append("Texter followed up but received no substantive response.")
+            bullets.append(f"Texter sent {n_agent} follow-up messages — no text response received")
 
+    # ─────────────────────────────────────────────────────────────────────────
     elif tone == "brief":
-        snippet = _get_snippet(contact_msgs[-1])
-        parts.append(
-            f"Minimal engagement. Texter {opening} and {contact_name} "
-            f"gave a brief reply"
-        )
-        if snippet:
-            parts[-1] += f": \"{snippet}\"."
-        else:
-            parts[-1] += "."
+        if contact_msgs:
+            bullets.append(f"{contact_name} gave a brief reply: {_q(contact_msgs[-1])}")
+        bullets.append("No clear intent expressed")
         if n_agent > 1:
-            parts.append(f"Texter sent {n_agent} total messages.")
+            bullets.append(f"Texter sent {n_agent} total messages")
 
-    else:  # neutral
-        parts.append(
-            f"Texter {opening} and exchanged {total_turns} messages "
-            f"with {contact_name}."
+    # ─────────────────────────────────────────────────────────────────────────
+    else:  # neutral / fallback
+        if contact_msgs:
+            bullets.append(f"Last contact reply: {_q(contact_msgs[-1])}")
+        bullets.append(
+            f"Texter exchanged {n_agent + n_contact} messages with {contact_name}"
         )
-        parts.append("Conversation proceeded without compliance issues.")
+        bullets.append("No compliance issues detected")
 
-    # ── Score commentary (only if something stands out) ──────────────
+    # ── Compliance note ───────────────────────────────────────────────────────
     comp = scores.get("compliance_score", 100)
-    if comp >= 95:
-        parts.append("No rule violations detected.")
-    elif comp >= 80:
-        parts.append("Minor areas for improvement noted.")
+    # Flag 3-rebuttal max script violation regardless of compliance score
+    if msg_classification.get("rebuttal_count_exceeded"):
+        bullets.append(
+            f"⚠️ Script violation: {rebuttals} rebuttals sent — maximum is 3 "
+            "(script says: after 3rd No, stop and mark Not Interested)"
+        )
+    if comp < 80:
+        bullets.append(f"Compliance score: {comp} — review flagged messages")
+    elif comp >= 95 and tone not in ("silent", "hostile"):
+        bullets.append("No rule violations detected")
 
-    return " ".join(parts)
+    return "\n".join(f"* {b}" for b in bullets)
+
 
 
 def detect_label(
@@ -273,8 +917,8 @@ def detect_label(
     Detect a reasonable label + label_reason from conversation content.
     Returns (label, label_reason).
     """
-    agent_msgs = [m for m in messages if (m.get("sender") or "").lower() == "agent"]
-    contact_msgs = [m for m in messages if (m.get("sender") or "").lower() != "agent"]
+    agent_msgs   = [m for m in messages if (m.get("sender") or "").lower() != "contact"]
+    contact_msgs = [m for m in messages if (m.get("sender") or "").lower() == "contact"]
     tone = _classify_contact_tone(contact_msgs)
 
     if tone == "silent":
@@ -294,8 +938,8 @@ def detect_label(
                 f"{contact_name} indicated wrong number or not the property owner.")
 
     if tone == "already_sold":
-        return ("Not interested",
-                f"{contact_name} indicated the property is already sold or under contract.")
+        return ("Sold",
+                f"{contact_name} clearly stated the property is already sold or under contract.")
 
     if tone == "not_interested":
         return ("Not interested",
@@ -303,7 +947,11 @@ def detect_label(
 
     if tone == "interested":
         return ("New Lead",
-                f"{contact_name} showed interest in the conversation.")
+                f"{contact_name} showed direct interest in the conversation.")
+
+    if tone == "potential":
+        return ("Potential",
+                f"{contact_name} expressed curiosity or inquired about an offer after initial hesitation.")
 
     if tone == "maybe":
         return ("New Lead",
@@ -323,8 +971,8 @@ def detect_label(
 
 def detect_funnel_stage(messages: list[dict]) -> str:
     """Detect approximate funnel stage from conversation content."""
-    agent_msgs = [m for m in messages if (m.get("sender") or "").lower() == "agent"]
-    contact_msgs = [m for m in messages if (m.get("sender") or "").lower() != "agent"]
+    agent_msgs   = [m for m in messages if (m.get("sender") or "").lower() != "contact"]
+    contact_msgs = [m for m in messages if (m.get("sender") or "").lower() == "contact"]
 
     if not contact_msgs:
         return "none"
@@ -335,7 +983,7 @@ def detect_funnel_stage(messages: list[dict]) -> str:
 
     if tone in ("interested", "maybe"):
         # Check if pillars were discussed
-        all_text = " ".join(m.get("body", "") for m in messages).lower()
+        all_text = " ".join(m.get("body") or m.get("message", "") for m in messages).lower()
         pillar_hits = sum(1 for kw in [
             "condition", "price", "timeline", "motivation",
             "how much", "when", "why sell", "needs work",
@@ -352,7 +1000,7 @@ def detect_funnel_stage(messages: list[dict]) -> str:
 
 def _get_snippet(msg: dict, max_len: int = 50) -> str:
     """Get a short snippet of a message for quoting in summaries."""
-    body = (msg.get("body") or "").strip()
+    body = (msg.get("body") or msg.get("message") or "").strip()
     if not body:
         return ""
     if len(body) <= max_len:

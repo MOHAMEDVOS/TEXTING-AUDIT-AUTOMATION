@@ -4,6 +4,16 @@ Pipeline orchestrator for the 4-tier ML pre-filter.
 Called by ai/analyzer.py before the Groq path. Returns a fully-formed
 analyzer-style dict if a tier short-circuited, or None to escalate to Groq.
 
+Tier stack:
+  T1 — Phrase matching (deterministic, instant)
+  T2 — FAISS kNN neighbor lookup (embedding-based)
+  T3 — Multi-label classifier (predicts flags + scores)
+  T4 — Deterministic flag generator (terminal tier, zero API calls)
+
+When PREFILTER_T4_LIVE is True (default), T4 is the terminal tier and
+Groq is NEVER called.  When False, conversations that pass all tiers
+still escalate to Groq (pre-elimination behavior).
+
 In shadow mode, ALL tiers run and record decisions to prefilter_decisions,
 but the result is always None so Groq still produces the final score.
 """
@@ -17,9 +27,10 @@ from typing import Optional
 from config import settings
 
 from ._pipeline_types import PipelineResult
-from . import tier1_phrases
-# Tier 2 and 3 are imported lazily — they pull in heavy ML deps (sentence-transformers,
-# faiss, xgboost) and we don't want to pay the import cost when prefilter is disabled.
+from . import tier1_phrases_v2 as tier1_phrases
+# Tiers 2, 3, 4 are imported lazily — T2/T3 pull in heavy ML deps (sentence-transformers,
+# faiss, sklearn) and we don't want to pay the import cost when prefilter is disabled.
+# T4 is lightweight but kept lazy for consistency.
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +45,8 @@ def run_prefilter(
     contact_name: str,
     conversation_id: Optional[int] = None,
     *,
+    funnel_tier: str = "NF",
+    assigned_labels: list[str] | None = None,
     db_pool=None,
 ) -> Optional[dict]:
     """
@@ -42,11 +55,12 @@ def run_prefilter(
     shadow mode), otherwise None.
 
     tier_hit values:
-      0 — pre-flight bypass (flag trigger detected, sent straight to Groq)
+      0 — pre-flight bypass (flag trigger or label-requires-AI)
       1 — Tier 1 phrase match
       2 — Tier 2 embedding kNN
       3 — Tier 3 classifier
-      4 — escalated to Groq (no tier was confident)
+      4 — Tier 4 deterministic flag generator (terminal)
+      5 — escalated to Groq (T4 disabled, no tier confident)
 
     `db_pool` — optional asyncpg pool for recording the decision. The recording
     happens fire-and-forget; failure to record never blocks the pipeline.
@@ -57,27 +71,14 @@ def run_prefilter(
     if not messages:
         return None
 
-    # ── Pre-flight: flag trigger? Skip ML entirely → Groq. ────────────────
-    if settings.PREFILTER_FLAG_ROUTING_ENABLED:
-        from . import flag_triggers
-        triggered, pattern = flag_triggers.has_flag_trigger(messages, agent_name)
-        if triggered:
-            logger.info(
-                f"[Prefilter] {contact_name}: flag trigger '{pattern}' — "
-                f"bypassing ML, escalating to Groq"
-            )
-            bypass_decision = PrefilterResult(
-                tier_hit=0,
-                decision="escalate",
-                confidence=1.0,
-                notes=f"flag-trigger:{pattern}",
-            )
-            if conversation_id is not None and db_pool is not None:
-                _record_decision_async(db_pool, conversation_id, bypass_decision)
-            return None  # escalate to Groq
+
+
+    ft = (funnel_tier or "NF").upper().strip()
+    if ft not in ("WF", "MF", "NF"):
+        ft = "NF"
 
     started = time.perf_counter()
-    decision = _run_tiers(messages, agent_name, contact_name)
+    decision = _run_tiers(messages, agent_name, contact_name, ft, assigned_labels=assigned_labels)
     decision.elapsed_ms = (time.perf_counter() - started) * 1000.0
 
     # Record the decision (best-effort). We do this even in shadow mode —
@@ -102,52 +103,95 @@ def run_prefilter(
             return None
         if decision.tier_hit == 3 and not settings.PREFILTER_T3_LIVE:
             return None
+        if decision.tier_hit == 4 and not settings.PREFILTER_T4_LIVE:
+            return None
         logger.info(
             f"[Prefilter] {contact_name}: SHORT-CIRCUIT at tier {decision.tier_hit} "
             f"(conf={decision.confidence}, {decision.elapsed_ms:.1f}ms) — "
             f"skipping Groq"
         )
+        # ── Semantic learner: capture high-quality short-circuits ──────
+        _try_semantic_capture(conversation_id, messages, decision.result)
         return decision.result
 
     return None
+
+
+def _try_semantic_capture(
+    conversation_id: int | None,
+    messages: list[dict],
+    result: dict | None,
+) -> None:
+    """Best-effort capture for the semantic auto-learning queue. Never raises."""
+    if not result or not conversation_id:
+        return
+    try:
+        from .semantic_learner import capture_candidate
+        capture_candidate(
+            conversation_id=conversation_id,
+            messages=messages,
+            result=result,
+        )
+    except Exception as e:
+        logger.debug(f"[Prefilter] Semantic capture failed (non-fatal): {e}")
 
 
 def _run_tiers(
     messages: list[dict],
     agent_name: str,
     contact_name: str,
+    funnel_tier: str = "NF",
+    assigned_labels: list[str] | None = None,
 ) -> PrefilterResult:
     """Run tiers in order. First confident short-circuit wins."""
-    # ── Tier 1: exact phrases ──────────────────────────────────────
-    t1 = tier1_phrases.evaluate(messages, agent_name, contact_name)
+    # ── Tier 1: exact phrases (funnel-aware) ───────────────────────
+    t1 = tier1_phrases.evaluate(messages, funnel_tier, agent_name, contact_name, assigned_labels=assigned_labels)
     if t1 is not None and t1.decision == "short_circuit":
         return t1
     # If Tier 1 explicitly escalated (suspicious phrase detected), respect it.
     if t1 is not None and t1.decision == "escalate":
         return t1
 
-    # ── Tier 2: embedding kNN ──────────────────────────────────────
+    # ── Tier 2: embedding kNN (funnel-aware) ───────────────────────
     if settings.PREFILTER_T2_LIVE or settings.PREFILTER_SHADOW_MODE:
         try:
             from . import tier2_embedding
-            t2 = tier2_embedding.evaluate(messages, agent_name, contact_name)
+            t2 = tier2_embedding.evaluate(messages, agent_name, contact_name, funnel_tier=funnel_tier, assigned_labels=assigned_labels)
             if t2 is not None and t2.decision == "short_circuit":
                 return t2
         except Exception as e:
             logger.warning(f"[Prefilter] Tier 2 failed for {contact_name}: {e}")
 
-    # ── Tier 3: classifier ─────────────────────────────────────────
+    # ── Tier 3: classifier (funnel-aware) ──────────────────────────
     if settings.PREFILTER_T3_LIVE or settings.PREFILTER_SHADOW_MODE:
         try:
             from . import tier3_classifier
-            t3 = tier3_classifier.evaluate(messages, agent_name, contact_name)
+            t3 = tier3_classifier.evaluate(messages, agent_name, contact_name, funnel_tier=funnel_tier, assigned_labels=assigned_labels)
             if t3 is not None and t3.decision == "short_circuit":
                 return t3
         except Exception as e:
             logger.warning(f"[Prefilter] Tier 3 failed for {contact_name}: {e}")
 
-    # No tier was confident → escalate to Groq.
-    return PrefilterResult(tier_hit=4, decision="escalate", notes="all tiers passed")
+    # ── Tier 4: deterministic flag generator (terminal tier) ────────
+    if settings.PREFILTER_T4_LIVE or settings.PREFILTER_SHADOW_MODE:
+        try:
+            from . import tier4_flag_generator
+            t4_result = tier4_flag_generator.generate(
+                messages, agent_name, contact_name,
+                assigned_labels=assigned_labels,
+            )
+            return PrefilterResult(
+                tier_hit=4,
+                decision="short_circuit",
+                confidence=0.65,  # conservative baseline for deterministic
+                result=t4_result,
+                notes="t4-deterministic",
+            )
+        except Exception as e:
+            logger.warning(f"[Prefilter] Tier 4 failed for {contact_name}: {e}")
+
+    # No tier was confident + T4 disabled → escalate to Groq.
+    return PrefilterResult(tier_hit=5, decision="escalate", notes="all tiers passed, t4 disabled")
 
 
 def _record_decision_async(db_pool, conversation_id: int, decision: PrefilterResult) -> None:

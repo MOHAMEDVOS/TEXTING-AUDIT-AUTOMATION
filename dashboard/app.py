@@ -18,6 +18,7 @@ import logging
 import os
 import subprocess
 import sys
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -35,6 +36,7 @@ from config.settings import MAX_PARALLEL_WORKERS, DATABASE_URL
 PROJECT_ROOT = Path(__file__).parent.parent
 SCHEMA_PATH  = PROJECT_ROOT / "database" / "schema.sql"
 MAIN_PY      = str(PROJECT_ROOT / "main.py")
+RUN_STATUS_DIR = PROJECT_ROOT / "logs" / "run_status"
 
 # â"€â"€ App setup â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
@@ -65,6 +67,9 @@ logger = logging.getLogger(__name__)
 running_processes: dict[str, "subprocess.Popen | str"] = {}
 # { "Noah": "gsk_..."}
 running_pinned_keys: dict[str, str] = {}
+# { "Noah": Path("logs/run_status/...json") }
+running_status_files: dict[str, Path] = {}
+running_status_details: dict[str, dict] = {}
 
 
 # â"€â"€ Async DB helpers â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
@@ -133,16 +138,39 @@ async def _fetch_agents_with_scores() -> list[dict]:
         r = dict(row)
         agent_id = r["id"]
 
-        # Count red flags and conversations from the deduplicated contact map
-        # One entry per flagged conversation (not per individual mistake inside it)
-        per_convos = list(agg.get(agent_id, {}).values())
-        all_flags  = []
-        for pc in per_convos:
-            if pc.get("red_flags"):
-                all_flags.append(pc.get("contact") or "Contact")
+        # Count red flags from conversation_scores for this agent's latest audit date only
+        audit_date = r.get("audit_date")
+        if audit_date:
+            async with app.state.pool.acquire() as conn:
+                flagged_rows = await conn.fetch(
+                    """SELECT DISTINCT c.contact_id, ct.name
+                       FROM conversation_scores cs
+                       JOIN conversations c ON c.id = cs.conversation_id
+                       JOIN contacts ct ON ct.id = c.contact_id
+                       WHERE c.agent_id = $1
+                         AND c.audit_date = $2
+                         AND (
+                           (cs.red_flags IS NOT NULL AND cs.red_flags::text NOT IN ('[]','null'))
+                           OR (cs.label_correct = false AND cs.label_assigned IS DISTINCT FROM cs.label_should_be)
+                         )""",
+                    agent_id,
+                    audit_date,
+                )
+                all_convos = await conn.fetchval(
+                    """SELECT COUNT(DISTINCT LOWER(TRIM(ct.name)))
+                       FROM conversations c
+                       JOIN contacts ct ON ct.id = c.contact_id
+                       WHERE c.agent_id = $1 AND c.audit_date = $2 AND c.is_archived = FALSE""",
+                    agent_id,
+                    audit_date,
+                )
+            all_flags = [r["name"] for r in flagged_rows]
+        else:
+            all_flags = []
+            all_convos = 0
 
         r["red_flags"]              = all_flags
-        r["conversations_analyzed"] = len(per_convos)
+        r["conversations_analyzed"] = all_convos or 0
         # label_accuracy and unread from latest run only
         details_raw = r.pop("details", None)
         details = {}
@@ -269,7 +297,7 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
                 """SELECT sender, body AS message, sent_at AS time
                    FROM messages
                    WHERE conversation_id = $1
-                   ORDER BY sent_at ASC, id ASC""",
+                   ORDER BY sent_at ASC NULLS FIRST, id ASC""",
                 conv_id,
             )
             parsed_messages = [dict(m) for m in msg_rows]
@@ -279,7 +307,8 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
                 """SELECT compliance_score, sentiment_score, professionalism_score,
                           script_adherence_score, funnel_stage, pillars_gathered,
                           rebuttals_used, label_assigned, label_correct,
-                          label_should_be, label_reason, red_flags, summary, model_used
+                          label_should_be, label_reason, red_flags, summary, model_used,
+                          COALESCE(source, 'groq') AS source
                    FROM conversation_scores
                    WHERE conversation_id = $1
                    ORDER BY id DESC LIMIT 1""",
@@ -314,6 +343,7 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
                     "red_flags":           raw.get("red_flags", []),
                     "summary":             raw.get("summary", ""),
                     "model_used":          raw.get("model_used"),
+                    "source":              raw.get("source"),
                 }
 
             merged.append({
@@ -331,12 +361,14 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
 
 
 def _cleanup_finished():
-    """Mark processes that have completed as 'done'."""
+    """Mark processes that have completed as 'done' or 'failed'."""
     for name, proc in list(running_processes.items()):
-        if proc == "done":
+        if proc in {"done", "failed"}:
             continue
         if proc.poll() is not None:
-            running_processes[name] = "done"
+            detail = _read_run_status_detail(name)
+            state = detail.get("state")
+            running_processes[name] = state if state in {"done", "failed"} else ("done" if proc.returncode == 0 else "failed")
             running_pinned_keys.pop(name, None)
 
 
@@ -344,13 +376,45 @@ def _agent_status(name: str) -> str:
     entry = running_processes.get(name)
     if entry is None:
         return "idle"
-    if entry == "done":
-        return "done"
+    if entry in {"done", "failed"}:
+        return entry
     if entry.poll() is None:
+        detail = _read_run_status_detail(name)
+        if detail.get("state") == "failed":
+            running_processes[name] = "failed"
+            running_pinned_keys.pop(name, None)
+            return "failed"
         return "running"
-    running_processes[name] = "done"
+    detail = _read_run_status_detail(name)
+    state = detail.get("state")
+    running_processes[name] = state if state in {"done", "failed"} else ("done" if entry.returncode == 0 else "failed")
     running_pinned_keys.pop(name, None)
-    return "done"
+    return running_processes[name]
+
+
+def _read_run_status_detail(agent_name: str) -> dict:
+    """Read the latest subprocess status handoff for one agent."""
+    path = running_status_files.get(agent_name)
+    if not path or not path.exists():
+        detail = running_status_details.get(agent_name, {})
+        state = running_processes.get(agent_name)
+        if state in {"done", "failed"}:
+            return {"state": state, **detail}
+        return detail
+
+    try:
+        detail = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(detail, dict):
+            running_status_details[agent_name] = detail
+            return detail
+    except Exception as exc:
+        logger.debug(f"Failed to read status file for {agent_name}: {exc}")
+    return running_status_details.get(agent_name, {})
+
+
+def _new_run_status_path(agent_name: str) -> Path:
+    safe = "".join(ch if ch.isalnum() else "_" for ch in agent_name).strip("_") or "agent"
+    return RUN_STATUS_DIR / f"{safe}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{uuid.uuid4().hex[:8]}.json"
 
 
 def _pick_unique_run_key(agent_name: str):
@@ -613,7 +677,7 @@ async def api_run(body: RunRequest):
 
     # ── Single agent ──────────────────────────────────────────────────────────────────
     existing = running_processes.get(agent_name)
-    if existing and existing != "done" and existing.poll() is None:
+    if existing not in (None, "done", "failed") and existing.poll() is None:
         return {"status": "already_running", "agent": agent_name}
 
     try:
@@ -659,10 +723,22 @@ async def api_run(body: RunRequest):
                 ),
             )
 
+        RUN_STATUS_DIR.mkdir(parents=True, exist_ok=True)
+        status_path = _new_run_status_path(agent_name)
+        running_status_files[agent_name] = status_path
+        running_status_details[agent_name] = {
+            "agent": agent_name,
+            "state": "running",
+            "stage": "starting",
+            "message": "Starting audit",
+            "updated_at": datetime.now().isoformat(),
+        }
+
         extra_env = {
             "PYTITLE": f"TEXTING Scraper - {agent_name}",
             "GROQ_PINNED_KEY": assignment["api_key"],
             "GROQ_ASSIGNMENT_STRICT": "1",
+            "AUDIT_STATUS_FILE": str(status_path),
         }
 
         proc = subprocess.Popen(
@@ -697,6 +773,13 @@ async def api_status():
     """
     _cleanup_finished()
     statuses = {name: _agent_status(name) for name in running_processes}
+    status_details = {
+        name: {
+            **_read_run_status_detail(name),
+            "state": statuses.get(name),
+        }
+        for name in running_processes
+    }
     key_assignments = {
         name: (f"...{key[-6:]}" if isinstance(key, str) and len(key) >= 6 else key)
         for name, key in running_pinned_keys.items()
@@ -707,6 +790,7 @@ async def api_status():
             await _save_trend_snapshot(name)
     return {
         "statuses": statuses,
+        "status_details": status_details,
         "key_assignments": key_assignments,
     }
 
@@ -915,7 +999,11 @@ async def api_delete_agent(agent_id: int):
                 raise HTTPException(status_code=404, detail="Agent not found")
             name, email = row["name"], row["email"]
 
-            await conn.execute("DELETE FROM audited_chats  WHERE agent_email = $1", email)
+            await conn.execute("DELETE FROM audited_chats   WHERE agent_email = $1", email)
+            await conn.execute("DELETE FROM session_events  WHERE agent_id   = $1", agent_id)
+            await conn.execute("DELETE FROM flag_feedback   WHERE agent_id   = $1", agent_id)
+            await conn.execute("DELETE FROM audit_scores    WHERE agent_id   = $1", agent_id)
+            await conn.execute("DELETE FROM extractions     WHERE agent_id   = $1", agent_id)
             await conn.execute("DELETE FROM conversations   WHERE agent_id   = $1", agent_id)
             await conn.execute("DELETE FROM accounts        WHERE id         = $1", agent_id)
 
@@ -1340,6 +1428,26 @@ async def api_post_assignment(body: AssignmentRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@app.delete("/api/assignments")
+async def api_delete_assignments(date: str = ""):
+    """Clear all account assignments for a given date."""
+    from datetime import date as _date
+    if not date:
+        date = _date.today().isoformat()
+    try:
+        date_obj = _date.fromisoformat(date)
+        async with app.state.pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM account_assignments WHERE assigned_date = $1",
+                date_obj
+            )
+        logger.info(f"Assignments cleared for date: {date}")
+        return {"success": True}
+    except Exception as exc:
+        logger.exception("Error in DELETE /api/assignments")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @app.get("/api/assignments/history")
 async def api_assignment_history(account: str = ""):
     """Return full assignment history for one account email, newest first."""
@@ -1501,12 +1609,20 @@ async def api_detailed_dashboard(
                     cs.professionalism_score,
                     cs.script_adherence_score,
                     cs.red_flags,
-                    jsonb_array_length(cs.red_flags::jsonb) AS issue_count,
+                    cs.label_correct,
+                    cs.label_assigned,
+                    cs.label_should_be,
+                    (
+                      jsonb_array_length(cs.red_flags::jsonb)
+                      + CASE WHEN cs.label_correct = false
+                               AND cs.label_assigned IS DISTINCT FROM cs.label_should_be
+                             THEN 1 ELSE 0 END
+                    ) AS issue_count,
                     (
                         SELECT m.body FROM messages m
                         WHERE m.conversation_id = c.id
                           AND m.sender = 'agent'
-                        ORDER BY m.sent_at ASC, m.id ASC
+                        ORDER BY m.sent_at ASC NULLS FIRST, m.id ASC
                         LIMIT 1
                     ) AS preview_snippet
                 FROM conversations c
@@ -1519,7 +1635,10 @@ async def api_detailed_dashboard(
                 ) cs ON TRUE
                 WHERE c.texter_name = $1
                   AND c.audit_date BETWEEN $2 AND $3
-                  AND jsonb_array_length(cs.red_flags::jsonb) > 0
+                  AND (
+                    jsonb_array_length(cs.red_flags::jsonb) > 0
+                    OR (cs.label_correct = false AND cs.label_assigned IS DISTINCT FROM cs.label_should_be)
+                  )
                 ORDER BY c.audit_date DESC, c.id DESC
                 """,
                 texter_name, start_d, end_d,
@@ -1579,7 +1698,7 @@ async def api_conversation_messages(conversation_id: int):
                 """SELECT sender, body AS message, sent_at AS time
                    FROM messages
                    WHERE conversation_id = $1
-                   ORDER BY sent_at ASC, id ASC""",
+                   ORDER BY sent_at ASC NULLS FIRST, id ASC""",
                 conversation_id,
             )
 
@@ -1588,7 +1707,8 @@ async def api_conversation_messages(conversation_id: int):
                 """SELECT compliance_score, sentiment_score, professionalism_score,
                           script_adherence_score, funnel_stage, pillars_gathered,
                           rebuttals_used, label_assigned, label_correct,
-                          label_should_be, label_reason, red_flags, summary, model_used
+                          label_should_be, label_reason, red_flags, summary, model_used,
+                          COALESCE(source, 'groq') AS source
                    FROM conversation_scores
                    WHERE conversation_id = $1
                    ORDER BY id DESC LIMIT 1""",
@@ -1645,25 +1765,33 @@ async def api_conversation_messages(conversation_id: int):
 
 # ── Texter Roster endpoints ────────────────────────────────────────────────────
 
-@app.get("/api/ml/stats")
-async def api_ml_stats():
-    """Return ML training progress counters."""
-    target = 500
+
+
+
+@app.get("/api/flags/realtime")
+async def api_flags_realtime():
+    """Return real-time flag counts by date from conversation_scores."""
     async with app.state.pool.acquire() as conn:
-        groq_scored = await conn.fetchval(
-            """SELECT COUNT(*) FROM conversation_scores
-               WHERE COALESCE(source, 'groq') NOT IN
-                     ('prefilter_t1','prefilter_t2','prefilter_t3')"""
+        rows = await conn.fetch(
+            """SELECT DATE(cs.scored_at) as audit_date,
+                      COUNT(*) as total_conversations,
+                      SUM(CASE WHEN (
+                               (cs.red_flags IS NOT NULL AND cs.red_flags::text NOT IN ('[]','null'))
+                               OR (cs.label_correct = false AND cs.label_assigned IS DISTINCT FROM cs.label_should_be)
+                           ) THEN 1 ELSE 0 END) as flagged_conversations
+               FROM conversation_scores cs
+               WHERE DATE(cs.scored_at) >= CURRENT_DATE - INTERVAL '7 days'
+               GROUP BY DATE(cs.scored_at)
+               ORDER BY audit_date DESC"""
         )
-        validated = await conn.fetchval(
-            "SELECT COUNT(*) FROM validation_log WHERE status = 'valid'"
-        )
-    return {
-        "groq_scored": int(groq_scored),
-        "validated":   int(validated),
-        "target":      target,
-        "pct":         round(100 * int(groq_scored) / target, 1),
-    }
+    return [
+        {
+            "audit_date": str(r["audit_date"]),
+            "total": r["total_conversations"],
+            "flagged": r["flagged_conversations"],
+        }
+        for r in rows
+    ]
 
 
 @app.get("/api/roster")
@@ -1732,4 +1860,3 @@ async def api_delete_roster(name: str):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=5000, reload=True)
-

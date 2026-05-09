@@ -9,6 +9,7 @@ Usage:
 """
 import asyncio
 import argparse
+import json
 import logging
 import os
 import sys
@@ -35,7 +36,7 @@ logging.basicConfig(
     handlers=[
         logging.StreamHandler(open(sys.stdout.fileno(), mode='w', encoding='utf-8', closefd=False)),
         logging.FileHandler(
-            LOG_DIR / f"audit_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
+            LOG_DIR / f"audit_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{os.getpid()}.log",
             encoding="utf-8",
         ),
     ],
@@ -43,20 +44,95 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+RUN_STATUS_FILE = os.environ.get("AUDIT_STATUS_FILE")
+
+
+def _write_run_status(
+    agent_name: str,
+    state: str,
+    stage: str,
+    message: str,
+    code: str | None = None,
+    errors: list | None = None,
+) -> None:
+    """Write a small status handoff file for the dashboard process."""
+    if not RUN_STATUS_FILE:
+        return
+
+    try:
+        path = Path(RUN_STATUS_FILE)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "agent": agent_name,
+            "state": state,
+            "stage": stage,
+            "code": code,
+            "message": message,
+            "errors": errors or [],
+            "updated_at": datetime.now().isoformat(),
+        }
+        tmp_path = path.with_suffix(path.suffix + ".tmp")
+        tmp_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        tmp_path.replace(path)
+    except Exception:
+        logger.debug("Failed to write audit status file", exc_info=True)
+
+
+def _status_message(result: dict) -> tuple[str, str]:
+    """Return a stable failure code and user-facing message for an extraction result."""
+    status = result.get("status") or "error"
+    errors = result.get("errors") or []
+    first_error = str(errors[0]) if errors else ""
+
+    messages = {
+        "login_failed": "Failed logging in",
+        "no_conversations": "No convos available",
+        "account_not_found": "Account not found",
+        "error": "Audit failed",
+    }
+
+    message = messages.get(status, f"Failed at {status.replace('_', ' ')}")
+    if first_error and status not in {"login_failed", "no_conversations"}:
+        message = f"{message}: {first_error}"
+    return status, message
+
+
 
 async def run_single_agent(agent_name: str, date_filter: str = "today", limit: int = 20):
     """Run extraction for a single agent."""
     logger.info(f"Running single extraction for: {agent_name}")
+    _write_run_status(agent_name, "running", "starting", "Starting audit")
 
     db = Database()
-    await db.initialize()
+    current_stage = "database"
+    agent_id: int | None = None
     try:
+        _write_run_status(agent_name, "running", "database", "Connecting to database")
+        await db.initialize()
+        _write_run_status(agent_name, "running", "loading_account", "Loading account")
+        current_stage = "loading_account"
         qm = QueueManager(date_filter=date_filter, limit=limit)
         qm.load_agents()
 
+        _write_run_status(agent_name, "running", "logging_in", "Logging in")
+        current_stage = "scraping"
         result = await qm.run_single(agent_name)
+        if result.get("error") and not result.get("status"):
+            result["status"] = "account_not_found"
+            result["errors"] = [result["error"]]
 
         if result.get("status") == "success":
+            conversations = result.get("_all_conversations") or result.get("conversations", [])
+            if not conversations:
+                result["status"] = "no_conversations"
+                result.setdefault("errors", []).append("No conversations matched the selected date/sample filter")
+                code, message = _status_message(result)
+                logger.warning(f"{message} for {agent_name}")
+                _write_run_status(agent_name, "failed", "extracting_conversations", message, code, result.get("errors"))
+                return result
+
+            _write_run_status(agent_name, "running", "saving_results", "Saving extracted conversations")
+            current_stage = "saving_results"
             await db.save_results([result])
             logger.info(f"Extraction complete for {agent_name}")
             agent_id = await db.upsert_agent(result["agent_name"], result["email"])
@@ -72,6 +148,8 @@ async def run_single_agent(agent_name: str, date_filter: str = "today", limit: i
                         (pk for pk in _pool._groq_pool if pk.key == pinned_key_value), None
                     )
 
+            _write_run_status(agent_name, "running", "scoring", "Scoring conversations")
+            current_stage = "scoring"
             await score_agent_conversations(
                 agent_id=agent_id,
                 agent_name=result["agent_name"],
@@ -80,15 +158,30 @@ async def run_single_agent(agent_name: str, date_filter: str = "today", limit: i
                 pool=db.pool,
                 pinned_key=pinned_key,
             )
+            _write_run_status(agent_name, "done", "completed", "Done")
         else:
-            logger.error(f"Extraction failed for {agent_name}")
+            code, message = _status_message(result)
+            logger.error(f"Extraction failed for {agent_name}: {message}")
+            _write_run_status(agent_name, "failed", current_stage, message, code, result.get("errors"))
 
         return result
+    except Exception as exc:
+        logger.exception(f"Audit failed for {agent_name} during {current_stage}")
+        _write_run_status(
+            agent_name,
+            "failed",
+            current_stage,
+            f"Failed at {current_stage.replace('_', ' ')}: {exc}",
+            "exception",
+            [str(exc)],
+        )
+        return {"agent_name": agent_name, "status": "error", "errors": [str(exc)]}
     finally:
-        cleaned = await db.cleanup_failed_audits()
-        if cleaned:
-            logger.info(f"[Cleanup] Removed {cleaned} failed conversation(s) — will retry next run")
-        await db.close()
+        if db.pool:
+            cleaned = await db.cleanup_failed_audits(agent_id=agent_id)
+            if cleaned:
+                logger.info(f"[Cleanup] Removed {cleaned} failed conversation(s) for agent_id={agent_id} — will retry next run")
+            await db.close()
 
 
 async def run_test(date_filter: str = "today", limit: int = 20):
@@ -99,6 +192,7 @@ async def run_test(date_filter: str = "today", limit: int = 20):
 
     db = Database()
     await db.initialize()
+    last_agent_id: int | None = None
     try:
         qm = QueueManager(max_workers=1, date_filter=date_filter, limit=limit)
         agents = qm.load_agents()
@@ -116,6 +210,7 @@ async def run_test(date_filter: str = "today", limit: int = 20):
             for result in results:
                 if result.get("status") == "success":
                     agent_id = await db.upsert_agent(result["agent_name"], result["email"])
+                    last_agent_id = agent_id
                     await score_agent_conversations(
                         agent_id=agent_id,
                         agent_name=result["agent_name"],
@@ -126,9 +221,9 @@ async def run_test(date_filter: str = "today", limit: int = 20):
 
         return results
     finally:
-        cleaned = await db.cleanup_failed_audits()
+        cleaned = await db.cleanup_failed_audits(agent_id=last_agent_id)
         if cleaned:
-            logger.info(f"[Cleanup] Removed {cleaned} failed conversation(s) — will retry next run")
+            logger.info(f"[Cleanup] Removed {cleaned} failed conversation(s) for agent_id={last_agent_id} — will retry next run")
         await db.close()
 
 
@@ -224,7 +319,9 @@ Examples:
     elif args.test:
         asyncio.run(run_test(date_filter=date_filter, limit=limit))
     elif args.single:
-        asyncio.run(run_single_agent(args.single, date_filter=date_filter, limit=limit))
+        result = asyncio.run(run_single_agent(args.single, date_filter=date_filter, limit=limit))
+        if not result or result.get("status") != "success":
+            sys.exit(1)
     elif args.agents:
         names = [n.strip() for n in args.agents.split(",") if n.strip()]
         asyncio.run(run_selected_agents(names, date_filter=date_filter, limit=limit))

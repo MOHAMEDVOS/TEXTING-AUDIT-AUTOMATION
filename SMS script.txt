@@ -1,0 +1,148 @@
+﻿📲 SMS SELLER SCRIPT 
+________________
+
+
+INITIAL OUTREACH (The automated text)
+Text Sent (WF Entry Point):
+ "Hey , I'd love to chat about opportunities for your property at . I'm available when you are. — Jack with LHB"
+________________
+
+
+ IF THEY REPLY WITH INTEREST OR QUESTIONS
+Common Responses:
+* “What’s this about?”
+
+* “Who is this?”
+
+* “Why are you texting me?”
+
+* “Yes” or any soft interest
+
+Response:
+ "Thanks for getting back to me. Texting you regarding your property at <address>,  do you have any plans to sell it soon or down the road?"
+________________
+
+
+ IF THEY REPLY “NO” TO INITIAL TEXT
+First Rebuttal:
+ "No worries, I was just wondering if you would like to sell ."
+Second Rebuttal (if they still say no):
+ "Not a problem at all. We can start the process whenever you are ready. We're very flexible on timeline. Do you think it could be for sale within the next 6 months?"
+Final Rebuttal (if still no):
+ "Understood. Do you have anything, or know someone who wants to maybe sell? I usually look for homes that need some work. I pay $1,000 for referrals I close on."
+(Stop texting — mark as Not Interested)
+________________
+
+
+IF THEY SHOW INTEREST
+   * Check if the property is a duplicate or listed
+→ If listed: mark as listed
+ WIDE FUNNEL (WF)
+      * Push the Lead
+________________
+
+
+ MEDIUM FUNNEL (MF)
+Ask for motivation:
+ "If you don't mind me asking, could you share a bit about the reason for selling? I completely understand if it's personal."
+→ If valid motivation is provided: Push Lead
+ Note: If vague or no reason, we can try by going to the Narrow funnel ( To collect more info)
+________________
+
+
+ NARROW FUNNEL (NF)
+1. Ask about the condition:
+ "I can get an offer over to you! I just want to confirm, I'm quickly checking online and it looks like this is a # Beds and # Baths home. Is that correct? And have you done any repairs in the last 4 to 5 years?"
+2. Ask about asking price:
+      * If no major updates:
+"Got it, thanks for letting me know! If you could sell your home as-is for a cash deal and we covered all of the closing costs and fees, where do you think you'd need to be on price?"
+
+
+         * If updated:
+"Oh, that's great! Sounds like you've put a lot of work into the place. If you could sell your home as-is for a cash deal and we covered all of the closing costs and fees, where do you think you'd need to be on price?"
+Evaluate asking price:
+            * If above market:
+"I appreciate the reply, but that is going to be more than I can pay. If by chance you know anyone looking to sell, I pay $1,000 on all referrals I close on!" (End conversation)
+
+            * If reasonable/below market:
+ Move to the next question:
+3. Ask about the motivation and the closing time
+ "Okay, that sounds good. Also, I'm curious, what is it that's making you consider a deal right now? And what kind of timeline would you have in mind for closing?"
+
+If only motivation is given:
+"Got it, do you think we can do the closing within 6 months?"
+→ If answered: Push Lead
+________________
+
+
+ FOLLOW-UP SEQUENCES (If No Response)
+First follow-up: Later in the same day
+Second follow-up: After 2 days from the last follow-up
+Third follow-up: After 2 days from the last follow-up
+
+
+
+
+
+
+
+
+
+
+ WL – After Asking Condition
+WL FU1:
+ "Hi, just checking in on. Were there any updates, or does everything still look correct? Let me know!"
+WL FU2:
+ "<First name>, is this home something you still want to sell?"
+WL FU3:
+ "Hi! , it looks like this isn't something you're no longer thinking about selling. Just to let you know, we do pay $1,000 referrals for any home you send us that we close on! Have a good day!"
+ AP – After Asking Price
+AP FU1:
+ "Hey just reaching out if you had a price in mind of what you'd want for ?"
+AP FU2:
+ "Hello . It's okay if not, I can get you a price. Just checking if it's something you still want to sell."
+AP FU3:
+ "Touching base . Are you still thinking to possibly sell your property at ?"
+
+
+ HL – After Asking Timeline
+HL FU1:
+ "Hello , just touching base. Was this something you wanted to sell soon or down the road?"
+HL FU2:
+ "<First name>, I want to get a price over to you. Just checking in to see if you're still considering selling."
+HL FU3:
+ "Hey there, I don't want to be a bother. I'd love to purchase . Are you no longer interested in selling?"
+
+
+ Reason FU – After Asking Motivation
+Reason FU1:
+ "Hi, just checking on ,?"
+Reason FU2:
+ "<First name>, it's okay if there is not. I totally understand if it's personal, is this something you still want to sell?"
+Reason FU3:
+ "Hey! Just checking in one last time. If you're still thinking about the sale, I'd love to hear your thoughts."
+________________
+
+
+ SPECIAL CASE RESPONSES
+ "Wrong Number"
+"I'm so sorry about that! Would you by chance know someone who may want or need to sell their home? We pay up to $1,000 for any referral you bring to us!"
+"Call Me"
+"Would love to but, before we hop on a call, can you tell me a bit more about the house? I would hate to waste your time if it's not the right fit."
+If they insist:
+ "Totally understandable! When would be a good time for a quick call? I’ll make sure to reach out then."
+ Bluffing
+Don’t push. Label as a Bluffer and move on. If unsure, check with TL.
+________________
+
+
+
+
+
+
+ PUSH LEAD IF:
+               * WF: Interest in selling confirmed. (Not listed or duplicate)
+
+               * MF: Motivation confirmed (Not listed or duplicate)
+
+               * NF: Condition + Price + Closing & Motivation all answered (Not listed or duplicate)
