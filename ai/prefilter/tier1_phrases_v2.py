@@ -105,10 +105,13 @@ _PROFANITY_DNC_PATTERNS = [
     re.compile(r"\b(f\*\*\*|b\*\*\*\*|s\*\*\*|a\*\*hole)\b", re.I),
     re.compile(r"\bson\s+of\s+a\s+(bitch|b\*\*\*\*|b|whore)\b", re.I),
     re.compile(r"\byou\s+suck\b", re.I),
+    re.compile(r"\bhow\s+(fucking\s+)?rude\b", re.I),
+]
+
+_HARD_OPTOUT_DNC_PATTERNS = [
     re.compile(r"\b(scammer|scam|fraud|harassing\s+me|harassment)\b", re.I),
     re.compile(r"\bstop\s+(texting|contacting|calling|messaging)\s+me\b", re.I),
     re.compile(r"\bstop\s+asking\b", re.I),
-    re.compile(r"\bhow\s+(fucking\s+)?rude\b", re.I),
     re.compile(r"\b(do\s+not\s+contact|do\s+not\s+(ever\s+)?text)\b", re.I),
     re.compile(r"\bleave\s+me\s+alone\b", re.I),
     re.compile(r"\bobviously\s+not\s+for\s+sale\b", re.I),
@@ -1115,6 +1118,30 @@ def evaluate(
                     funnel_stage="none",
                     label_assigned="DO Not Call",
                     label_reason="Contact used hostile or profane language.",
+                    actual_label=_actual_label,
+                ),
+            )
+
+    # ── HARD OPT-OUTS → DNC short-circuit ──────────────
+    # Unambiguous opt-outs ("stop texting me", "harassing me") must be DNC.
+    for pat in _HARD_OPTOUT_DNC_PATTERNS:
+        if pat.search(contact_text):
+            matched = pat.pattern
+            from . import summary_builder
+            scores = {"compliance_score": 100, "sentiment_score": 80,
+                      "professionalism_score": 95, "script_adherence_score": 90}
+            summary = summary_builder.build_summary(messages, agent_name, contact_name, scores, model_used="prefilter_t1_v2")
+            return PrefilterResult(
+                tier_hit=1, decision="short_circuit", confidence=0.97,
+                notes=f"explicit opt-out: /{matched}/",
+                result=_clean_result(
+                    contact_name,
+                    summary=summary,
+                    scores=scores,
+                    funnel_tier=funnel_tier,
+                    funnel_stage="none",
+                    label_assigned="DO Not Call",
+                    label_reason="Contact explicitly requested to stop communication.",
                     actual_label=_actual_label,
                 ),
             )
