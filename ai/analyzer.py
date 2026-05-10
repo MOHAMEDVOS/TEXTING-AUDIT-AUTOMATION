@@ -665,6 +665,8 @@ def analyze_conversation(
                     flags = [f for f in flags if f != "Gave up after first no with zero rebuttal."]
                 if _last_message_from_contact(messages) and "Gave up after first no with zero rebuttal." in flags:
                     flags = [f for f in flags if f != "Gave up after first no with zero rebuttal."]
+                if "Continued original pitch after wrong number." in flags and not _agent_continued_pitch_after_wn(messages):
+                    flags = [f for f in flags if f != "Continued original pitch after wrong number."]
                 prefilter_result["red_flags"] = flags
                 _apply_label_guards(prefilter_result, messages)
             if conversation_id is not None:
@@ -722,6 +724,8 @@ def analyze_conversation(
                 flags = [f for f in flags if f != "Gave up after first no with zero rebuttal."]
             if _last_message_from_contact(messages) and "Gave up after first no with zero rebuttal." in flags:
                 flags = [f for f in flags if f != "Gave up after first no with zero rebuttal."]
+            if "Continued original pitch after wrong number." in flags and not _agent_continued_pitch_after_wn(messages):
+                flags = [f for f in flags if f != "Continued original pitch after wrong number."]
             result["red_flags"] = flags
             _apply_label_guards(result, messages)
         return result
@@ -1050,6 +1054,7 @@ from ai.prefilter._guards import (
     _canon_flag_text,
     normalize_red_flags as _normalize_red_flags,
     agent_continued_after_opt_out as _agent_continued_after_opt_out,
+    agent_continued_pitch_after_wn as _agent_continued_pitch_after_wn,
     last_message_from_contact as _last_message_from_contact,
     agent_replied_after_first_soft_no as _agent_replied_after_first_soft_no,
     contact_has_explicit_opt_out as _contact_has_explicit_opt_out,

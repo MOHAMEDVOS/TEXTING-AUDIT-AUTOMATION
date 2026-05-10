@@ -228,7 +228,37 @@ async def _fetch_agents_with_scores() -> list[dict]:
     return result
 
 
+
+@app.get("/api/flags/realtime")
+async def api_flags_realtime():
+    """
+    Return the number of flagged conversations per agent for the current day.
+    Used by the dashboard for the total flag counter in the header.
+    """
+    from datetime import date as _date
+    today = _date.today()
+    sql = """
+        SELECT c.agent_id, COUNT(DISTINCT c.contact_id) as flagged
+        FROM conversation_scores cs
+        JOIN conversations c ON c.id = cs.conversation_id
+        WHERE c.audit_date = $1
+          AND (
+            (cs.red_flags IS NOT NULL AND cs.red_flags::text NOT IN ('[]','null'))
+            OR (cs.label_correct = false AND cs.label_assigned IS DISTINCT FROM cs.label_should_be)
+          )
+        GROUP BY c.agent_id
+    """
+    try:
+        async with app.state.pool.acquire() as conn:
+            rows = await conn.fetch(sql, today)
+        return [dict(r) for r in rows]
+    except Exception as e:
+        logger.error(f"Error in /api/flags/realtime: {e}")
+        return []
+
+
 async def _fetch_agent_detail(agent_id: int) -> dict | None:
+
     """
     Return the latest audit_scores row for one agent, with full details parsed.
     Returns None if the agent does not exist.
@@ -634,7 +664,16 @@ async def _save_trend_snapshot(agent_name: str) -> None:
                     total_issues, overall_score, compliance_score, sentiment_score,
                     professionalism_score, script_adherence_score, conversations_analyzed)
                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-                   ON CONFLICT (agent_name, audit_date, account_email) DO NOTHING""",
+                   ON CONFLICT (agent_name, audit_date, account_email) 
+                   DO UPDATE SET
+                       audit_timestamp = EXCLUDED.audit_timestamp,
+                       total_issues = EXCLUDED.total_issues,
+                       overall_score = EXCLUDED.overall_score,
+                       compliance_score = EXCLUDED.compliance_score,
+                       sentiment_score = EXCLUDED.sentiment_score,
+                       professionalism_score = EXCLUDED.professionalism_score,
+                       script_adherence_score = EXCLUDED.script_adherence_score,
+                       conversations_analyzed = EXCLUDED.conversations_analyzed""",
                 snapshot_agent_name,
                 audit_date_val,
                 now_ts,

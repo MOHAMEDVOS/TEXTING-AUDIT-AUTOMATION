@@ -39,8 +39,10 @@ OPTOUT_TEXT_RE = re.compile(
     r"\b(stop\s+texting|stop\s+messaging|stop\s+contacting|stop\s+calling"
     r"|stop\s+bothering\s+me|stop\s+these\s+texts|remove\s+me|unsubscribe"
     r"|leave\s+me\s+alone|don't\s+contact\s+me|take\s+me\s+off\s+your\s+list"
-    r"|no\s+more\s+text|dont\s+text\s+me|don't\s+text\s+me)\b",
-    re.I,
+    r"|no\s+more\s+text|dont\s+text\s+me|don't\s+text\s+me"
+    r"|if\s+you\s+could\s+stop|please\s+stop)\b"
+    r"|^stop[.!]*$",
+    re.I | re.MULTILINE,
 )
 
 SOFT_NO_RE = re.compile(
@@ -244,6 +246,38 @@ def contact_has_dnc_joke_price(messages: list[dict]) -> bool:
         text = (m.get("message") or m.get("body") or "").strip()
         if sender in ("contact", "lead") and DNC_JOKE_PRICE_RE.search(text):
             return True
+    return False
+
+
+def agent_continued_pitch_after_wn(messages: list[dict]) -> bool:
+    """
+    Deterministic guard for FLAG 5.
+    Returns True if agent continued their original pitch after contact said wrong number.
+    Returns False if they apologized or pivoted to a referral close.
+    """
+    wn_idx = None
+    for i, m in enumerate(messages or []):
+        sender = (m.get("sender") or "").strip().lower()
+        body = (m.get("message") or m.get("body") or "").strip()
+        if sender in ("contact", "lead") and WRONG_NUMBER_RE.search(body):
+            wn_idx = i
+            break
+    
+    if wn_idx is None:
+        return False
+    
+    for later in (messages or [])[wn_idx + 1:]:
+        sender = (later.get("sender") or "").strip().lower()
+        body = (later.get("message") or later.get("body") or "").strip().lower()
+        if sender and sender not in ("contact", "lead"):
+            # A pitch keywords: sell, offer, property, home, house, price, cash
+            # BUT MUST NOT have referral keywords: referral, someone, know, bring to us
+            pitch_keywords = ["sell", "offer", "property", "home", "house", "price", "cash"]
+            has_pitch = any(w in body for w in pitch_keywords)
+            has_referral = REFERRAL_RE.search(body) or "someone" in body or "know" in body
+            
+            if has_pitch and not has_referral:
+                return True
     return False
 
 

@@ -31,6 +31,7 @@ from ai.prefilter._guards import (
     PROFANITY_RE,
     TIMELINE_RE,
     WRONG_NUMBER_RE,
+    REFERRAL_RE,
     agent_continued_after_opt_out,
     agent_replied_after_first_soft_no,
     last_message_from_contact,
@@ -171,8 +172,11 @@ def generate(
             sender = (later.get("sender") or "").strip().lower()
             body = (later.get("message") or later.get("body") or "").strip().lower()
             if sender not in ("contact", "lead"):
-                # Check if agent acknowledged wrong number or continued pitch
-                if any(w in body for w in ["sell", "offer", "property", "home", "house", "price", "cash"]):
+                # Only flag if agent continued pitch keywords AND is NOT doing a referral close
+                pitch_keywords = ["sell", "offer", "property", "home", "house", "price", "cash"]
+                has_pitch = any(w in body for w in pitch_keywords)
+                has_referral = REFERRAL_RE.search(body) or "someone" in body or "know" in body
+                if has_pitch and not has_referral:
                     raw_flags.append("Continued original pitch after wrong number.")
                     break
 

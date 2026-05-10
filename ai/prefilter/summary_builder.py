@@ -22,6 +22,7 @@ from typing import Optional
 _HOSTILE_PATTERNS = [
     re.compile(r"\b(fuck|shit|damn|hell|stfu|wtf|idiot|stupid|suck|scam|spam|harass)\b", re.I),
     re.compile(r"\b(stop\s+(texting|calling|contacting)|leave\s+me\s+alone|do\s+not\s+contact)\b", re.I),
+    re.compile(r"\bstop[.!]*(?:\s|$)", re.I),  # Catch "if you could STOP." or "STOP thanks"
     re.compile(r"[\U0001F621\U0001F620\U0001F92C\U0001F595]"),  # angry/rude emoji
 ]
 

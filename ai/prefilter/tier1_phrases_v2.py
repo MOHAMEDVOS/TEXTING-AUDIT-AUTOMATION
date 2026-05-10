@@ -85,6 +85,7 @@ _OPT_OUT_PATTERNS = [
     # Note: "nothing about this interests me. Give me a number..." is NOT opt-out
     # Only match when it's a hard stop (followed by end of message or hard punctuation)
     re.compile(r"\bif\s+you\s+could\s+stop\b", re.I),
+    re.compile(r"^stop[.!]*$", re.I | re.MULTILINE),
     re.compile(r"\bnothing\s+about\s+this.{0,20}interests\s+me[.!]\s*$", re.I | re.MULTILINE),
 ]
 
@@ -110,7 +111,7 @@ _PROFANITY_DNC_PATTERNS = [
     re.compile(r"\bleave\s+me\s+alone\b", re.I),
     re.compile(r"\bobviously\s+not\s+for\s+sale\b", re.I),
     re.compile(r"\bnever\s+(sale|sell)\b", re.I),
-    re.compile(r"^stop\b", re.I | re.MULTILINE),
+    re.compile(r"\bstop[.!]*(?:\s|$)", re.I),  # terminal opt-out command
 ]
 
 # ── Suspicious / risky patterns → escalate to Groq for full audit ────────────
@@ -1359,7 +1360,40 @@ def evaluate(
                     # Agent addressed by a different name → potential F8 → defer to Groq
                     return None
 
-    # ── Check 4: Wrong Number (explicit or identity mismatch) ─────────────────
+    # ── Check 4: Clean opt-out (agent stopped correctly) ─────────────────────
+    # DNC HAS PRIORITY OVER WRONG NUMBER as per user/owner requirement.
+    contact_opted_out = any(p.search(contact_text) for p in _OPT_OUT_PATTERNS)
+    if contact_opted_out:
+        optout_idx = next(
+            (i for i, m in enumerate(messages)
+             if _sender(m) == "contact"
+             and any(p.search(_body(m)) for p in _OPT_OUT_PATTERNS)),
+            None,
+        )
+        if optout_idx is not None:
+            agent_after_optout = [m for m in messages[optout_idx + 1:] if _is_agent(m)]
+            if len(agent_after_optout) <= 1:
+                scores = {
+                    "compliance_score": 100, "sentiment_score": 80,
+                    "professionalism_score": 90, "script_adherence_score": 80,
+                }
+                return PrefilterResult(
+                    tier_hit=1, decision="short_circuit", confidence=0.95,
+                    notes=f"[{funnel_tier}] opt-out, agent stopped correctly",
+                    predicted_scores=scores,
+                    result=_clean_result(
+                        contact_name,
+                        summary="Contact opted out. Texter stopped messaging correctly. Compliance clean.",
+                        scores=scores,
+                        funnel_tier=funnel_tier,
+                        funnel_stage="none",
+                        label_assigned="DO Not Call",
+                        label_reason="Contact used explicit opt-out language.",
+                        actual_label=_actual_label,
+                    ),
+                )
+
+    # ── Check 5: Wrong Number (explicit or identity mismatch) ─────────────────
     is_wn = any(p.search(contact_text) for p in _WRONG_NUMBER_PATTERNS)
     is_wi = any(p.search(contact_text) for p in _NOT_THIS_PERSON_PATTERNS) and not is_wn
 
@@ -1375,7 +1409,11 @@ def evaluate(
         # All agent messages AFTER the wrong-number message
         agent_msgs_after_wn = [m for m in messages[wn_idx + 1:] if _is_agent(m)]
         agent_text_after_wn = " ".join(_body(m) for m in agent_msgs_after_wn)
-        continued_pitch = any(p.search(agent_text_after_wn) for p in _AGENT_PITCH_AFTER_WN)
+        
+        # Guard: Check for continued pitch using the helper
+        from ._guards import agent_continued_pitch_after_wn
+        continued_pitch = agent_continued_pitch_after_wn(messages)
+        
         # If agent sent 3+ messages after WN that's suspicious regardless of content
         if continued_pitch or len(agent_msgs_after_wn) >= 3:
             from . import summary_builder
@@ -1421,7 +1459,6 @@ def evaluate(
         }
         
         # Guard: If contact also opted out, DNC is a valid label.
-        contact_opted_out = any(p.search(contact_text) for p in _OPT_OUT_PATTERNS)
         _label_lower = (_actual_label or "").lower()
         if contact_opted_out and ("dnc" in _label_lower or "do not call" in _label_lower):
             expected_label = _actual_label
@@ -1452,7 +1489,7 @@ def evaluate(
             ),
         )
 
-    # ── Check 5: Sold property ────────────────────────────────────────────────
+    # ── Check 6: Sold property ────────────────────────────────────────────────
     is_sold = any(p.search(contact_text) for p in _SOLD_PATTERNS)
     if is_sold and len(messages) <= 12:
         scores = {
@@ -1474,38 +1511,6 @@ def evaluate(
                 actual_label=_actual_label,
             ),
         )
-
-    # ── Check 6: Clean opt-out (agent stopped correctly) ─────────────────────
-    contact_opted_out = any(p.search(contact_text) for p in _OPT_OUT_PATTERNS)
-    if contact_opted_out:
-        optout_idx = next(
-            (i for i, m in enumerate(messages)
-             if _sender(m) == "contact"
-             and any(p.search(_body(m)) for p in _OPT_OUT_PATTERNS)),
-            None,
-        )
-        if optout_idx is not None:
-            agent_after_optout = [m for m in messages[optout_idx + 1:] if _is_agent(m)]
-            if len(agent_after_optout) <= 1:
-                scores = {
-                    "compliance_score": 100, "sentiment_score": 80,
-                    "professionalism_score": 90, "script_adherence_score": 80,
-                }
-                return PrefilterResult(
-                    tier_hit=1, decision="short_circuit", confidence=0.95,
-                    notes=f"[{funnel_tier}] opt-out, agent stopped correctly",
-                    predicted_scores=scores,
-                    result=_clean_result(
-                        contact_name,
-                        summary="Contact opted out. Texter stopped messaging correctly. Compliance clean.",
-                        scores=scores,
-                        funnel_tier=funnel_tier,
-                        funnel_stage="none",
-                        label_assigned="DO Not Call",
-                        label_reason="Contact used explicit opt-out language.",
-                        actual_label=_actual_label,
-                    ),
-                )
 
     # ── Check 7: AbvMV guard ——————————————————————————————————————————————————
     # If the contact stated a very high price, always send to Groq for AbvMV scoring.
