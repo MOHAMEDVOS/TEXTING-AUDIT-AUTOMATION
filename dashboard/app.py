@@ -13,6 +13,7 @@ Routes:
     POST /api/agents/add        - Add a new agent to the database
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -44,10 +45,27 @@ RUN_STATUS_DIR = PROJECT_ROOT / "logs" / "run_status"
 @asynccontextmanager
 async def lifespan(app):
     """Create asyncpg connection pool, ensure all tables exist, and load roster."""
-    app.state.pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
-    schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
-    async with app.state.pool.acquire() as conn:
-        await conn.execute(schema_sql)
+    # Mask password for safe logging
+    from urllib.parse import urlparse
+    u = urlparse(DATABASE_URL)
+    masked_url = f"{u.scheme}://{u.username}:****@{u.hostname}:{u.port}{u.path}"
+    logger.info(f"Connecting to database: {masked_url}")
+
+    # Retry logic for cloud startup
+    max_retries = 5
+    for attempt in range(1, max_retries + 1):
+        try:
+            app.state.pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
+            async with app.state.pool.acquire() as conn:
+                schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
+                await conn.execute(schema_sql)
+            break
+        except Exception as e:
+            if attempt == max_retries:
+                logger.error(f"Failed to connect to DB after {max_retries} attempts: {e}")
+                raise
+            logger.warning(f"DB connection attempt {attempt} failed, retrying in 5s... ({e})")
+            await asyncio.sleep(5)
     # Load texter roster from DB into memory
     await _load_agent_roster_from_db()
     logger.info(f"Loaded {len(AGENT_ROSTER)} texters from database")
