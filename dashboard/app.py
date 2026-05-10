@@ -51,6 +51,23 @@ async def lifespan(app):
     masked_url = f"{u.scheme}://{u.username}:****@{u.hostname}:{u.port}{u.path}"
     logger.info(f"Connecting to database: {masked_url}")
 
+    # ── Wipe stale run_status files from the previous container lifetime ──────
+    # If a Railway redeploy kills mid-run processes, their JSON files are left on
+    # disk with state="running". On next startup those files make the UI show
+    # agents permanently stuck on "Logging in". Delete them all at boot time.
+    try:
+        if RUN_STATUS_DIR.exists():
+            stale = list(RUN_STATUS_DIR.glob("*.json")) + list(RUN_STATUS_DIR.glob("*.json.tmp"))
+            for f in stale:
+                try:
+                    f.unlink()
+                except Exception:
+                    pass
+            if stale:
+                logger.info(f"Startup: removed {len(stale)} stale run_status file(s) from previous container")
+    except Exception as e:
+        logger.warning(f"Startup: could not clean stale run_status files: {e}")
+
     # Retry logic for cloud startup
     max_retries = 5
     for attempt in range(1, max_retries + 1):
@@ -906,9 +923,24 @@ async def api_agent_reset(agent_id: int):
             name = row["name"]
             await conn.execute("DELETE FROM audit_scores WHERE agent_id = $1", agent_id)
             await conn.execute("UPDATE conversations SET is_archived = TRUE WHERE agent_id = $1", agent_id)
-        from datetime import date as _date
         _snapshotted.discard((name, get_now().date().isoformat()))
-        logger.info(f"Reset agent_id={agent_id} ('{name}'): marked conversations as archived.")
+        # ── Also evict from in-memory process registry so the UI badge clears immediately
+        # Without this, the stuck "Logging in" badge persists until the next cleanup cycle.
+        proc = running_processes.pop(name, None)
+        if proc not in (None, "done", "failed"):
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        running_pinned_keys.pop(name, None)
+        sf = running_status_files.pop(name, None)
+        if sf and sf.exists():
+            try:
+                sf.unlink()
+            except Exception:
+                pass
+        running_status_details.pop(name, None)
+        logger.info(f"Reset agent_id={agent_id} ('{name}'): cleared scores, archived conversations, evicted process state.")
         return {"status": "ok", "agent_id": agent_id}
     except HTTPException:
         raise
