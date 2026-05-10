@@ -59,6 +59,8 @@ async def lifespan(app):
             async with app.state.pool.acquire() as conn:
                 schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
                 await conn.execute(schema_sql)
+                # Fix sequence out-of-sync issues that cause UniqueViolationError
+                await conn.execute("SELECT setval('account_assignments_id_seq', COALESCE((SELECT MAX(id) FROM account_assignments), 1))")
             break
         except Exception as e:
             if attempt == max_retries:
