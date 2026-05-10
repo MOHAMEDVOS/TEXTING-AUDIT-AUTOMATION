@@ -1450,6 +1450,38 @@
   </div>
 </div>
 
+<!-- ══ RESET AUDIT MODAL ════════════════════════════════════════════════════ -->
+<div id="modal-reset-audit" style="display:none; position:fixed; inset:0; z-index:200; background:rgba(0,0,0,.55); backdrop-filter:blur(4px); align-items:center; justify-content:center;">
+  <div style="background:var(--surface); border:1px solid var(--surface-border); border-radius:16px; padding:28px 32px; max-width:420px; width:90%; box-shadow:0 24px 60px rgba(0,0,0,.45); animation:modalIn .22s cubic-bezier(.34,1.56,.64,1);">
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px;">
+      <div style="width:40px; height:40px; border-radius:11px; background:rgba(220,38,38,.08); border:1px solid rgba(220,38,38,.18); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2.2" stroke-linecap="round"><path d="M21.5 2v6h-6M2.13 15.57a10 10 0 1 0 3.3-8.83L2 9"/></svg>
+      </div>
+      <div>
+        <div style="font-size:1rem; font-weight:700; color:var(--text-primary);">Reset Audit Scores?</div>
+        <div style="font-size:.76rem; color:var(--text-muted); margin-top:2px;">Clear current run state</div>
+      </div>
+    </div>
+    <p style="font-size:.82rem; color:var(--text-secondary); line-height:1.65; margin-bottom:24px;">
+      Are you sure you want to reset audit scores for <strong id="modal-reset-target-label" style="color:var(--text-primary);"></strong>?
+      <br><br>
+      This clears the current run so the next audit starts fresh. Conversation history in the Detailed Dashboard is preserved.
+    </p>
+    <div style="display:flex; gap:10px; justify-content:flex-end;">
+      <button onclick="document.getElementById('modal-reset-audit').style.display='none'"
+        style="padding:9px 20px; font-size:.82rem; font-weight:400; border-radius:980px; border:1px solid var(--surface-border); background:transparent; color:var(--text-secondary); cursor:pointer; letter-spacing:-0.01em;"
+        onmouseover="this.style.background='var(--surface-subtle)'" onmouseout="this.style.background='transparent'">
+        Cancel
+      </button>
+      <button onclick="_confirmResetAudit()"
+        style="padding:9px 22px; font-size:.82rem; font-weight:400; border-radius:980px; border:none; background:var(--danger); color:#fff; cursor:pointer; transition:.15s; letter-spacing:-0.01em;"
+        onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
+        Yes, reset
+      </button>
+    </div>
+  </div>
+</div>
+
 
 
 <!-- ══ JAVASCRIPT ════════════════════════════════════════════════════════════ -->
@@ -2479,72 +2511,86 @@ async function runCurrentAgent() {
   runAgent(selectedAgent.name, null);
 }
 
-async function resetCurrentAgent() {
+let _resetAuditTarget = null;
+
+function resetCurrentAgent() {
   if (!selectedAgent) return;
-  const confirmed = confirm(`Reset audit scores for ${selectedAgent.name}?\n\nThis clears their current run so the next audit starts fresh.\nConversation history in the Detailed Dashboard is preserved.`);
-  if (!confirmed) return;
-
-  const btn = document.getElementById("btn-reset-ag");
-  btn.disabled = true; btn.textContent = "Resetting…";
-
-  try {
-    const res  = await fetch(`/api/agent/${selectedAgent.id}/reset`, { method: "DELETE" });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-    toast(`Audit reset for ${selectedAgent.name}`);
-
-    // Clear UI locally — don't re-fetch conversations from DB (that's history)
-    agentConvos = [];
-    await loadAgents();
-    const refreshed = allAgents.find(a => a.id === selectedAgent.id);
-    if (refreshed) {
-      selectedAgent = refreshed;
-      renderAgentScores(refreshed);
-    }
-    document.getElementById("ag-ccount").textContent = "0 conversations";
-    document.getElementById("ag-convos").innerHTML =
-      `<div style="padding:2.5rem; text-align:center; color:var(--text-muted); font-size:.82rem;">No audit data — run an audit to populate this view.</div>`;
-    renderSidebar();
-    updateRunButton();
-  } catch (e) {
-    toast(`Error: ${e}`, 5000);
-  } finally {
-    btn.disabled = false; btn.textContent = "Reset";
-  }
+  _resetAuditTarget = selectedAgent.id;
+  document.getElementById("modal-reset-target-label").textContent = selectedAgent.name;
+  document.getElementById("modal-reset-audit").style.display = "flex";
 }
 
-async function resetAllAgents() {
-  const confirmed = confirm(`Reset audit scores for ALL agents?\n\nThis clears every current run so the next audit starts fresh.\nConversation history in the Detailed Dashboard is preserved.`);
-  if (!confirmed) return;
+function resetAllAgents() {
+  _resetAuditTarget = "all";
+  document.getElementById("modal-reset-target-label").textContent = "ALL agents";
+  document.getElementById("modal-reset-audit").style.display = "flex";
+}
 
-  const btn = document.getElementById("btn-reset-all");
-  btn.disabled = true; btn.textContent = "Resetting…";
+async function _confirmResetAudit() {
+  document.getElementById("modal-reset-audit").style.display = "none";
 
-  try {
-    const res  = await fetch("/api/reset-all", { method: "DELETE" });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-    toast(`Audit scores reset (${data.agents_cleared} agents)`);
+  if (_resetAuditTarget === "all") {
+    const btn = document.getElementById("btn-reset-all");
+    if (btn) { btn.disabled = true; btn.textContent = "Resetting…"; }
 
-    // Clear conversation list locally — don't re-fetch from DB
-    agentConvos = [];
-    await loadAgents();
-    if (selectedAgent) {
-      const refreshed = allAgents.find(a => a.id === selectedAgent.id);
-      if (refreshed) {
-        selectedAgent = refreshed;
-        renderAgentScores(refreshed);
+    try {
+      const res  = await fetch("/api/reset-all", { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      toast(`Audit scores reset (${data.agents_cleared} agents)`);
+
+      // Clear conversation list locally
+      agentConvos = [];
+      await loadAgents();
+      if (selectedAgent) {
+        const refreshed = allAgents.find(a => a.id === selectedAgent.id);
+        if (refreshed) {
+          selectedAgent = refreshed;
+          renderAgentScores(refreshed);
+        }
+        const ccount = document.getElementById("ag-ccount");
+        if (ccount) ccount.textContent = "0 conversations";
+        const cdiv = document.getElementById("ag-convos");
+        if (cdiv) cdiv.innerHTML = `<div style="padding:2.5rem; text-align:center; color:var(--text-muted); font-size:.82rem;">No audit data — run an audit to populate this view.</div>`;
       }
-      document.getElementById("ag-ccount").textContent = "0 conversations";
-      document.getElementById("ag-convos").innerHTML =
-        `<div style="padding:2.5rem; text-align:center; color:var(--text-muted); font-size:.82rem;">No audit data — run an audit to populate this view.</div>`;
+      renderSidebar();
+      updateRunButton();
+    } catch (e) {
+      toast(`Error: ${e}`, 5000);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = "Reset All"; }
     }
-    renderSidebar();
-    updateRunButton();
-  } catch (e) {
-    toast(`Error: ${e}`, 5000);
-  } finally {
-    btn.disabled = false; btn.textContent = "Reset All";
+  } else {
+    const btn = document.getElementById("btn-reset-ag");
+    if (btn) { btn.disabled = true; btn.textContent = "Resetting…"; }
+
+    try {
+      const res  = await fetch(`/api/agent/${_resetAuditTarget}/reset`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      toast(`Audit reset for ${selectedAgent?.name || "agent"}`);
+
+      // Clear UI locally
+      agentConvos = [];
+      await loadAgents();
+      if (selectedAgent && selectedAgent.id === _resetAuditTarget) {
+        const refreshed = allAgents.find(a => a.id === _resetAuditTarget);
+        if (refreshed) {
+          selectedAgent = refreshed;
+          renderAgentScores(refreshed);
+        }
+        const ccount = document.getElementById("ag-ccount");
+        if (ccount) ccount.textContent = "0 conversations";
+        const cdiv = document.getElementById("ag-convos");
+        if (cdiv) cdiv.innerHTML = `<div style="padding:2.5rem; text-align:center; color:var(--text-muted); font-size:.82rem;">No audit data — run an audit to populate this view.</div>`;
+      }
+      renderSidebar();
+      updateRunButton();
+    } catch (e) {
+      toast(`Error: ${e}`, 5000);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = "Reset"; }
+    }
   }
 }
 
@@ -3913,11 +3959,23 @@ async function _confirmTrendReset() {
 document.getElementById("modal-trend-reset")?.addEventListener("click", function(e) {
   if (e.target === this) _closeTrendResetModal();
 });
+document.getElementById("modal-clear-assignments")?.addEventListener("click", function(e) {
+  if (e.target === this) this.style.display = 'none';
+});
+document.getElementById("modal-reset-audit")?.addEventListener("click", function(e) {
+  if (e.target === this) this.style.display = 'none';
+});
 
 // Close modal on Escape key
 document.addEventListener("keydown", function(e) {
-  if (e.key === "Escape" && document.getElementById("modal-trend-reset")?.style.display === "flex") {
-    _closeTrendResetModal();
+  if (e.key === "Escape") {
+    const trModal = document.getElementById("modal-trend-reset");
+    const caModal = document.getElementById("modal-clear-assignments");
+    const raModal = document.getElementById("modal-reset-audit");
+    
+    if (trModal && trModal.style.display === "flex") _closeTrendResetModal();
+    if (caModal && caModal.style.display === "flex") caModal.style.display = "none";
+    if (raModal && raModal.style.display === "flex") raModal.style.display = "none";
   }
 });
 
