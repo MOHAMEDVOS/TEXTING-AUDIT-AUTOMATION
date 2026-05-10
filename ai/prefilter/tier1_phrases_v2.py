@@ -102,6 +102,8 @@ _HARASSMENT_DNC_PATTERNS = [
 
 _PROFANITY_DNC_PATTERNS = [
     re.compile(r"\b(fuck|shit|bitch|asshole|bastard|piss\s+off|go\s+to\s+hell)\b", re.I),
+    re.compile(r"\b(f\*\*\*|b\*\*\*\*|s\*\*\*|a\*\*hole)\b", re.I),
+    re.compile(r"\bson\s+of\s+a\s+(bitch|b\*\*\*\*|b|whore)\b", re.I),
     re.compile(r"\byou\s+suck\b", re.I),
     re.compile(r"\b(scammer|scam|fraud|harassing\s+me|harassment)\b", re.I),
     re.compile(r"\bstop\s+(texting|contacting|calling|messaging)\s+me\b", re.I),
