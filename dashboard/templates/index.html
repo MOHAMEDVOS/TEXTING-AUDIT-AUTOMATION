@@ -659,24 +659,12 @@
     </div>
   </div>
 
-  <!-- Stats -->
-  <div style="display:flex; align-items:center; gap:12px; margin:0 20px;">
-    <div style="display:flex; align-items:center; gap:4px;">
-      <span style="font-size:.62rem; color:var(--text-muted); font-weight:500; text-transform:uppercase; letter-spacing:0.02em;">Agents:</span>
-      <span id="stat-agents" style="font-size:.72rem; font-weight:600; color:var(--text-primary);">0</span>
-    </div>
-    <div style="display:flex; align-items:center; gap:4px;">
-      <span style="font-size:.62rem; color:var(--text-muted); font-weight:500; text-transform:uppercase; letter-spacing:0.02em;">Avg:</span>
-      <span id="stat-avg" style="font-size:.72rem; font-weight:600; color:var(--text-primary);">0</span>
-    </div>
-    <div style="display:flex; align-items:center; gap:4px;">
-      <span style="font-size:.62rem; color:var(--text-muted); font-weight:500; text-transform:uppercase; letter-spacing:0.02em;">Flags:</span>
-      <span id="stat-flagged" style="font-size:.72rem; font-weight:700; color:var(--danger);">0</span>
-    </div>
-    <div style="display:flex; align-items:center; gap:4px;">
-      <span style="font-size:.62rem; color:var(--text-muted); font-weight:500; text-transform:uppercase; letter-spacing:0.02em;">Unread:</span>
-      <span id="stat-unread" style="font-size:.72rem; font-weight:600; color:var(--warning);">0</span>
-    </div>
+  <!-- Stats (hidden to avoid confusion, but kept for JS compatibility) -->
+  <div style="display:none;">
+    <span id="stat-agents"></span>
+    <span id="stat-avg"></span>
+    <span id="stat-flagged"></span>
+    <span id="stat-unread"></span>
   </div>
 
 
