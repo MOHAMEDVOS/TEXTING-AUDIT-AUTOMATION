@@ -630,6 +630,7 @@ _NOT_THIS_PERSON_PATTERNS = [
     re.compile(r"\bthat(?:'|'|')?s?\s+not\s+(me|my\s+name)\b", re.I),
     re.compile(r"\byou(?:'|'|')?(?:ve|'?re)\s+(got|texting\s+the)\s+wrong\b", re.I),
     re.compile(r"\bi(?:'|'|')?m\s+not\s+(?:that|the|this)\s+person\b", re.I),
+    re.compile(r"\bmy\s+name\s+is\s+not\b", re.I),
     # "my name is X not Y" — contact correcting the agent's name usage
     re.compile(r"\bmy\s+name\s+is\s+\w+\s+not\s+\w+\b", re.I),
     re.compile(r"\b(not\s+)?(?:called|named)\s+[A-Z]\w+\b"),
