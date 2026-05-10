@@ -46,7 +46,8 @@ CREATE TABLE IF NOT EXISTS conversations (
     texter_name     TEXT NOT NULL,
     assigned_labels TEXT[],
     extracted_at    TIMESTAMPTZ NOT NULL,
-    audit_date      DATE NOT NULL
+    audit_date      DATE NOT NULL,
+    is_archived     BOOLEAN DEFAULT FALSE
 );
 
 CREATE INDEX IF NOT EXISTS idx_conversations_agent   ON conversations(agent_id);
@@ -249,6 +250,23 @@ CREATE TABLE IF NOT EXISTS audit_overrides (
     requested_at        TIMESTAMPTZ DEFAULT NOW(),
     disagreement_summary TEXT
 );
+
+-- ── validation_log (human validation history) ───────────────────────────────
+CREATE TABLE IF NOT EXISTS validation_log (
+    id              SERIAL PRIMARY KEY,
+    agent_id        INTEGER NOT NULL REFERENCES accounts(id),
+    agent_name      TEXT NOT NULL,
+    contact_name    TEXT NOT NULL,
+    conversation_id INTEGER REFERENCES conversations(id) ON DELETE SET NULL,
+    score_id        INTEGER,
+    status          TEXT NOT NULL, -- 'valid', 'invalid', 'disputed'
+    validated_by    TEXT,
+    notes           TEXT,
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_validation_agent ON validation_log(agent_id);
+CREATE INDEX IF NOT EXISTS idx_validation_conv  ON validation_log(conversation_id);
 
 -- ── prefilter_decisions additions ────────────────────────────────────────────
 -- conversation_scores.source tracks which tier/provider produced the result
