@@ -541,7 +541,7 @@ async def _save_trend_snapshot(agent_name: str) -> None:
     today's account_assignments entry (if any).
     """
     from datetime import date as _date
-    today     = _date.today()
+    today     = get_now().date()
     today_str = today.isoformat()
     key = (agent_name, today_str)
     if key in _snapshotted:
@@ -661,7 +661,7 @@ async def api_agents():
         # Detect agents whose latest audit_date is today but have no snapshot
         # for today, and create the snapshot now.
         from datetime import date as _date
-        today = _date.today().isoformat()
+        today = get_now().date().isoformat()
         for agent in agents:
             audit_date = agent.get("audit_date")
             if audit_date == today and agent.get("overall_score") is not None:
@@ -711,7 +711,7 @@ async def api_run(body: RunRequest):
             if not account_row:
                 raise HTTPException(status_code=404, detail=f"Account '{agent_name}' not found")
 
-            today = _date.today()
+            today = get_now().date()
             assignment = await conn.fetchrow(
                 """SELECT aa.agent_name, aa.groq_key_id, k.api_key
                    FROM account_assignments aa
@@ -907,7 +907,7 @@ async def api_agent_reset(agent_id: int):
             await conn.execute("DELETE FROM audit_scores WHERE agent_id = $1", agent_id)
             await conn.execute("UPDATE conversations SET is_archived = TRUE WHERE agent_id = $1", agent_id)
         from datetime import date as _date
-        _snapshotted.discard((name, _date.today().isoformat()))
+        _snapshotted.discard((name, get_now().date().isoformat()))
         logger.info(f"Reset agent_id={agent_id} ('{name}'): marked conversations as archived.")
         return {"status": "ok", "agent_id": agent_id}
     except HTTPException:
@@ -1328,7 +1328,7 @@ async def api_get_assignments(date: str = ""):
     """
     from datetime import date as _date
     if not date:
-        date = _date.today().isoformat()
+        date = get_now().date().isoformat()
     try:
         async with app.state.pool.acquire() as conn:
             # All SC accounts from accounts table
@@ -1453,7 +1453,7 @@ async def api_delete_assignments(date: str = ""):
     """Clear all account assignments for a given date."""
     from datetime import date as _date
     if not date:
-        date = _date.today().isoformat()
+        date = get_now().date().isoformat()
     try:
         date_obj = _date.fromisoformat(date)
         async with app.state.pool.acquire() as conn:
@@ -1519,9 +1519,9 @@ async def api_trends(start: str = "", end: str = "", agent: str = "all"):
     """
     from datetime import date as _date, timedelta
     if not start:
-        start = (_date.today() - timedelta(days=30)).isoformat()
+        start = (get_now().date() - timedelta(days=30)).isoformat()
     if not end:
-        end = _date.today().isoformat()
+        end = get_now().date().isoformat()
 
     # asyncpg requires actual date objects, not strings
     try:
