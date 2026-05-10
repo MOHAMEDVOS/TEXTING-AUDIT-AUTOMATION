@@ -337,30 +337,77 @@ def _classify_pillar_question(body: str) -> str | None:
     return None
 
 
+def _parse_date_obj(date_str: str):
+    """
+    Convert a _msg_date() string into a datetime.date object for arithmetic.
+    Returns None when the date can't be parsed (flag will be skipped).
+
+    Handles:
+      - ISO format:   "2026-05-08"
+      - Scraper full: "Thursday, May 8, 2026"  /  "May 8, 2026"
+      - Sentinel:     "__today__"  → today's date
+    """
+    from datetime import date, datetime
+    if not date_str:
+        return None
+    if date_str == "__today__":
+        return date.today()
+    # ISO date
+    if len(date_str) == 10 and date_str[4] == "-":
+        try:
+            return date.fromisoformat(date_str)
+        except ValueError:
+            pass
+    # Full scraper string e.g. "Thursday, May 8, 2026" or "May 8, 2026"
+    for fmt in ("%A, %B %d, %Y", "%B %d, %Y"):
+        try:
+            return datetime.strptime(date_str, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
 def _agent_sent_duplicate(messages: list[dict]) -> tuple[bool, str]:
     """
-    Flag duplicate ONLY when:
-      1. Agent asked the SAME pillar question twice
-      2. On the SAME calendar day
-      3. AND contact already answered (rejection / yes / maybe / number / etc.)
-         at any point before the 2nd ask.
+    Flag when the agent re-asked the SAME pillar question too soon after the
+    contact already answered.
+
+    Window: same calendar day OR the very next calendar day (≤ 1 day gap).
+
+    Trigger requires ALL THREE:
+      1. Agent asked pillar X on Day N
+      2. Contact gave a real answer AFTER that ask (yes / no / number / etc.)
+      3. Agent asked pillar X again on Day N or Day N+1
+
+    Examples:
+      Ask May 8 → contact "No" → ask again May 8      → FLAGGED  (same day)
+      Ask May 8 → contact "No" → ask again May 9      → FLAGGED  (next day, too soon)
+      Ask May 8 → contact "No" → ask again May 10+    → NOT flagged (2+ days = fresh follow-up)
+      Ask May 8 → ask again May 8 (no reply between)  → NOT flagged (rapid double-send)
 
     Pillars checked: asking price, closing timeline, reason for selling, condition.
 
     Returns (flag, pillar_name). pillar_name empty when flag is False.
     """
-    contact_has_answered = False
-    asked: dict[tuple[str, str], int] = {}
+    from datetime import timedelta
+
+    # Per pillar: track the date of the first ask (as a date object) and whether
+    # the contact has answered since that ask.
+    # {pillar: {"first_ask_date": date | None, "contact_answered": bool}}
+    state: dict[str, dict] = {}
 
     for m in messages:
         sender = _sender(m)
-        body = _body(m)
+        body   = _body(m)
         if not body:
             continue
 
         if sender == "contact":
+            # Contact replied — mark ALL pillars currently being tracked as answered
             if _contact_answered_pillar(body):
-                contact_has_answered = True
+                for pillar_state in state.values():
+                    if not pillar_state["contact_answered"]:
+                        pillar_state["contact_answered"] = True
             continue
 
         if not _is_agent(m):
@@ -370,17 +417,33 @@ def _agent_sent_duplicate(messages: list[dict]) -> tuple[bool, str]:
         if not pillar:
             continue
 
-        date = _msg_date(m)
-        if not date:
-            continue  # can't enforce same-day rule without a timestamp
+        date_str = _msg_date(m)
+        if not date_str:
+            continue  # no date info — can't enforce the window rule
 
-        key = (pillar, date)
-        asked[key] = asked.get(key, 0) + 1
+        ask_date = _parse_date_obj(date_str)
+        if ask_date is None:
+            continue
 
-        if asked[key] >= 2 and contact_has_answered:
-            return True, pillar
+        if pillar not in state:
+            # First time asking this pillar — start tracking
+            state[pillar] = {"first_ask_date": ask_date, "contact_answered": False}
+        else:
+            ps = state[pillar]
+            first_date = ps["first_ask_date"]
+            gap = (ask_date - first_date).days  # always >= 0 (messages are chronological)
+
+            if ps["contact_answered"] and gap <= 1:
+                # Contact already answered AND agent is re-asking within 0–1 days → FLAG
+                return True, pillar
+            elif gap >= 2:
+                # 2+ days later → treat as a fresh legitimate follow-up, reset tracking
+                state[pillar] = {"first_ask_date": ask_date, "contact_answered": False}
+            # else gap==0 or gap==1 but contact hasn't answered yet → rapid double-send, skip
 
     return False, ""
+
+
 
 
 # ── Bluffer / paranoid / nonsense reply detection ─────────────────────────────

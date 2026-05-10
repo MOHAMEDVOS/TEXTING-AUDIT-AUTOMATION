@@ -27,8 +27,6 @@ WHITELIST_FLAG_OUTPUTS = [
     "Did not escalate after all 4 pillars gathered.",
     "Skipped $1k referral close after high price.",
     "Agent re-asked for asking price after owner already stated it.",
-    # FLAG 14 — added Phase 1 (SMS Script training)
-    "Exceeded 3-rebuttal script maximum.",
     # FLAG 15 — added Phase 4 (above-market price handling)
     "Agent kept pushing after above-market price instead of referral close.",
 ]
@@ -104,11 +102,6 @@ FLAG_REMAP_RULES: list[tuple[re.Pattern[str], str]] = [
      "Revealed or promised 6+ month timeline."),
     (re.compile(r"(?i)\bcontinued\b.*\b(opt\s*[- ]?out|unsubscribe|stop\s+text|remove\s+me|leave\s+me\s+alone)\b"),
      "Continued texting after explicit opt-out."),
-    # FLAG 14 remap — dynamic text with rebuttal count is normalised to the fixed canonical string
-    (re.compile(r"(?i)\bexceeded\b.{0,30}\b3.rebuttal\b"),
-     "Exceeded 3-rebuttal script maximum."),
-    (re.compile(r"(?i)\bexceeded\b.{0,30}\brebuttal.{0,20}\bscript\s+maximum\b"),
-     "Exceeded 3-rebuttal script maximum."),
     # FLAG 15 remap — dynamic text with price amount is normalised to the fixed canonical string
     (re.compile(r"(?i)\bkept\s+pushing\b.{0,40}\babove.?market\b"),
      "Agent kept pushing after above-market price instead of referral close."),

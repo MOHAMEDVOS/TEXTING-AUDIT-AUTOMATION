@@ -784,8 +784,7 @@ def build_summary(
         elif rebuttals == 2:
             bullets.append("Texter sent 2 script-prescribed rebuttals before contact reconsidered")
         elif rebuttals >= 3:
-            bullets.append(f"Texter sent {rebuttals} rebuttals" +
-                           (" — exceeded 3-rebuttal max (script violation)" if rebuttals > 3 else ""))
+            bullets.append(f"Texter sent {rebuttals} rebuttals")
         if follow_ups:
             bullets.append(f"Texter also sent {follow_ups} scheduled follow-up message(s)")
         if pillar_qs:
@@ -827,7 +826,7 @@ def build_summary(
         elif rebuttals == 3:
             bullets.append("Texter used all 3 script-prescribed rebuttals then closed")
         elif rebuttals > 3:
-            bullets.append(f"Texter sent {rebuttals} rebuttals — exceeded 3-rebuttal script maximum")
+            bullets.append(f"Texter sent {rebuttals} rebuttals — very persistent outreach")
         if follow_ups:
             bullets.append(f"Texter also sent {follow_ups} follow-up message(s) during silence")
         if pillar_qs:
@@ -895,12 +894,6 @@ def build_summary(
 
     # ── Compliance note ───────────────────────────────────────────────────────
     comp = scores.get("compliance_score", 100)
-    # Flag 3-rebuttal max script violation regardless of compliance score
-    if msg_classification.get("rebuttal_count_exceeded"):
-        bullets.append(
-            f"⚠️ Script violation: {rebuttals} rebuttals sent — maximum is 3 "
-            "(script says: after 3rd No, stop and mark Not Interested)"
-        )
     if comp < 80:
         bullets.append(f"Compliance score: {comp} — review flagged messages")
     elif comp >= 95 and tone not in ("silent", "hostile"):

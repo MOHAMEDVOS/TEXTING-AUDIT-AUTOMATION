@@ -427,16 +427,53 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
     return {"agent": agent, "conversations": merged}
 
 
+# Tracks when each agent's run was first seen as "running" (for stale timeout)
+_run_started_at: dict[str, datetime] = {}
+
+# Max minutes a process may stay in "running" state before being auto-expired
+_MAX_RUN_MINUTES = 20
+
+
 def _cleanup_finished():
-    """Mark processes that have completed as 'done' or 'failed'."""
+    """Mark processes that have completed as 'done' or 'failed'.
+
+    Also auto-expires any process that has been "running" longer than
+    _MAX_RUN_MINUTES — this catches Railway-killed processes whose Popen
+    handle is gone but the in-memory dict was never cleared.
+    """
+    now = get_now()
     for name, proc in list(running_processes.items()):
         if proc in {"done", "failed"}:
+            _run_started_at.pop(name, None)
             continue
+
+        # Track when this process was first seen running
+        if name not in _run_started_at:
+            _run_started_at[name] = now
+
+        # Auto-expire if the process handle is dead
         if proc.poll() is not None:
             detail = _read_run_status_detail(name)
             state = detail.get("state")
             running_processes[name] = state if state in {"done", "failed"} else ("done" if proc.returncode == 0 else "failed")
             running_pinned_keys.pop(name, None)
+            _run_started_at.pop(name, None)
+            continue
+
+        # Auto-expire if stuck in running state too long (Railway crash / orphaned process)
+        elapsed = (now - _run_started_at[name]).total_seconds() / 60
+        if elapsed > _MAX_RUN_MINUTES:
+            logger.warning(
+                f"[Cleanup] '{name}' has been running for {elapsed:.0f} min — "
+                f"auto-expiring as 'failed' (likely a crashed/killed process)"
+            )
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            running_processes[name] = "failed"
+            running_pinned_keys.pop(name, None)
+            _run_started_at.pop(name, None)
 
 
 def _agent_status(name: str) -> str:
@@ -869,6 +906,59 @@ async def api_status():
         "status_details": status_details,
         "key_assignments": key_assignments,
     }
+
+
+@app.post("/api/clear-stuck")
+async def api_clear_stuck(request: Request):
+    """
+    Force-clear stuck 'Logging in' or 'Failed' badges for one or all agents.
+
+    Body (optional JSON):
+        {"agent_name": "Kev1040\"SC\""}   — clear one specific agent
+        {}                                — clear ALL stuck agents
+
+    An agent is "stuck" if it is in running_processes but its process has
+    already exited OR it has been running longer than _MAX_RUN_MINUTES.
+    Failed entries are also cleared so the badge resets to idle.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    target = (body.get("agent_name") or "").strip() if isinstance(body, dict) else ""
+    cleared = []
+
+    candidates = [target] if target else list(running_processes.keys())
+    for name in candidates:
+        proc = running_processes.get(name)
+        if proc is None:
+            continue
+        # Clear if already marked done/failed, or process is dead, or it's just stuck
+        is_terminal = proc in {"done", "failed"}
+        is_dead     = (not is_terminal) and proc.poll() is not None
+        started     = _run_started_at.get(name)
+        is_overtime = started and (get_now() - started).total_seconds() / 60 > _MAX_RUN_MINUTES
+        if is_terminal or is_dead or is_overtime:
+            if not is_terminal:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+            running_processes.pop(name, None)
+            running_pinned_keys.pop(name, None)
+            _run_started_at.pop(name, None)
+            sf = running_status_files.pop(name, None)
+            if sf and sf.exists():
+                try:
+                    sf.unlink()
+                except Exception:
+                    pass
+            running_status_details.pop(name, None)
+            cleared.append(name)
+            logger.info(f"[clear-stuck] Evicted '{name}' from process registry")
+
+    return {"cleared": cleared, "count": len(cleared)}
 
 
 @app.get("/api/ai/status")

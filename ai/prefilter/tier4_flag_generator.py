@@ -292,16 +292,9 @@ def generate(
                 )
                 break
 
-    # ── FLAG 14: Exceeded 3-rebuttal script maximum ──────────────────────────
-    # Script: after 3rd No the texter must stop and mark Not Interested.
-    # More than 3 rebuttals = script violation (too persistent / harassment risk).
+
+    # ── Classify agent messages (used for rebuttals_used field) ──────────────
     _msg_cls = classify_agent_messages(messages)
-    if _msg_cls["rebuttal_count_exceeded"]:
-        _n_reb = _msg_cls["rebuttals"]
-        raw_flags.append(
-            f"Exceeded 3-rebuttal script maximum ({_n_reb} rebuttals sent). "
-            "Script says: after the 3rd No, stop texting and mark as Not Interested."
-        )
 
     # ── FLAG 15: Agent kept pushing after above-market price ──────────────────
     # Script: if price is above market, do the $1k referral close and END.
