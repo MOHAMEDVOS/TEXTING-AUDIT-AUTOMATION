@@ -1,9 +1,6 @@
 # Browser Automation
 playwright==1.49.1
 
-# Async Support
-asyncio-pool==0.7.0
-
 # Environment & Config
 python-dotenv==1.0.1
 cryptography==44.0.0
