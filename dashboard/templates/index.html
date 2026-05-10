@@ -1862,8 +1862,8 @@ function renderSidebar() {
     const metaItems = [];
     if (statusHtml) metaItems.push(statusHtml);
     if (convos > 0) metaItems.push(`<span style="font-size:.65rem;color:var(--text-secondary);">${convos} convos</span>`);
-    if (flags > 0)  metaItems.push(`<span style="font-size:.65rem;color:var(--danger);font-weight:600;">&#9873; ${flags}</span>`);
-    if (unread > 0) metaItems.push(`<span style="font-size:.65rem;color:var(--warning);font-weight:600;">&#9888; ${unread}</span>`);
+    if (flags > 0)  metaItems.push(`<span style="font-size:.65rem;color:var(--danger);font-weight:600;">🚩 ${flags}</span>`);
+    if (unread > 0) metaItems.push(`<span style="font-size:.65rem;color:var(--warning);font-weight:600;">⚠️ ${unread}</span>`);
 
     const scoreDisplay = score != null
       ? `<span style="font-size:.82rem;font-weight:700;" class="${scoreClass(score)}">${fmtScore(score)}</span>`
@@ -1982,13 +1982,13 @@ function renderAgentScores(agent) {
   // Flagged chats
   const flagCount = (agent.red_flags || []).length;
   if (flagCount > 0) {
-    pills.push(`<span class="pill pill-r">&#9873; ${flagCount} flagged chat${flagCount > 1 ? "s" : ""}</span>`);
+    pills.push(`<span class="pill pill-r">🚩 ${flagCount} flagged chat${flagCount > 1 ? "s" : ""}</span>`);
   }
 
   // Unread
   const unread = agent.unread_messages_left || 0;
   if (unread > 0) {
-    pills.push(`<span class="pill pill-y">&#9888; ${unread} unread</span>`);
+    pills.push(`<span class="pill pill-y">⚠️ ${unread} unread</span>`);
   }
 
   // Funnel placeholder — filled by renderFunnelPill() once convos load
