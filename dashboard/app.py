@@ -464,7 +464,6 @@ class RunRequest(BaseModel):
     agent_name: str = ""
     date_filter: str = "today"
     sample_size: int = 10
-    local_date: str | None = None
 
 
 class AddAgentRequest(BaseModel):
@@ -712,10 +711,7 @@ async def api_run(body: RunRequest):
             if not account_row:
                 raise HTTPException(status_code=404, detail=f"Account '{agent_name}' not found")
 
-            if body.local_date:
-                today = _date.fromisoformat(body.local_date)
-            else:
-                today = _date.today()
+            today = _date.today()
             assignment = await conn.fetchrow(
                 """SELECT aa.agent_name, aa.groq_key_id, k.api_key
                    FROM account_assignments aa

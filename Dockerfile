@@ -13,6 +13,7 @@ RUN playwright install chromium
 COPY . .
 
 # Expose port
+ENV TZ="America/New_York"
 EXPOSE 8080
 
 # Start application (using shell form to expand $PORT)
