@@ -22,6 +22,7 @@ from config.settings import (
     LOG_DIR,
     DATE_FILTER,
     DEFAULT_SAMPLE_SIZE,
+    get_now
 )
 from scraper.anti_detect import (
     human_delay,
@@ -280,7 +281,7 @@ class SmarterContactBot:
 
             reporting_data = {
                 "agent_name": self.agent_name,
-                "extracted_at": datetime.now().isoformat(),
+                "extracted_at": get_now().isoformat(),
                 "metrics": {},
             }
 
@@ -633,7 +634,7 @@ class SmarterContactBot:
                         "contact_name": contact_name,
                         "message_preview": info["preview"],
                         "date": "", "time": "",
-                        "extracted_at": datetime.now().isoformat(),
+                        "extracted_at": get_now().isoformat(),
                     }
                     for line in lines:
                         if "/" in line and "202" in line: unread_data["date"] = line
@@ -714,7 +715,7 @@ class SmarterContactBot:
                             "contact_name": contact_name,
                             "assigned_labels": assigned_labels,
                             "index": idx,
-                            "extracted_at": datetime.now().isoformat(),
+                            "extracted_at": get_now().isoformat(),
                             "full_transcript": ""
                         }
 
@@ -996,7 +997,7 @@ class SmarterContactBot:
             "agent_name": self.agent_name,
             "email": self.email,
             "worker_id": self.worker_id,
-            "started_at": datetime.now().isoformat(),
+            "started_at": get_now().isoformat(),
             "status": "pending",
             "reporting": {},
             "conversations": [],
@@ -1022,7 +1023,7 @@ class SmarterContactBot:
             await self._logout()
 
             result["status"] = "success"
-            result["completed_at"] = datetime.now().isoformat()
+            result["completed_at"] = get_now().isoformat()
 
         except Exception as e:
             result["status"] = "error"
@@ -1262,7 +1263,7 @@ class SmarterContactBot:
     async def _take_screenshot(self, name: str):
         """Take a screenshot for debugging."""
         try:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = get_now().strftime("%Y%m%d_%H%M%S")
             filename = f"{self.agent_name}_{name}_{timestamp}.png"
             filepath = self._screenshot_dir / filename
             await self.page.screenshot(path=str(filepath), full_page=True)

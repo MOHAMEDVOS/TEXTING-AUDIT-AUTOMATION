@@ -21,7 +21,8 @@ if sys.platform == "win32":
     title = os.environ.get("PYTITLE", "TEXTING Scraper")
     os.system(f"title {title}")
 
-from config.settings import LOG_DIR, LOG_LEVEL, DATE_FILTER, DEFAULT_SAMPLE_SIZE
+from config.settings import LOG_DIR, LOG_LEVEL, DATE_FILTER, DEFAULT_SAMPLE_SIZE, get_now
+
 from scraper.queue_manager import QueueManager
 from database.db import Database
 from ai.scorer import score_agent_conversations
@@ -36,7 +37,7 @@ logging.basicConfig(
     handlers=[
         logging.StreamHandler(open(sys.stdout.fileno(), mode='w', encoding='utf-8', closefd=False)),
         logging.FileHandler(
-            LOG_DIR / f"audit_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{os.getpid()}.log",
+            LOG_DIR / f"audit_{get_now().strftime('%Y%m%d_%H%M%S_%f')}_{os.getpid()}.log",
             encoding="utf-8",
         ),
     ],
@@ -69,7 +70,7 @@ def _write_run_status(
             "code": code,
             "message": message,
             "errors": errors or [],
-            "updated_at": datetime.now().isoformat(),
+            "updated_at": get_now().isoformat(),
         }
         tmp_path = path.with_suffix(path.suffix + ".tmp")
         tmp_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")

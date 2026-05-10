@@ -8,7 +8,7 @@ import json
 import logging
 from datetime import datetime, date
 from pathlib import Path
-from config.settings import DATABASE_URL
+from config.settings import DATABASE_URL, get_now
 
 logger = logging.getLogger(__name__)
 
@@ -59,10 +59,10 @@ def _parse_msg_datetime(msg: dict) -> datetime | None:
             year = int(parts[3])
             msg_date = date(year, month, day)
         except Exception:
-            msg_date = datetime.now().date()
+            msg_date = get_now().date()
     else:
         # Empty date = today's messages scraped in current session
-        msg_date = datetime.now().date()
+        msg_date = get_now().date()
 
     try:
         t = datetime.strptime(time_str, "%I:%M %p")
@@ -159,7 +159,7 @@ class Database:
         Returns the conversations list with conversation_id injected.
         """
         conversations = result.get("conversations", [])
-        extracted_at_str = result.get("started_at", datetime.now().isoformat())
+        extracted_at_str = result.get("started_at", get_now().isoformat())
 
         # Parse extracted_at — accept ISO strings with or without timezone
         try:
@@ -167,7 +167,7 @@ class Database:
                 extracted_at_str = extracted_at_str[:-1] + "+00:00"
             extracted_at = datetime.fromisoformat(extracted_at_str)
         except Exception:
-            extracted_at = datetime.now()
+            extracted_at = get_now()
 
         audit_date = extracted_at.date() if hasattr(extracted_at, "date") else date.today()
 

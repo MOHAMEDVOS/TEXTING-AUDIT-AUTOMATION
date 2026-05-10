@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from playwright.async_api import async_playwright
 
-from config.settings import MAX_PARALLEL_WORKERS, MAX_RETRIES, DATABASE_URL
+from config.settings import MAX_PARALLEL_WORKERS, MAX_RETRIES, DATABASE_URL, get_now
 from scraper.browser_bot import SmarterContactBot
 
 logger = logging.getLogger(__name__)
@@ -112,7 +112,7 @@ class QueueManager:
                 "agent_name": agent["name"],
                 "email": agent["email"],
                 "status": "pending",
-                "started_at": datetime.now().isoformat(),
+                "started_at": get_now().isoformat(),
             }
 
             try:
@@ -254,5 +254,5 @@ class QueueManager:
             "success": success,
             "failed": failed,
             "failed_agents": self.failed,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": get_now().isoformat(),
         }

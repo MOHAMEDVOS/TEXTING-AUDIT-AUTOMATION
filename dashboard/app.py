@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from config.settings import MAX_PARALLEL_WORKERS, DATABASE_URL
+from config.settings import MAX_PARALLEL_WORKERS, DATABASE_URL, get_now
 
 # â"€â"€ Project root so we can locate the DB and run main.py â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -414,7 +414,7 @@ def _read_run_status_detail(agent_name: str) -> dict:
 
 def _new_run_status_path(agent_name: str) -> Path:
     safe = "".join(ch if ch.isalnum() else "_" for ch in agent_name).strip("_") or "agent"
-    return RUN_STATUS_DIR / f"{safe}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{uuid.uuid4().hex[:8]}.json"
+    return RUN_STATUS_DIR / f"{safe}_{get_now().strftime('%Y%m%d_%H%M%S_%f')}_{uuid.uuid4().hex[:8]}.json"
 
 
 def _pick_unique_run_key(agent_name: str):
@@ -590,7 +590,7 @@ async def _save_trend_snapshot(agent_name: str) -> None:
             snapshot_account_email = assign_row["account_email"] if assign_row else agent_email
 
             audit_date_val = score_row["audit_date"] if score_row["audit_date"] else today
-            now_ts = datetime.now()   # asyncpg needs a datetime object, not a string
+            now_ts = get_now()   # asyncpg needs a datetime object, not a string
             await conn.execute(
                 """INSERT INTO trend_snapshots
                    (agent_name, audit_date, audit_timestamp, account_email,
@@ -731,7 +731,7 @@ async def api_run(body: RunRequest):
             "state": "running",
             "stage": "starting",
             "message": "Starting audit",
-            "updated_at": datetime.now().isoformat(),
+            "updated_at": get_now().isoformat(),
         }
 
         extra_env = {

@@ -9,6 +9,9 @@ from dotenv import load_dotenv
 # Load .env from project root
 PROJECT_ROOT = Path(__file__).parent.parent
 load_dotenv(PROJECT_ROOT / ".env", override=True)
+import pytz
+from datetime import datetime
+
 
 
 # ─── Browser Automation ─────────────────────────────────────
@@ -127,4 +130,13 @@ SEMANTIC_MIN_PROMOTE      = int(os.getenv("SEMANTIC_MIN_PROMOTE",        "5"))
 SEMANTIC_MAX_PER_RUN      = int(os.getenv("SEMANTIC_MAX_PER_RUN",        "50"))
 SEMANTIC_REBUILD_TIMEOUT  = int(os.getenv("SEMANTIC_REBUILD_TIMEOUT",    "300"))
 SEMANTIC_TRAIN_TIMEOUT    = int(os.getenv("SEMANTIC_TRAIN_TIMEOUT",      "600"))
+
+# ─── Timezone ───────────────────────────────────────────────
+TIMEZONE_STR = os.getenv("TZ", "America/New_York")
+TIMEZONE = pytz.timezone(TIMEZONE_STR)
+
+def get_now() -> datetime:
+    """Get current time in the configured timezone."""
+    return datetime.now(TIMEZONE)
+
 
