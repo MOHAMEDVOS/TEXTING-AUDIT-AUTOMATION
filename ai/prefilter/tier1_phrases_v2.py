@@ -84,6 +84,7 @@ _OPT_OUT_PATTERNS = [
     re.compile(r"\bno\s+please\s+don'?t\s+(ask|contact|text|call)\b", re.I),
     # Note: "nothing about this interests me. Give me a number..." is NOT opt-out
     # Only match when it's a hard stop (followed by end of message or hard punctuation)
+    re.compile(r"\bif\s+you\s+could\s+stop\b", re.I),
     re.compile(r"\bnothing\s+about\s+this.{0,20}interests\s+me[.!]\s*$", re.I | re.MULTILINE),
 ]
 
@@ -1418,18 +1419,35 @@ def evaluate(
             "compliance_score": 100, "sentiment_score": 85,
             "professionalism_score": 95, "script_adherence_score": 100,
         }
+        
+        # Guard: If contact also opted out, DNC is a valid label.
+        contact_opted_out = any(p.search(contact_text) for p in _OPT_OUT_PATTERNS)
+        _label_lower = (_actual_label or "").lower()
+        if contact_opted_out and ("dnc" in _label_lower or "do not call" in _label_lower):
+            expected_label = _actual_label
+            reason = "Contact stated wrong number AND explicit opt-out (DNC is correct)."
+        else:
+            expected_label = "Wrong Number"
+            reason = "Contact explicitly stated wrong number."
+
+        # Fix summary hallucination
+        if len(agent_msgs_after_wn) > 0:
+            summary = "Wrong number. Texter apologized and pivoted to referral close."
+        else:
+            summary = "Contact indicated wrong number. Texter stopped messaging."
+
         return PrefilterResult(
             tier_hit=1, decision="short_circuit", confidence=0.92,
             notes=f"[{funnel_tier}] wrong number — clean pivot",
             predicted_scores=scores,
             result=_clean_result(
                 contact_name,
-                summary="Wrong number. Texter apologized and pivoted to referral close.",
+                summary=summary,
                 scores=scores,
                 funnel_tier=funnel_tier,
                 funnel_stage="none",
-                label_assigned="Wrong Number",
-                label_reason="Contact explicitly stated wrong number.",
+                label_assigned=expected_label,
+                label_reason=reason,
                 actual_label=_actual_label,
             ),
         )
