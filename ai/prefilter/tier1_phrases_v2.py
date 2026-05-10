@@ -798,11 +798,23 @@ _SOLD_SC_PATTERNS = [
     re.compile(r"\b(already\s+sold|just\s+sold|under\s+contract|sold\s+it)\b", re.I),
     re.compile(r"\b(it'?s?\s+sold|was\s+sold|is\s+sold|property\s+sold|place\s+sold)\b", re.I),
     re.compile(r"\bno\s+longer\s+(available|for\s+sale|on\s+the\s+market)\b", re.I),
-    re.compile(r"\b(closing\s+soon|in\s+escrow|pending\s+sale|sale\s+pending)\b", re.I),
+    re.compile(r"\b(closing\s+soon|in\s+escrow|sale\s+pending)\b", re.I),
+    # NOTE: "pending sale" removed from above — too generic.
+    # It fires on "I dont know of any house pending sale in area" (contact is NOT confirming their own sale).
+    # Instead, only match "pending sale" when clearly about the contact's own property:
+    re.compile(r"\bmy\s+(home|house|property|place).{0,25}pending\s+sale\b", re.I),
+    re.compile(r"\bpending\s+sale\b.{0,25}\b(my|our|the)\s+(home|house|property|place)\b", re.I),
+    re.compile(r"\bit'?s?\s+pending\b", re.I),
 ]
-# Neighbour-context guard: "The house NEXT DOOR sold" is NOT about the subject property
+# Neighbour-context / negation guard:
+# Fires when contact is talking about SOMEONE ELSE's property, or saying they DON'T know of any.
 _SOLD_NEIGHBOR_SC = re.compile(
-    r"\b(next\s+door|neighbor|nearby|down\s+the\s+street|across\s+the\s+street|adjacent)\b",
+    r"\b("
+    r"next\s+door|neighbor|nearby|down\s+the\s+street|across\s+the\s+street|adjacent"
+    r"|don'?t\s+know|do\s+not\s+know|no\s+idea"
+    r"|any\s+(house|home|property|place)"
+    r"|in\s+(the\s+)?area|in\s+(the\s+)?neighborhood"
+    r")\b",
     re.I,
 )
 
