@@ -722,15 +722,15 @@ class SmarterContactBot:
                         panel_selector = 'div[data-test-id="messenger_nav_inbox_all_contact-panel_messages"]'
 
                         try:
-                            chat_panel = await self.page.wait_for_selector(panel_selector, timeout=30000)
+                            chat_panel = await self.page.wait_for_selector(panel_selector, timeout=15000)
                         except Exception as e:
-                            logger.warning(f"[Worker-{self.worker_id}] Primary panel selector timed out: {e}")
+                            logger.warning(f"[Worker-{self.worker_id}] Primary panel selector timed out (15s): {e}")
                             # Take screenshot to debug what's on the page
                             if SCREENSHOT_ON_ERROR:
                                 await self._take_screenshot(f"chat_panel_timeout_{contact_name[:10]}")
                             try:
                                 chat_panel = await self.page.wait_for_selector(
-                                    '[data-test-id*="contact-panel"]', timeout=10000
+                                    '[data-test-id*="contact-panel"]', timeout=8000
                                 )
                             except Exception:
                                 logger.warning(f"[Worker-{self.worker_id}] Fallback selector also failed for {contact_name}")
@@ -987,9 +987,8 @@ class SmarterContactBot:
         """
         Run the full extraction pipeline:
         1. Login
-        2. Extract reporting metrics
-        3. Extract conversations
-        4. Logout
+        2. Extract conversations (skips reporting page — not used for scoring)
+        3. Logout
 
         Returns all extracted data.
         """
