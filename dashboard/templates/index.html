@@ -1757,12 +1757,17 @@ async function runSelectedAgents() {
         body: JSON.stringify({ agent_name: name, ...params }),
       });
       const data = await res.json();
+      if (!res.ok) {
+        toast(`Error starting ${name}: ${data.detail || `HTTP ${res.status}`}`, 6000);
+        continue;
+      }
       if (data.status === "started") {
         processStatus[name] = "running";
         processStatusDetails[name] = { state: "running", message: "Starting audit" };
       }
     } catch (e) {
       console.warn("Failed to start", name, e);
+      toast(`Failed to start ${name}: ${e.message}`, 6000);
     }
   }
 
@@ -2448,7 +2453,7 @@ async function runAgent(name, evt) {
       body: JSON.stringify({ agent_name: name, ...getRunParams() }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    if (!res.ok) throw new Error(data.detail || data.error || `HTTP ${res.status}`);
     if (data.status === "already_running") { toast(`${name} is already running`); return; }
     if (data.status === "started") {
       processStatus[name] = "running";
