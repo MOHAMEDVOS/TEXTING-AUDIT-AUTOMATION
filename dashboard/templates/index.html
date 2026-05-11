@@ -3569,16 +3569,15 @@ async function loadAssignments() {
         status === "full"    ? "#22c55e" :
         status === "partial" ? "#f59e0b" :
                                "#ef4444";
-      // Shorten email for display — show only the part before @
-      const shortEmail  = (r.account_email || "").split("@")[0];
-      const domain      = (r.account_email || "").split("@")[1] || "";
+      // Use real name if available, fallback to email prefix
+      const displayName = r.account_name || (r.account_email || "").split("@")[0];
       return `
         <div style="display:flex;flex-direction:column;gap:7px;padding:12px 14px;border-radius:10px;border:1px solid ${borderColor};background:${bgColor};transition:border-color .18s;" data-email="${esc(r.account_email)}">
           <div style="display:flex;align-items:center;gap:6px;">
             <span style="width:7px;height:7px;border-radius:50%;background:${dotColor};flex-shrink:0;"></span>
             <div style="min-width:0;">
-              <div style="font-size:.76rem;font-weight:700;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(r.account_email)}">${esc(shortEmail)}</div>
-              <div style="font-size:.62rem;color:var(--text-muted);margin-top:1px;">@${esc(domain)}</div>
+              <div style="font-size:.76rem;font-weight:700;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(r.account_email)}">${esc(displayName)}</div>
+              <div style="font-size:.62rem;color:var(--text-muted);margin-top:1px;">${esc(r.account_email)}</div>
             </div>
           </div>
           <select class="assign-select" onchange="_onAssignChange(this)"

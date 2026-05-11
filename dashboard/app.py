@@ -1493,8 +1493,8 @@ async def api_get_assignments(date: str = ""):
     try:
         async with app.state.pool.acquire() as conn:
             # All SC accounts from accounts table
-            agent_rows = await conn.fetch("SELECT email FROM accounts ORDER BY name")
-            account_emails = [r["email"] for r in agent_rows if r["email"]]
+            agent_rows = await conn.fetch("SELECT name, email FROM accounts ORDER BY name")
+            account_map = {r["email"]: r["name"] for r in agent_rows if r["email"]}
 
             from datetime import date as _date
             date_obj = _date.fromisoformat(date)
@@ -1519,11 +1519,12 @@ async def api_get_assignments(date: str = ""):
         assigned_map = {r["account_email"]: dict(r) for r in rows}
         groq_rank = {r["id"]: i for i, r in enumerate(shared_groq_rows, start=1)}
         result = []
-        for email in account_emails:
+        for email, name in account_map.items():
             if email in assigned_map:
                 row = assigned_map[email]
                 key_id = row.get("groq_key_id")
                 key_val = row.get("api_key") or ""
+                row["account_name"] = name
                 row["groq_key_label"] = f"Groq {groq_rank[key_id]}" if key_id in groq_rank else None
                 row["groq_key_preview"] = f"...{key_val[-6:]}" if len(key_val) >= 6 else None
                 row.pop("api_key", None)
@@ -1532,6 +1533,7 @@ async def api_get_assignments(date: str = ""):
                 result.append(
                     {
                         "account_email": email,
+                        "account_name": name,
                         "agent_name": None,
                         "groq_key_id": None,
                         "groq_key_label": None,
