@@ -67,6 +67,23 @@ _PILLAR_KEYWORDS = {
 
 _WRONG_NAME_RE = re.compile(r"\b(wrong\s+name|that.?s\s+not\s+my\s+name|who\s+is\s+\w+)\b", re.I)
 
+# ── Address denial after engagement ──────────────────────────────────────────
+# Contact gave property details (pillars) but then said they don't know the address.
+# This is NOT a Bluffer — the agent should have asked clarifying questions.
+_ADDRESS_DENIAL_RE = re.compile(
+    r"\b("
+    r"don'?t\s+know\s+(that|the|this|your)?\s*(address|location|place|property|house|home)"
+    r"|not\s+my\s+address"
+    r"|wrong\s+address"
+    r"|that'?s\s+not\s+(my|our|the)\s+(address|place|property|house|home)"
+    r"|no\s+i\s+don'?t\s+know\s+(that|the)"
+    r"|i\s+don'?t\s+(own|have)\s+(a\s+property|that\s+(house|home|property|place))"
+    r"|never\s+(heard|seen)\s+of\s+(that|this)\s+(address|place|property|street)"
+    r"|that\s+(address|location)\s+(is\s+)?(not|isn'?t)\s+(mine|ours|familiar)"
+    r")\b",
+    re.I,
+)
+
 _INCOHERENT_RE = re.compile(
     r"(asdf|qwerty|jkl|lorem|test\s+test|placeholder|xxx)", re.I
 )
@@ -250,13 +267,30 @@ def generate(
         raw_flags.append("Pushed to close with zero property info.")
 
     # ── FLAG 11: Did not escalate after all 4 pillars gathered ───────
-    if pillar_count >= 4:
+    _address_denied = any(
+        _ADDRESS_DENIAL_RE.search((m.get("message") or m.get("body") or ""))
+        for m in contact_msgs
+    )
+    if pillar_count >= 4 and not _address_denied:
         # Check if agent escalated (mentioned manager, appointment, etc.)
         escalation_re = re.compile(
             r"\b(manager|supervisor|appointment|schedule|set\s+up|escalat)\b", re.I
         )
         if not escalation_re.search(agent_text):
             raw_flags.append("Did not escalate after all 4 pillars gathered.")
+
+    # ── FLAG 14: Address denial after pillar engagement ───────────────
+    # Contact answered property questions (condition, repairs, etc.) but then
+    # denied knowing the address when confirmed. Agent should have asked:
+    # "Do you have the parcel number?" or "Which address is yours?"
+    # Labeling this as Bluffer is WRONG — the contact may own a different property.
+    if _address_denied and pillar_count >= 2:
+        raw_flags.append(
+            "Contact denied knowing the address after providing property details. "
+            "Agent should have asked clarifying questions (parcel number, correct address) "
+            "instead of closing the conversation. Label should be Potential or Undefined, not Bluffer."
+        )
+
 
     # ── FLAG 12: Skipped $1k referral close after high price ─────────
     high_price_re = re.compile(r"\$\s?\d{3,}(,\d{3})*\s*(k|thousand|K)?", re.I)

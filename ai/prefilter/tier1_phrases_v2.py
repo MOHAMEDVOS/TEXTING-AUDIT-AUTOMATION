@@ -87,6 +87,62 @@ _OPT_OUT_PATTERNS = [
     re.compile(r"\bif\s+you\s+could\s+stop\b", re.I),
     re.compile(r"^stop[.!]*$", re.I | re.MULTILINE),
     re.compile(r"\bnothing\s+about\s+this.{0,20}interests\s+me[.!]\s*$", re.I | re.MULTILINE),
+
+    # ── Conjunction patterns: "don't text or call me" ──
+    re.compile(r"\bdon'?t\s+(text|txt|call|contact|message)\s+(or|and|,)\s+(text|txt|call|contact|message)(\s+me)?\b", re.I),
+    re.compile(r"\bplease\s+don'?t\s+(text|txt|call|contact|message)\s+(or|and|,)\s+(text|txt|call|contact|message)\b", re.I),
+    re.compile(r"\bdo\s+not\s+(text|txt|call|contact|message)\s+(or|and|,)\s+(text|txt|call|contact|message)\b", re.I),
+    re.compile(r"\bstop\s+(texting|calling|messaging|contacting)\s+(and|or|,)\s+(texting|calling|messaging|contacting)(\s+me)?\b", re.I),
+    re.compile(r"\bno\s+more\s+(texts?|calls?|messages?)\s+(or|and|,)\s+(texts?|calls?|messages?)\b", re.I),
+
+    # ── "Again" / "Anymore" / "Ever" patterns ──
+    re.compile(r"\bdon'?t\s+(text|txt|call|contact|message)\s+me\s+again\b", re.I),
+    re.compile(r"\bdon'?t\s+(text|txt|call|contact|message)\s+(me\s+)?anymore\b", re.I),
+    re.compile(r"\bdon'?t\s+ever\s+(text|txt|call|contact|message)\s+me\b", re.I),
+    re.compile(r"\bnever\s+(text|txt|call|contact|message)\s+me\s+(again|anymore)\b", re.I),
+    re.compile(r"\bplease\s+never\s+(text|txt|call|contact|message)\b", re.I),
+    re.compile(r"\bdo\s+not\s+(text|txt|call|contact|message)\s+(me\s+)?anymore\b", re.I),
+
+    # ── "Please don't [verb]" without requiring "me" ──
+    re.compile(r"\bplease\s+don'?t\s+(text|txt|call|contact|message)\b", re.I),
+    re.compile(r"\bplease\s+stop\s+(texting|calling|messaging|contacting)\b", re.I),
+
+    # ── "Leave me alone" variants ──
+    re.compile(r"\bjust\s+leave\s+me\s+(alone|be)\b", re.I),
+    re.compile(r"\bplease\s+(just\s+)?leave\s+me\s+(alone|be)\b", re.I),
+    re.compile(r"\bleave\s+me\s+the\s+(hell|fuck|f\*ck|fck|heck)\s+alone\b", re.I),
+    re.compile(r"\bleave\s+(us|him|her|them)\s+(alone|be)\b", re.I),
+
+    # ── Quit / modal verb variants ──
+    re.compile(r"\bquit\s+(texting|calling|messaging|contacting|bothering)\s*me?\b", re.I),
+    re.compile(r"\bcan\s+you\s+(please\s+)?stop\s+(texting|calling|messaging|contacting)\b", re.I),
+    re.compile(r"\bwould\s+you\s+(please\s+)?stop\s+(texting|calling|messaging|contacting)\b", re.I),
+    re.compile(r"\bwill\s+you\s+(please\s+)?stop\s+(texting|calling|messaging|contacting)\b", re.I),
+    re.compile(r"\bcould\s+you\s+(please\s+)?stop\s+(texting|calling|messaging|contacting)\b", re.I),
+
+    # ── Abbreviations ──
+    re.compile(r"\bplz\s+(stop|don'?t|dont)\b", re.I),
+    re.compile(r"\bpls\s+(stop|don'?t|dont)\b", re.I),
+    re.compile(r"\bdont\s+(text|txt|call|contact|message)\s+me\b", re.I),
+    re.compile(r"\bdont\s+(text|txt|call|contact|message)\s+(or|and)\s+(text|txt|call|contact|message)\b", re.I),
+
+    # ── Exasperated / repeated request ──
+    re.compile(r"\bi\s+(said|already\s+said)\s+(stop|no)\b", re.I),
+    re.compile(r"\bi\s+(told|already\s+told)\s+you\s+(to\s+)?(stop|no)\b", re.I),
+    re.compile(r"\bi'?ve\s+(asked|told)\s+you\s+to\s+stop\b", re.I),
+    re.compile(r"\bseriously\s+stop\b", re.I),
+
+    # ── Legal / harassment ──
+    re.compile(r"\bthis\s+is\s+harassment\b", re.I),
+    re.compile(r"\bdo\s+not\s+call\s+list\b", re.I),
+    re.compile(r"\btcpa\b", re.I),
+    re.compile(r"\billegal\s+to\s+(text|call|contact|message)\b", re.I),
+
+    # ── Finality ──
+    re.compile(r"\bno\s+further\s+(contact|communication|texts?|messages?|calls?)\b", re.I),
+    re.compile(r"\bdon'?t\s+reach\s+out\b", re.I),
+    re.compile(r"\bdo\s+not\s+reach\s+out\b", re.I),
+    re.compile(r"\bdon'?t\s+(want|need)\s+(any\s+)?(more\s+)?(texts?|messages?|calls?|contact)\b", re.I),
 ]
 
 # ── Profanity / clear hostility → DNC short-circuit (no Groq needed) ─────────
@@ -451,6 +507,23 @@ def _agent_sent_duplicate(messages: list[dict]) -> tuple[bool, str]:
 
 
 
+# ── Address denial after engagement ──────────────────────────────────────────
+# Contact gave property details (pillars) but then said they don't know the address.
+# This is NOT a Bluffer — the agent should have asked clarifying questions.
+_ADDRESS_DENIAL_RE = re.compile(
+    r"\b("
+    r"don'?t\s+know\s+(that|the|this|your)?\s*(address|location|place|property|house|home)"
+    r"|not\s+my\s+address"
+    r"|wrong\s+address"
+    r"|that'?s\s+not\s+(my|our|the)\s+(address|place|property|house|home)"
+    r"|no\s+i\s+don'?t\s+know\s+(that|the)"
+    r"|i\s+don'?t\s+(own|have)\s+(a\s+property|that\s+(house|home|property|place))"
+    r"|never\s+(heard|seen)\s+of\s+(that|this)\s+(address|place|property|street)"
+    r"|that\s+(address|location)\s+(is\s+)?(not|isn'?t)\s+(mine|ours|familiar)"
+    r")\b",
+    re.I,
+)
+
 # ── Bluffer / paranoid / nonsense reply detection ─────────────────────────────
 # Contacts who reply with absurd, threatening, or paranoid statements that don't
 # engage with the property question — should be labeled "Bluffer" not Lead/NI.
@@ -738,13 +811,43 @@ _STRONG_NI_RE = re.compile(
 # ── Maybe Later ───────────────────────────────────────────────────────────────
 
 _MAYBE_LATER_PATTERNS = [
+    # ── Core "maybe / later" signals ──────────────────────────────────────────
     re.compile(r"\bmaybe\s+(later|in\s+a\s+few|in\s+the\s+future|next\s+year|sometime)\b", re.I),
-    re.compile(r"\bnot\s+(yet|right\s+now)\b", re.I),
-    re.compile(r"\bcheck\s+back\b", re.I),
-    re.compile(r"\bpossibly\s+(soon|later|in\s+the)\b", re.I),
-    re.compile(r"\bin\s+(a\s+)?couple\s+(of\s+)?months\b", re.I),
-    re.compile(r"\bdown\s+the\s+road\b", re.I),
+    re.compile(r"\bpossibly\s+(later|soon|in\s+the\s+future|down\s+the\s+road)\b", re.I),
     re.compile(r"\bnear\s+future\b", re.I),
+    re.compile(r"\bdown\s+the\s+road\b", re.I),
+    re.compile(r"\bin\s+the\s+future\b", re.I),
+    re.compile(r"\bsome\s+(other\s+)?time\b", re.I),
+    re.compile(r"\bnot\s+right\s+now\b", re.I),
+    re.compile(r"\bnot\s+yet\b", re.I),
+
+    # ── "Check back" / "Try again" / "Reach out later" ─────────────────────────
+    re.compile(r"\bcheck\s+back\b", re.I),
+    re.compile(r"\btry\s+(again|back)\b.{0,40}\b(year|month|later|future)\b", re.I),
+    re.compile(r"\breach\s+out\b.{0,30}\b(later|again|future|year|month)\b", re.I),
+    re.compile(r"\bcontact\s+(me|us)\b.{0,30}\b(later|again|future|year|month)\b", re.I),
+    re.compile(r"\bcall\s+(me|us)\b.{0,30}\b(later|again|future|year|month)\b", re.I),
+    re.compile(r"\btext\s+(me|us)\b.{0,30}\b(later|again|future|year|month)\b", re.I),
+    re.compile(r"\bgive\s+(me|us)\s+a\s+(call|text|ring)\b.{0,30}\b(later|again|year|month)\b", re.I),
+    re.compile(r"\b(hit|reach)\s+me\s+(up|back)\b.{0,30}\b(later|year|month)\b", re.I),
+
+    # ── Specific future time references ────────────────────────────────────────
+    re.compile(r"\b(end|beginning|start|first)\s+of\s+the\s+(year|month|quarter|summer|fall|spring|winter)\b", re.I),
+    re.compile(r"\b(end|beginning|start)\s+of\s+(january|february|march|april|may|june|july|august|september|october|november|december)\b", re.I),
+    re.compile(r"\bnext\s+(year|month|spring|summer|fall|winter|january|february|march|april|may|june|july|august|september|october|november|december)\b", re.I),
+    re.compile(r"\bin\s+(a\s+)?(couple|few|several)\s+(of\s+)?(months?|weeks?|years?)\b", re.I),
+    re.compile(r"\bin\s+\d+\s+(months?|weeks?|years?)\b", re.I),
+    re.compile(r"\b(3|6|12|two|three|six|twelve)\s+(months?|years?)\s+(from\s+now|later)\b", re.I),
+    re.compile(r"\bafter\s+the\s+(holiday|holidays|summer|winter|season|new\s+year)\b", re.I),
+    re.compile(r"\bwhen\s+(things|the\s+market|i|we)\s+(settle|calm|stabilize|improve|change|are\s+ready)\b", re.I),
+
+    # ── Soft "not now but open" signals ────────────────────────────────────────
+    re.compile(r"\bnot\s+at\s+this\s+time\b.{0,60}\b(check\s+back|later|year|month|future|try\s+again)\b", re.I),
+    re.compile(r"\b(check\s+back|try\s+again|reach\s+out).{0,60}\bnot\s+at\s+this\s+time\b", re.I),
+    re.compile(r"\bnot\s+now\b.{0,40}\b(later|year|month|future|check\s+back)\b", re.I),
+    re.compile(r"\bmaybe\s+(in\s+)?(the\s+)?future\b", re.I),
+    re.compile(r"\bopen\s+to\s+(it\s+)?(in\s+the\s+future|later|down\s+the\s+road)\b", re.I),
+    re.compile(r"\bperhaps\s+(later|in\s+the\s+future|next\s+year|in\s+a\s+few)\b", re.I),
 ]
 
 _SIX_MONTH_TIMELINE_RE = re.compile(
@@ -991,12 +1094,18 @@ def evaluate(
     contact_msgs = [m for m in messages if _sender(m) == "contact"]
     contact_text = " \n ".join(_body(m) for m in contact_msgs)
 
+    # ── DNC pre-check: if contact used opt-out language, DNC wins over EVERYTHING ──
+    # This includes Sold, Wrong Number, Not Interested, Bluffer, etc.
+    # Must run before any other short-circuit check.
+    _contact_opted_out_early = any(p.search(contact_text) for p in _OPT_OUT_PATTERNS)
+
     # ── Already sold: contact replied "Sold" / "under contract" / etc. ──────────
     # Must be checked BEFORE T3 runs — T3 ML misclassifies these as 'Do Not Call'
     # because they are very short messages with no strong feature signal.
+    # EXCEPTION: DNC wins over Sold — if contact opted out AND said sold, DNC is correct.
     _sold_match = any(p.search(contact_text) for p in _SOLD_SC_PATTERNS)
     _sold_neighbor = _SOLD_NEIGHBOR_SC.search(contact_text)
-    if _sold_match and not _sold_neighbor:
+    if _sold_match and not _sold_neighbor and not _contact_opted_out_early:
         from . import summary_builder as _sb
         _sold_scores = {
             "compliance_score": 100, "sentiment_score": 80,
@@ -1257,6 +1366,37 @@ def evaluate(
             collected_actions.append("Wrong Label")
             _degrade({"compliance_score": 100, "sentiment_score": 80,
                       "professionalism_score": 95, "script_adherence_score": 100})
+
+    # ── Check 2b2.5: Agent labeled Bluffer, but contact just denied the address ──
+    _label_lower_b2 = (_actual_label or "").lower()
+    if "bluffer" in _label_lower_b2 and not _bluff:
+        _address_denied = False
+        _c_price = False
+        _c_mot = False
+        _c_time = False
+        _c_cond = False
+        for m in contact_msgs:
+            b = _body(m)
+            if _ADDRESS_DENIAL_RE.search(b):
+                _address_denied = True
+            if not _c_price and _CONTACT_PRICE_RE.search(b):
+                _c_price = True
+            if not _c_mot and _CONTACT_MOTIVATION_RE.search(b):
+                _c_mot = True
+            if not _c_time and _CONTACT_TIMELINE_RE.search(b):
+                _c_time = True
+            if not _c_cond and len(b) >= 30 and _CONTACT_CONDITION_RE.search(b):
+                _c_cond = True
+        
+        _contact_pillars = sum([_c_price, _c_mot, _c_time, _c_cond])
+        if _address_denied and _contact_pillars >= 1:
+            collected_flags.append(
+                f"Wrong label: assigned '{_actual_label}'. Contact provided property details but denied knowing the address. "
+                "Agent should have asked for parcel number or correct address instead of labeling Bluffer."
+            )
+            collected_actions.append("Wrong Label")
+            _degrade({"compliance_score": 100, "sentiment_score": 75,
+                      "professionalism_score": 85, "script_adherence_score": 80})
 
     # ── Check 2b3: contact stated inflated price → AbvMV label check ─────────
     _inflated, _price = _contact_stated_inflated_price(messages)
@@ -1563,11 +1703,12 @@ def evaluate(
             "professionalism_score": 95, "script_adherence_score": 100,
         }
         
-        # Guard: If contact also opted out, DNC is a valid label.
-        _label_lower = (_actual_label or "").lower()
-        if contact_opted_out and ("dnc" in _label_lower or "do not call" in _label_lower):
-            expected_label = _actual_label
-            reason = "Contact stated wrong number AND explicit opt-out (DNC is correct)."
+        # DNC ALWAYS wins over Wrong Number.
+        # If contact said wrong number AND opted out, the actionable label is DNC —
+        # regardless of what the texter assigned.
+        if contact_opted_out:
+            expected_label = "DO Not Call"
+            reason = "Contact stated wrong number AND explicit opt-out — DNC takes priority over Wrong Number."
         else:
             expected_label = "Wrong Number"
             reason = "Contact explicitly stated wrong number."

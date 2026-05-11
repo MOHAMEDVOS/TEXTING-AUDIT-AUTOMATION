@@ -29,6 +29,8 @@ WHITELIST_FLAG_OUTPUTS = [
     "Agent re-asked for asking price after owner already stated it.",
     # FLAG 15 — added Phase 4 (above-market price handling)
     "Agent kept pushing after above-market price instead of referral close.",
+    # FLAG 14 — address denial
+    "Contact denied knowing the address after providing property details. Agent should have asked clarifying questions (parcel number, correct address) instead of closing the conversation. Label should be Potential or Undefined, not Bluffer.",
 ]
 
 # ── Regex constants ──────────────────────────────────────────────────────────

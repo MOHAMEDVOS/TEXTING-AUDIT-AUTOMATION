@@ -159,6 +159,93 @@ _DNC = [
     re.compile(r"\btired\s+of\s+(you|your|these)\s+(spam|texts?|messages?|calls?|bots?)\b", re.I),
     re.compile(r"\bstop\s+(sending|with)\s+(these\s+)?(spam|unsolicited)\b", re.I),
     re.compile(r"\byou\s+(pieces?\s+of\s+shit|piece\s+of\s+shit|assholes?|fuckers?)\b", re.I),
+
+    # ── Conjunction patterns: "don't text or call me", "stop texting and calling" ──
+    re.compile(r"\bdon'?t\s+(text|txt|call|contact|message)\s+(or|and|,)\s+(text|txt|call|contact|message)(\s+me)?\b", re.I),
+    re.compile(r"\bplease\s+don'?t\s+(text|txt|call|contact|message)\s+(or|and|,)\s+(text|txt|call|contact|message)\b", re.I),
+    re.compile(r"\bdo\s+not\s+(text|txt|call|contact|message)\s+(or|and|,)\s+(text|txt|call|contact|message)\b", re.I),
+    re.compile(r"\bstop\s+(texting|calling|messaging|contacting)\s+(and|or|,)\s+(texting|calling|messaging|contacting)(\s+me)?\b", re.I),
+    re.compile(r"\bno\s+more\s+(texts?|calls?|messages?)\s+(or|and|,)\s+(texts?|calls?|messages?)\b", re.I),
+    re.compile(r"\bplease\s+(no\s+more|stop)\s+(texts?|calls?|messages?)\s+(or|and|,)\s+(texts?|calls?|messages?)\b", re.I),
+    # "don't text, call, or message me" — 3-verb lists
+    re.compile(r"\bdon'?t\s+(text|txt|call|contact|message),?\s+(text|txt|call|contact|message),?\s+(or|and)\s+(text|txt|call|contact|message)(\s+me)?\b", re.I),
+
+    # ── "Again" / "Anymore" / "Ever" patterns ──
+    re.compile(r"\bdon'?t\s+(text|txt|call|contact|message)\s+me\s+again\b", re.I),
+    re.compile(r"\bdon'?t\s+(text|txt|call|contact|message)\s+(me\s+)?anymore\b", re.I),
+    re.compile(r"\bdon'?t\s+ever\s+(text|txt|call|contact|message)\s+me\b", re.I),
+    re.compile(r"\bnever\s+(text|txt|call|contact|message)\s+me\s+(again|anymore)\b", re.I),
+    re.compile(r"\bnever\s+(text|txt|call|contact|message)\s+(this\s+)?(number|phone)\s+(again|anymore)?\b", re.I),
+    re.compile(r"\bplease\s+never\s+(text|txt|call|contact|message)\b", re.I),
+    re.compile(r"\bdo\s+not\s+(ever\s+)?(text|txt|call|contact|message)\s+me\s+again\b", re.I),
+    re.compile(r"\bdo\s+not\s+(text|txt|call|contact|message)\s+(me\s+)?anymore\b", re.I),
+    re.compile(r"\bstop\s+(texting|calling|messaging|contacting)\s+me\s+(again|anymore|ever)\b", re.I),
+
+    # ── "Please don't [verb]" without requiring "me" at end ──
+    re.compile(r"\bplease\s+don'?t\s+(text|txt|call|contact|message)\b", re.I),
+    re.compile(r"\bplease\s+stop\s+(texting|calling|messaging|contacting)\b", re.I),
+    re.compile(r"\bplease\s+just\s+stop\s+(texting|calling|messaging|contacting)?\b", re.I),
+
+    # ── "Leave me alone" variants (explicit in prompts as opt-out) ──
+    re.compile(r"\bleave\s+me\s+(alone|be)\b", re.I),
+    re.compile(r"\bjust\s+leave\s+me\s+(alone|be)\b", re.I),
+    re.compile(r"\bplease\s+(just\s+)?leave\s+me\s+(alone|be)\b", re.I),
+    re.compile(r"\bleave\s+me\s+the\s+(hell|fuck|f\*ck|fck|heck)\s+alone\b", re.I),
+    re.compile(r"\bleave\s+(us|him|her|them)\s+(alone|be)\b", re.I),
+
+    # ── Quit / modal verb "stop" variants ──
+    re.compile(r"\bquit\s+(texting|calling|messaging|contacting|bothering)\s*me?\b", re.I),
+    re.compile(r"\bjust\s+stop\b", re.I),
+    re.compile(r"\bcan\s+you\s+(please\s+)?stop\s+(texting|calling|messaging|contacting)\b", re.I),
+    re.compile(r"\bwould\s+you\s+(please\s+)?stop\s+(texting|calling|messaging|contacting)\b", re.I),
+    re.compile(r"\bwill\s+you\s+(please\s+)?stop\s+(texting|calling|messaging|contacting)\b", re.I),
+    re.compile(r"\bcould\s+you\s+(please\s+)?stop\s+(texting|calling|messaging|contacting)\b", re.I),
+
+    # ── Abbreviation patterns: "pls", "plz", "dont" (no apostrophe) ──
+    re.compile(r"\bplz\s+(stop|don'?t|dont)\s*(texting|calling|messaging|contacting)?\b", re.I),
+    re.compile(r"\bpls\s+(stop|don'?t|dont)\s*(texting|calling|messaging|contacting)?\b", re.I),
+    re.compile(r"\bdont\s+(text|txt|call|contact|message)\s+me\b", re.I),
+    re.compile(r"\bdont\s+(text|txt|call|contact|message)\s+(or|and)\s+(text|txt|call|contact|message)\b", re.I),
+    re.compile(r"\bdont\s+ever\s+(text|txt|call|contact|message)\b", re.I),
+
+    # ── Exasperated / repeated request patterns ──
+    re.compile(r"\bi\s+(said|already\s+said)\s+(stop|no)\b", re.I),
+    re.compile(r"\bi\s+(told|already\s+told)\s+you\s+(to\s+)?(stop|no)\b", re.I),
+    re.compile(r"\bfor\s+the\s+last\s+time\b", re.I),
+    re.compile(r"\benough\s+already\b", re.I),
+    re.compile(r"\bhow\s+many\s+times\s+(do\s+)?i\s+(have\s+to|need\s+to|gotta)\s+(say|tell)\b", re.I),
+    re.compile(r"\bi'?ve\s+(asked|told)\s+you\s+to\s+stop\b", re.I),
+    re.compile(r"\bi\s+already\s+asked\s+you\s+to\s+stop\b", re.I),
+    re.compile(r"\bseriously\s+stop\b", re.I),
+    re.compile(r"\bi\s+said\s+don'?t\s+(text|call|contact|message)\b", re.I),
+
+    # ── Threat / legal / harassment patterns ──
+    re.compile(r"\bthis\s+is\s+harassment\b", re.I),
+    re.compile(r"\b(i'?m|i\s+am)\s+(going\s+to|gonna)\s+(report|sue|file)\b", re.I),
+    re.compile(r"\bi\s+will\s+(report|sue|file)\b", re.I),
+    re.compile(r"\bcontacting\s+(my|a|an)\s+(lawyer|attorney|legal)\b", re.I),
+    re.compile(r"\bdo\s+not\s+call\s+list\b", re.I),
+    re.compile(r"\bnational\s+do\s+not\s+call\b", re.I),
+    re.compile(r"\btcpa\b", re.I),
+    re.compile(r"\bfiling\s+a\s+(complaint|report|lawsuit)\b", re.I),
+    re.compile(r"\billegal\s+to\s+(text|call|contact|message)\b", re.I),
+    re.compile(r"\bi'?ll\s+(call|contact)\s+(the\s+)?(police|cops|authorities|fcc|ftc|bbb)\b", re.I),
+    re.compile(r"\breport(ing)?\s+(you|this|your\s+number)\s+to\b", re.I),
+
+    # ── "No further" / finality patterns ──
+    re.compile(r"\bno\s+further\s+(contact|communication|texts?|messages?|calls?)\b", re.I),
+    re.compile(r"\bdon'?t\s+reach\s+out\b", re.I),
+    re.compile(r"\bdo\s+not\s+reach\s+out\b", re.I),
+    re.compile(r"\bnever\s+reach\s+out\b", re.I),
+    re.compile(r"\bthis\s+conversation\s+is\s+over\b", re.I),
+    re.compile(r"\bwe'?re\s+done\s+here\b", re.I),
+    re.compile(r"\bi'?m\s+done\s+(with\s+)?(you|this|these)\b", re.I),
+    re.compile(r"\bno\s+more\s+communication\b", re.I),
+    re.compile(r"\bstop\s+all\s+(contact|communication|texts?|messages?)\b", re.I),
+    re.compile(r"\bend\s+this\s+conversation\b", re.I),
+    re.compile(r"\bdon'?t\s+(want|need)\s+(any\s+)?(more\s+)?(texts?|messages?|calls?|contact)\b", re.I),
+    re.compile(r"\bi\s+don'?t\s+want\s+to\s+(hear|be\s+contacted|be\s+texted|be\s+called)\b", re.I),
+    re.compile(r"\bplease\s+(do\s+not|don'?t)\s+(ever\s+)?reach\s+out\b", re.I),
 ]
 
 _SOLD = [
@@ -217,8 +304,65 @@ _NOT_INTERESTED = [
 ]
 
 _MAYBE_LATER = [
-    re.compile(r"\b(maybe|later|future|not\s+right\s+now|next\s+year|in\s+a\s+few\s+months)\b", re.I),
+    # ── Core "maybe / later" signals ──────────────────────────────────────────
+    re.compile(r"\bmaybe\s+(later|in\s+a\s+few|in\s+the\s+future|next\s+year|sometime)\b", re.I),
+    re.compile(r"\bpossibly\s+(later|soon|in\s+the\s+future|down\s+the\s+road)\b", re.I),
+    re.compile(r"\bnear\s+future\b", re.I),
+    re.compile(r"\bdown\s+the\s+road\b", re.I),
+    re.compile(r"\bin\s+the\s+future\b", re.I),
+    re.compile(r"\bsome\s+(other\s+)?time\b", re.I),
+    re.compile(r"\bnot\s+right\s+now\b", re.I),
+    re.compile(r"\bnot\s+yet\b", re.I),
+
+    # ── "Check back" / "Try again" / "Reach out later" ─────────────────────────
+    re.compile(r"\bcheck\s+back\b", re.I),                            # "check back at end of year"
+    re.compile(r"\btry\s+(again|back)\b.{0,40}\b(year|month|later|future)\b", re.I),
+    re.compile(r"\breach\s+out\b.{0,30}\b(later|again|future|year|month)\b", re.I),
+    re.compile(r"\bcontact\s+(me|us)\b.{0,30}\b(later|again|future|year|month)\b", re.I),
+    re.compile(r"\bcall\s+(me|us)\b.{0,30}\b(later|again|future|year|month)\b", re.I),
+    re.compile(r"\btext\s+(me|us)\b.{0,30}\b(later|again|future|year|month)\b", re.I),
+    re.compile(r"\bgive\s+(me|us)\s+a\s+(call|text|ring)\b.{0,30}\b(later|again|year|month)\b", re.I),
+    re.compile(r"\b(hit|reach)\s+me\s+(up|back)\b.{0,30}\b(later|year|month)\b", re.I),
+
+    # ── Specific future time references ────────────────────────────────────────
+    re.compile(r"\b(end|beginning|start|first)\s+of\s+the\s+(year|month|quarter|summer|fall|spring|winter)\b", re.I),
+    re.compile(r"\b(end|beginning|start)\s+of\s+(january|february|march|april|may|june|july|august|september|october|november|december)\b", re.I),
+    re.compile(r"\bnext\s+(year|month|spring|summer|fall|winter|january|february|march|april|may|june|july|august|september|october|november|december)\b", re.I),
+    re.compile(r"\bin\s+(a\s+)?(couple|few|several)\s+(of\s+)?(months?|weeks?|years?)\b", re.I),
+    re.compile(r"\bin\s+\d+\s+(months?|weeks?|years?)\b", re.I),     # "in 3 months", "in 6 months"
+    re.compile(r"\b(3|6|12|two|three|six|twelve)\s+(months?|years?)\s+(from\s+now|later)\b", re.I),
+    re.compile(r"\bafter\s+the\s+(holiday|holidays|summer|winter|season|new\s+year)\b", re.I),
+    re.compile(r"\bwhen\s+(things|the\s+market|i|we)\s+(settle|calm|stabilize|improve|change|are\s+ready)\b", re.I),
+
+    # ── Soft "not now but open" signals ────────────────────────────────────────
+    re.compile(r"\bnot\s+at\s+this\s+time\b.{0,60}\b(check\s+back|later|year|month|future|try\s+again)\b", re.I),
+    re.compile(r"\b(check\s+back|try\s+again|reach\s+out).{0,60}\bnot\s+at\s+this\s+time\b", re.I),
+    re.compile(r"\bnot\s+now\b.{0,40}\b(later|year|month|future|check\s+back)\b", re.I),
+    re.compile(r"\b(later|future|year|month|check\s+back).{0,40}\bnot\s+now\b", re.I),
+    re.compile(r"\bmaybe\s+(in\s+)?(the\s+)?future\b", re.I),
+    re.compile(r"\bopen\s+to\s+(it\s+)?(in\s+the\s+future|later|down\s+the\s+road)\b", re.I),
+    re.compile(r"\bwilling\s+to\s+(reconsider|consider\s+it)\s+(later|in\s+the\s+future|next\s+year)\b", re.I),
+    re.compile(r"\bperhaps\s+(later|in\s+the\s+future|next\s+year|in\s+a\s+few)\b", re.I),
 ]
+
+# Explicit "check back" invitation — contact is saying "contact me again later".
+# When this fires alongside a NI pattern, Maybe Later wins.
+_FUTURE_CALLBACK = re.compile(
+    r"\b("
+    r"check\s+back|try\s+again|reach\s+out.{0,20}(later|again|year|month)"
+    r"|contact.{0,10}(later|again|year|month)"
+    r"|call.{0,10}(later|again|year|month)"
+    r"|text.{0,10}(later|again|year|month)"
+    r"|hit.{0,5}(me|us).{0,5}(up|back).{0,20}(later|year|month)"
+    r"|end\s+of\s+the\s+(year|month)"
+    r"|first\s+of\s+the\s+(year|month)"
+    r"|beginning\s+of\s+the\s+(year|month)"
+    r"|next\s+(year|month|spring|summer|fall|winter)"
+    r"|in\s+\d+\s+(months?|weeks?|years?)"
+    r"|in\s+(a\s+)?(few|couple)\s+(months?|years?)"
+    r")\b",
+    re.I,
+)
 
 _AI_REQUIRED_LABELS = {
     # FU drip labels — now validated by detect_fu_track() in Phase 2.
@@ -365,31 +509,50 @@ _STOPPED_RESPONDING_LABELS = {
 
 
 def _expected_label(contact_text: str, messages: list[dict], assigned_label: str | None = None) -> tuple[str | None, str]:
+    """Return the ML's expected label and reason for the conversation.
+
+    PRIORITY ORDER (highest wins):
+        1. Do Not Call  — contact used any opt-out language (ABSOLUTE PRIORITY over all other labels)
+        2. Wrong Number — contact said wrong person/number (only if no DNC)
+        3. Sold         — property already sold (only if no DNC)
+        4. Bluffer      — contact quoted $1M+ price (only if no DNC)
+        5. Potential    — contact reversed to interested after initial refusal
+        6. Not Interested / Maybe Later / Stopped Responding
+
+    DNC wins over EVERYTHING. If a contact says "wrong number please stop texting",
+    the correct label is Do Not Call, not Wrong Number.
+    """
     assigned_key = _label_key(assigned_label)
 
-    # WN/DNC/Sold patterns are definitive — check first regardless of reversal
-    has_wn = any(p.search(contact_text) for p in _WRONG_NUMBER)
+    # Detect all signals upfront
+    has_wn  = any(p.search(contact_text) for p in _WRONG_NUMBER)
     has_dnc = any(p.search(contact_text) for p in _DNC)
-    has_ni = any(p.search(contact_text) for p in _NOT_INTERESTED)
+    has_ni  = any(p.search(contact_text) for p in _NOT_INTERESTED)
 
     # Sold: only fire if "sold" refers to the subject property, not a neighbor's/adjacent sale
-    _sold_raw = any(p.search(contact_text) for p in _SOLD)
+    _sold_raw      = any(p.search(contact_text) for p in _SOLD)
     _sold_neighbor = any(p.search(contact_text) for p in _SOLD_NEIGHBOR_CONTEXT)
     has_sold = _sold_raw and not _sold_neighbor
 
-    # DNC beats WN — if contact is actively opting out AND mentions wrong name,
-    # the opt-out is the actionable signal (e.g. "my name is not Thomas, keep blocking you")
+    # ── PRIORITY 1: DNC — beats EVERYTHING (WN, Sold, NI, Bluffer, Maybe Later) ──
+    # If contact opted out in any way, the actionable label is always Do Not Call.
     if has_dnc:
-        return "Do Not Call", "ML detected opt-out language."
+        return "Do Not Call", (
+            "ML detected opt-out language. DNC takes priority over all other labels "
+            "(Wrong Number, Sold, Not Interested, Bluffer, etc.)."
+        )
+
+    # ── PRIORITY 2: Wrong Number (only if no DNC) ──────────────────────────────
     if has_wn:
         return "Wrong Number", "ML detected wrong-number language."
+
+    # ── PRIORITY 3: Sold (only if no DNC) ──────────────────────────────────────
     if has_sold:
         return "Sold", "ML detected sold-property language."
 
-    # Million-dollar price check — contact quoting $1M+ is a classic bluffing
-    # deflection ("Price Bluffer" type). This is NOT an opt-out signal by itself;
-    # opt-outs are already handled above via _DNC patterns.
-    # Correct label: Bluffer. DNC and Abv MV are both acceptable variants.
+    # ── PRIORITY 4: Bluffer / million-dollar price (only if no DNC) ─────────────
+    # Contact quoting $1M+ is a classic bluffing deflection ("Price Bluffer" type).
+    # This is NOT an opt-out signal by itself; opt-outs are handled above via DNC.
     if _contact_stated_million_plus(messages):
         if _is_bluffer_label(assigned_label):
             return "Bluffer", (
@@ -445,10 +608,19 @@ def _expected_label(contact_text: str, messages: list[dict], assigned_label: str
             return "Stopped Responding", "ML: contact reply was trivial/unclear."
         return None, ""
 
-    # If contact later reversed to interested, label as Potential
+    # ── PRIORITY 5: Potential — contact reversed to interested ──────────────────
     if _contact_reversed_to_interested(messages):
         return "Potential", "ML detected contact reversal (initial disinterest followed by interest/inquiry)."
 
+    # ── PRIORITY 6: Not Interested / Maybe Later ─────────────────────────────────
+    # KEY RULE: if contact said "not at this time" / "not now" BUT ALSO gave a future
+    # callback signal ("check back at end of year", "try again in a few months"),
+    # Maybe Later WINS over Not Interested — the contact is inviting future contact.
+    has_future_callback = _FUTURE_CALLBACK.search(contact_text) is not None
+    if any(p.search(contact_text) for p in _MAYBE_LATER):
+        return "Maybe Later", "ML detected future/later timing."
+    if has_future_callback:
+        return "Maybe Later", "ML detected explicit future callback invitation (contact said check back later)."
     if any(p.search(contact_text) for p in _NOT_INTERESTED):
         return "Not Interested", "ML detected disinterest."
     if any(p.search(contact_text) for p in _MAYBE_LATER):
@@ -459,6 +631,7 @@ def _expected_label(contact_text: str, messages: list[dict], assigned_label: str
         return "Stopped Responding", "ML detected no contact response."
 
     return None, ""
+
 
 
 def validate_push_label(messages: list[dict], assigned_label: str, funnel_tier: str) -> dict:

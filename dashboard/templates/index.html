@@ -3629,6 +3629,25 @@ function _onAssignChange(sel) {
   if (!card) return;
   const texterSel = card.querySelector(".assign-select");
   const groqSel = card.querySelector(".groq-key-select");
+
+  // Auto-assign Groq key if texter was changed
+  if (sel.classList.contains("assign-select")) {
+    if (texterSel.value) {
+      // Only auto-assign if Groq key is not already set (respect manual overrides)
+      if (!groqSel.value && GROQ_KEYS.length > 0) {
+        const allCards = Array.from(document.querySelectorAll("#assign-list [data-email]"));
+        const cardIdx = allCards.indexOf(card);
+        if (cardIdx >= 0) {
+          const key = GROQ_KEYS[cardIdx % GROQ_KEYS.length];
+          groqSel.value = String(key.id);
+        }
+      }
+    } else {
+      // If texter unassigned, clear Groq key as per user request
+      groqSel.value = "";
+    }
+  }
+
   const hasTexter = !!texterSel?.value;
   const hasKey = !!groqSel?.value;
   const status = (hasTexter && hasKey) ? "full" : ((hasTexter || hasKey) ? "partial" : "none");
