@@ -3562,19 +3562,18 @@ function showSearchableDropdown(input) {
 
 function hideSearchableDropdown(input) {
   const drop = input.nextElementSibling.nextElementSibling;
-  // Increase delay to ensure click events fire before hide
-  setTimeout(() => {
-    drop.style.display = "none";
-    const val = input.getAttribute("data-value") || "";
-    const container = input.closest(".searchable-select-container");
-    const type = container.getAttribute("data-type");
-    if (type === "texter") {
-      input.value = val;
-    } else {
-      const key = GROQ_KEYS.find(k => String(k.id) === val);
-      input.value = key ? key.label : "";
-    }
-  }, 250);
+  drop.style.display = "none";
+  const val = input.getAttribute("data-value") || "";
+  const container = input.closest(".searchable-select-container");
+  const type = container.getAttribute("data-type");
+  
+  // Restore current value label if search was cancelled
+  if (type === "texter") {
+    input.value = val;
+  } else {
+    const key = GROQ_KEYS.find(k => String(k.id) === val);
+    input.value = key ? key.label : "";
+  }
 }
 
 function filterSearchableDropdown(input) {
@@ -3594,22 +3593,17 @@ function filterSearchableDropdown(input) {
   const filtered = options.filter(o => o.label.toLowerCase().includes(val));
   
   drop.innerHTML = `
-    <div class="searchable-select-option ${!currentVal ? 'selected' : ''}" onmousedown="selectSearchableOption(this, '', '— unassigned —')">— unassigned —</div>
-    ${filtered.map(o => {
-      const jsId = JSON.stringify(o.id);
-      const jsLabel = JSON.stringify(o.label);
-      return `
-        <div class="searchable-select-option ${o.id === currentVal ? 'selected' : ''}" 
-          onmousedown="selectSearchableOption(this, ${esc(jsId)}, ${esc(jsLabel)})">
-          ${esc(o.label)}
-        </div>
-      `;
-    }).join("")}
+    <div class="searchable-select-option ${!currentVal ? 'selected' : ''}" onclick="selectSearchableOption(this, '', '— unassigned —')">— unassigned —</div>
+    ${filtered.map(o => `
+      <div class="searchable-select-option ${o.id === currentVal ? 'selected' : ''}" 
+        onclick="selectSearchableOption(this, '${esc(o.id)}', '${esc(o.label)}')">
+        ${esc(o.label)}
+      </div>
+    `).join("")}
   `;
 }
 
 function selectSearchableOption(optionEl, val, label) {
-  console.log("selectSearchableOption", {val, label});
   const container = optionEl.closest(".searchable-select-container");
   const input = container.querySelector(".searchable-select-input");
   input.setAttribute("data-value", val);
@@ -3668,10 +3662,6 @@ async function loadAssignments() {
                                "#ef4444";
       // Use real name if available, fallback to email prefix
       const displayName = r.account_name || (r.account_email || "").split("@")[0];
-      // Pre-calculate Groq label
-      const groqKey = r.groq_key_id ? GROQ_KEYS.find(k => String(k.id) === String(r.groq_key_id)) : null;
-      const groqLabel = groqKey ? groqKey.label : (r.groq_key_id ? `Key ${r.groq_key_id}` : "");
-
       return `
         <div style="display:flex;flex-direction:column;gap:7px;padding:12px 14px;border-radius:10px;border:1px solid ${borderColor};background:${bgColor};transition:border-color .18s;" data-email="${esc(r.account_email)}">
           <div style="display:flex;align-items:center;gap:6px;">
@@ -3683,15 +3673,13 @@ async function loadAssignments() {
           </div>
           <div class="searchable-select-container" data-type="texter">
             <input type="text" class="searchable-select-input assign-select" placeholder="— unassigned —"
-              value="${esc(r.agent_name)}" data-value="${esc(r.agent_name)}"
-              onfocus="showSearchableDropdown(this)" oninput="filterSearchableDropdown(this)" onblur="hideSearchableDropdown(this)">
+              onfocus="showSearchableDropdown(this)" oninput="filterSearchableDropdown(this)" onblur="setTimeout(()=>hideSearchableDropdown(this), 180)">
             <svg class="searchable-select-arrow" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
             <div class="searchable-select-dropdown"></div>
           </div>
           <div class="searchable-select-container" data-type="groq">
             <input type="text" class="searchable-select-input groq-key-select" placeholder="— select Groq key —"
-              value="${esc(groqLabel)}" data-value="${esc(r.groq_key_id)}"
-              onfocus="showSearchableDropdown(this)" oninput="filterSearchableDropdown(this)" onblur="hideSearchableDropdown(this)">
+              onfocus="showSearchableDropdown(this)" oninput="filterSearchableDropdown(this)" onblur="setTimeout(()=>hideSearchableDropdown(this), 180)">
             <svg class="searchable-select-arrow" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
             <div class="searchable-select-dropdown"></div>
           </div>
@@ -3707,12 +3695,21 @@ async function loadAssignments() {
       ...none.map(cardHtml),
     ].join("");
 
-    // Initialize UI states without marking as dirty
+    // Pre-fill existing assignments
     rows.forEach(r => {
       const row = listEl.querySelector(`[data-email="${r.account_email.replace(/"/g,'&quot;')}"]`);
       if (!row) return;
       const sel = row.querySelector(".assign-select");
+      if (sel) {
+        sel.setAttribute("data-value", r.agent_name || "");
+        sel.value = r.agent_name || "";
+      }
       const groqSel = row.querySelector(".groq-key-select");
+      if (groqSel && r.groq_key_id) {
+        groqSel.setAttribute("data-value", String(r.groq_key_id));
+        const key = GROQ_KEYS.find(k => String(k.id) === String(r.groq_key_id));
+        groqSel.value = key ? key.label : "";
+      }
       _onAssignChange(sel || groqSel, false);
     });
 
@@ -3738,7 +3735,7 @@ function _onAssignChange(sel, isUserChange = true) {
   const groqVal   = groqSel   ? (groqSel.getAttribute("data-value")   || "") : "";
 
   // Auto-assign Groq key if texter was changed
-  if (sel.classList.contains("assign-select")) {
+  if (isUserChange && sel.classList.contains("assign-select")) {
     if (texterVal) {
       // Only auto-assign if Groq key is not already set (respect manual overrides)
       if (!groqVal && GROQ_KEYS.length > 0) {
@@ -3851,8 +3848,8 @@ async function saveAssignments() {
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({
           account_email: email,
-          agent_name: agentName,
-          groq_key_id: Number(groqKeyId),
+          agent_name:    agentName,
+          groq_key_id:   groqKeyId ? parseInt(groqKeyId) : null,
           assigned_date: date,
         }),
       });
@@ -3860,14 +3857,9 @@ async function saveAssignments() {
         saved++;
         row.classList.remove("is-dirty");
       } else {
-        const errData = await res.json();
-        console.error("Save error for", email, errData.detail);
         errors++;
       }
-    } catch (err) { 
-      console.error("Save catch error:", err);
-      errors++; 
-    }
+    } catch (_) { errors++; }
   }
 
   if (msgEl) {
@@ -3913,20 +3905,12 @@ async function _confirmClearAssignments() {
     
     // Immediate UI feedback
     const rows = document.querySelectorAll("#assign-list [data-email]");
-    const rows = document.querySelectorAll("#assign-list [data-email]");
     rows.forEach(row => {
       const sel = row.querySelector(".assign-select");
       const groqSel = row.querySelector(".groq-key-select");
-      if (sel) {
-        sel.setAttribute("data-value", "");
-        sel.value = "";
-      }
-      if (groqSel) {
-        groqSel.setAttribute("data-value", "");
-        groqSel.value = "";
-      }
-      _onAssignChange(sel || groqSel, false);
-      row.classList.remove("is-dirty");
+      if (sel) sel.value = "";
+      if (groqSel) groqSel.value = "";
+      _onAssignChange(sel || groqSel);
     });
 
     await loadAssignments();

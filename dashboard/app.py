@@ -1679,7 +1679,7 @@ async def api_post_assignment(body: AssignmentRequest):
         return {"status": "ok", "message": "Assignment removed"}
 
     if groq_key_id is None:
-        raise HTTPException(status_code=400, detail="groq_key_id is required for assignment")
+        raise HTTPException(status_code=400, detail="groq_key_id is required")
 
     if agent_name not in AGENT_ROSTER:
         raise HTTPException(status_code=400, detail=f"'{agent_name}' is not in the agent roster")
