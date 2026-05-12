@@ -24,6 +24,7 @@ D = Referral: Agent must gather address + name.
 E = Realtor/Investor: No pillars needed.
 F = Sold: Label "Sold", ask for referrals.
 G = Above Market / High Price: e.g., $1M+ jokes or high quotes. Agent must use $1,000 referral close.
+H = Listed: Property is on the market or with an agent. Label "Listed".
 </SCENARIOS>
 
 <TONE_AND_INTENT_CLASSIFICATION>
@@ -32,6 +33,7 @@ G = Above Market / High Price: e.g., $1M+ jokes or high quotes. Agent must use $
 - DISINTEREST (Soft Rejection): "Not interested", "No thanks". Requires rebuttals.
 - HARD OPT-OUT: "stop texting", "remove me", "stop". Agent MUST stop immediately.
 - NOT OPT-OUT (Visit Language): "stop by", "come by". This is engagement!
+- LISTED PROPERTIES: If the lead states the property is "on the market", "listed with an agent", or "on the MLS", the correct label is "Listed".
 - HOSTILE / UNSERIOUS / BLUFFER: Sexual harassment, profanity, or obvious joke insults. Treat as DNC or Bluffer.
 - HIGH PRICE QUOTES: Asking for $800k, $1M+, etc. is an ASKING PRICE and engagement. It is NEVER a DNC (Do Not Call). Treat as Scenario G (Above Market) or Bluffer, but NEVER DNC.
 </TONE_AND_INTENT_CLASSIFICATION>

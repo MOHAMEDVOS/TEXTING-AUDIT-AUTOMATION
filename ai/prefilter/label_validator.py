@@ -253,6 +253,12 @@ _SOLD = [
     re.compile(r"\bno\s+longer\s+own\b", re.I),
 ]
 
+_LISTED = [
+    re.compile(r"\b(on\s+the\s+market|listed\s+with|have\s+an?\s+agent|with\s+a\s+realtor|on\s+the\s+mls|active\s+listing)\b", re.I),
+    re.compile(r"\b(already\s+)?listed\s+for\s+\$?\d", re.I),
+    re.compile(r"\bcontract\s+with\s+(a\s+)?(agent|realtor|broker)\b", re.I),
+]
+
 # Phrases that indicate "sold" refers to a neighboring/other/third property, not the subject
 _SOLD_NEIGHBOR_CONTEXT = [
     re.compile(r"\b(next\s+door|neighbor(?:s)?|nearby|down\s+the\s+street|across\s+the\s+street|adjacent)\b.{0,60}\bsold\b", re.I),
@@ -434,7 +440,7 @@ def _label_key(label: str | None) -> str:
         return "not interested"
     # "Missed Call", "Undefined", "Stop Responding" are all "Stopped Responding"
     if normalized in {"missed call", "undefined", "stop responding",
-                      "stopped responding", "fu3", "listed"}:
+                      "stopped responding", "fu3"}:
         return "stopped responding"
     return normalized
 
@@ -586,6 +592,7 @@ def _expected_label(contact_text: str, messages: list[dict], assigned_label: str
     has_wn  = any(p.search(contact_text) for p in _WRONG_NUMBER)
     has_dnc = any(p.search(contact_text) for p in _DNC)
     has_ni  = any(p.search(contact_text) for p in _NOT_INTERESTED)
+    has_listed = any(p.search(contact_text) for p in _LISTED)
 
     # Sold: only fire if "sold" refers to the subject property, not a neighbor's/adjacent sale
     _sold_raw      = any(p.search(contact_text) for p in _SOLD)
@@ -608,7 +615,11 @@ def _expected_label(contact_text: str, messages: list[dict], assigned_label: str
     if has_sold:
         return "Sold", "ML detected sold-property language."
 
-    # ── PRIORITY 4: Bluffer / million-dollar price (only if no DNC) ─────────────
+    # ── PRIORITY 4: Listed (only if no DNC) ────────────────────────────────────
+    if has_listed:
+        return "Listed", "ML detected property-is-already-listed language (on the market/with agent)."
+
+    # ── PRIORITY 5: Bluffer / million-dollar price (only if no DNC) ─────────────
     # Contact quoting $1M+ is a classic bluffing deflection ("Price Bluffer" type).
     # This is NOT an opt-out signal by itself; opt-outs are handled above via DNC.
     if _contact_stated_million_plus(messages):
