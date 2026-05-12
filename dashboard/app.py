@@ -20,7 +20,8 @@ import os
 import subprocess
 import sys
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
+import pytz
 from pathlib import Path
 
 import asyncpg
@@ -52,6 +53,46 @@ MAIN_PY      = str(PROJECT_ROOT / "main.py")
 RUN_STATUS_DIR = PROJECT_ROOT / "logs" / "run_status"
 
 # â"€â"€ App setup â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+
+
+async def _scheduled_reset_all(pool):
+    """Background task to trigger the reset-all logic at 11:00 PM EST daily."""
+    est = pytz.timezone("US/Eastern")
+    while True:
+        try:
+            now = datetime.now(est)
+            # Target is 11:00 PM (23:00) today
+            target = now.replace(hour=23, minute=0, second=0, microsecond=0)
+            
+            # If already past 11:00 PM EST today, schedule for tomorrow
+            if now >= target:
+                target += timedelta(days=1)
+                
+            seconds_to_wait = (target - now).total_seconds()
+            logger.info(f"Schedule: Next automated 'Reset All' at {target.strftime('%Y-%m-%d %H:%M:%S')} EST (in {seconds_to_wait/3600:.1f}h)")
+            
+            await asyncio.sleep(seconds_to_wait)
+            
+            # Execute Reset All Logic
+            logger.info("Schedule: Triggering 11:00 PM automated Reset All...")
+            async with pool.acquire() as conn:
+                count_row = await conn.fetchrow("SELECT COUNT(*) AS cnt FROM accounts")
+                count = count_row["cnt"] if count_row else 0
+                await conn.execute("DELETE FROM audit_scores")
+                await conn.execute("UPDATE conversations SET is_archived = TRUE")
+            
+            global _snapshotted
+            _snapshotted.clear()
+            logger.info(f"Schedule: Automated reset complete for {count} accounts.")
+            
+            # Sleep briefly to ensure we don't re-trigger in the same second
+            await asyncio.sleep(60)
+            
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Schedule Error: automated reset loop failed: {e}", exc_info=True)
+            await asyncio.sleep(300) # Wait 5m before retry if something crashed
 
 
 @asynccontextmanager
@@ -100,7 +141,18 @@ async def lifespan(app):
     # Load texter roster from DB into memory
     await _load_agent_roster_from_db()
     logger.info(f"Loaded {len(AGENT_ROSTER)} texters from database")
+
+    # Start scheduled reset task
+    reset_task = asyncio.create_task(_scheduled_reset_all(app.state.pool))
+
     yield
+
+    # Cleanup
+    reset_task.cancel()
+    try:
+        await reset_task
+    except asyncio.CancelledError:
+        pass
     await app.state.pool.close()
 
 
