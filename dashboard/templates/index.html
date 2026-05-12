@@ -298,6 +298,36 @@
     /* ── Animations ── */
     @keyframes spin { to { transform: rotate(360deg); } }
     .spin { width: 14px; height: 14px; border: 2px solid rgba(37,99,235,.18); border-top-color: var(--brand); border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
+
+    /* ── Searchable Dropdown (Daily Assignments) ── */
+    .searchable-select-container { position: relative; width: 100%; }
+    .searchable-select-input {
+      width: 100%; font-size: .76rem; padding: 7px 30px 7px 12px;
+      border: 1px solid var(--surface-border); border-radius: 8px;
+      background: var(--surface); color: var(--text-primary);
+      outline: none; transition: .15s; cursor: text;
+    }
+    .searchable-select-input::placeholder { color: var(--text-muted); opacity: 0.7; }
+    .searchable-select-input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(37, 99, 235, .1); }
+    .searchable-select-dropdown {
+      display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+      background: var(--surface-elevated); border: 1px solid var(--brand-border);
+      border-radius: 10px; box-shadow: var(--shadow-md);
+      z-index: 100; max-height: 200px; overflow-y: auto;
+    }
+    .searchable-select-option {
+      padding: 9px 12px; font-size: .76rem; color: var(--text-primary);
+      cursor: pointer; border-bottom: 1px solid var(--surface-border);
+      transition: background .12s;
+    }
+    .searchable-select-option:hover { background: rgba(37, 99, 235, .08); }
+    .searchable-select-option:last-child { border-bottom: none; }
+    .searchable-select-option.selected { background: rgba(37, 99, 235, .15); color: var(--brand); font-weight: 600; }
+    .searchable-select-arrow {
+      position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+      pointer-events: none; transition: transform .2s; opacity: 0.6;
+    }
+    .searchable-select-container:focus-within .searchable-select-arrow { transform: translateY(-50%) rotate(180deg); opacity: 1; color: var(--brand); }
     @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.35; } }
     .pls { animation: pulse 1.4s ease-in-out infinite; }
 
@@ -780,10 +810,6 @@
         <!-- Sort label / select-mode bar -->
         <div id="sb-sort-bar" style="padding:3px 10px; font-size:.63rem; color:var(--text-muted); border-bottom:1px solid var(--surface-border); background:var(--surface-subtle); display:flex; justify-content:flex-end; align-items:center; flex-shrink:0;">
           <span style="color:var(--brand); font-weight:600;">score ↓</span>
-        </div>
-        <div id="sb-key-box" style="padding:6px 10px; border-bottom:1px solid var(--surface-border); background:var(--surface-subtle); flex-shrink:0;">
-          <div style="font-size:.62rem; color:var(--text-muted); margin-bottom:4px; letter-spacing:.02em;">Live key assignments</div>
-          <div id="sb-key-assignments" style="font-size:.68rem; color:var(--text-secondary); line-height:1.4;">No active runs</div>
         </div>
         <div id="sb-select-bar" style="display:none; padding:4px 10px; border-bottom:1px solid var(--surface-border); background:var(--brand-bg); flex-shrink:0; align-items:center; justify-content:space-between; gap:6px;">
           <span id="sel-count-label" style="font-size:.72rem; font-weight:600; color:var(--brand);">0 selected</span>
@@ -3528,6 +3554,63 @@ function _todayISO() {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
+function showSearchableDropdown(input) {
+  const drop = input.nextElementSibling.nextElementSibling;
+  drop.style.display = "block";
+  filterSearchableDropdown(input);
+}
+
+function hideSearchableDropdown(input) {
+  const drop = input.nextElementSibling.nextElementSibling;
+  drop.style.display = "none";
+  const val = input.getAttribute("data-value") || "";
+  const container = input.closest(".searchable-select-container");
+  const type = container.getAttribute("data-type");
+  
+  // Restore current value label if search was cancelled
+  if (type === "texter") {
+    input.value = val;
+  } else {
+    const key = GROQ_KEYS.find(k => String(k.id) === val);
+    input.value = key ? key.label : "";
+  }
+}
+
+function filterSearchableDropdown(input) {
+  const drop = input.nextElementSibling.nextElementSibling;
+  const val = input.value.toLowerCase();
+  const container = input.closest(".searchable-select-container");
+  const type = container.getAttribute("data-type");
+  const currentVal = input.getAttribute("data-value") || "";
+  
+  let options = [];
+  if (type === "texter") {
+    options = AGENT_ROSTER.map(n => ({ id: n, label: n }));
+  } else {
+    options = GROQ_KEYS.map(k => ({ id: String(k.id), label: k.label }));
+  }
+  
+  const filtered = options.filter(o => o.label.toLowerCase().includes(val));
+  
+  drop.innerHTML = `
+    <div class="searchable-select-option ${!currentVal ? 'selected' : ''}" onclick="selectSearchableOption(this, '', '— unassigned —')">— unassigned —</div>
+    ${filtered.map(o => `
+      <div class="searchable-select-option ${o.id === currentVal ? 'selected' : ''}" 
+        onclick="selectSearchableOption(this, '${esc(o.id)}', '${esc(o.label)}')">
+        ${esc(o.label)}
+      </div>
+    `).join("")}
+  `;
+}
+
+function selectSearchableOption(optionEl, val, label) {
+  const container = optionEl.closest(".searchable-select-container");
+  const input = container.querySelector(".searchable-select-input");
+  input.setAttribute("data-value", val);
+  input.value = (val === "" ? "" : label);
+  _onAssignChange(input);
+}
+
 async function loadAssignments() {
   const dateEl = document.getElementById("assign-date");
   if (!dateEl) return;
@@ -3588,16 +3671,18 @@ async function loadAssignments() {
               <div style="font-size:.62rem;color:var(--text-muted);margin-top:1px;">${esc(r.account_email)}</div>
             </div>
           </div>
-          <select class="assign-select" onchange="_onAssignChange(this)"
-            style="font-size:.76rem;padding:6px 10px;border:1px solid ${status === "full" ? "rgba(37,99,235,.3)" : (status === "partial" ? "rgba(245,158,11,.3)" : "rgba(255,255,255,.08)")};border-radius:7px;background:var(--surface);color:var(--text-primary);width:100%;outline:none;cursor:pointer;">
-            <option value="">— unassigned —</option>
-            ${rosterOptions}
-          </select>
-          <select class="groq-key-select" onchange="_onAssignChange(this)"
-            style="font-size:.76rem;padding:6px 10px;border:1px solid ${status === "full" ? "rgba(37,99,235,.3)" : (status === "partial" ? "rgba(245,158,11,.3)" : "rgba(255,255,255,.08)")};border-radius:7px;background:var(--surface);color:var(--text-primary);width:100%;outline:none;cursor:pointer;">
-            <option value="">— select Groq key —</option>
-            ${groqOptions}
-          </select>
+          <div class="searchable-select-container" data-type="texter">
+            <input type="text" class="searchable-select-input assign-select" placeholder="— unassigned —"
+              onfocus="showSearchableDropdown(this)" oninput="filterSearchableDropdown(this)" onblur="setTimeout(()=>hideSearchableDropdown(this), 180)">
+            <svg class="searchable-select-arrow" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+            <div class="searchable-select-dropdown"></div>
+          </div>
+          <div class="searchable-select-container" data-type="groq">
+            <input type="text" class="searchable-select-input groq-key-select" placeholder="— select Groq key —"
+              onfocus="showSearchableDropdown(this)" oninput="filterSearchableDropdown(this)" onblur="setTimeout(()=>hideSearchableDropdown(this), 180)">
+            <svg class="searchable-select-arrow" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+            <div class="searchable-select-dropdown"></div>
+          </div>
         </div>`;
     }
 
@@ -3615,9 +3700,16 @@ async function loadAssignments() {
       const row = listEl.querySelector(`[data-email="${r.account_email.replace(/"/g,'&quot;')}"]`);
       if (!row) return;
       const sel = row.querySelector(".assign-select");
-      if (sel) sel.value = r.agent_name;
+      if (sel) {
+        sel.setAttribute("data-value", r.agent_name || "");
+        sel.value = r.agent_name || "";
+      }
       const groqSel = row.querySelector(".groq-key-select");
-      if (groqSel && r.groq_key_id) groqSel.value = String(r.groq_key_id);
+      if (groqSel && r.groq_key_id) {
+        groqSel.setAttribute("data-value", String(r.groq_key_id));
+        const key = GROQ_KEYS.find(k => String(k.id) === String(r.groq_key_id));
+        groqSel.value = key ? key.label : "";
+      }
       _onAssignChange(sel || groqSel);
     });
 
@@ -3638,26 +3730,31 @@ function _onAssignChange(sel) {
   const texterSel = card.querySelector(".assign-select");
   const groqSel = card.querySelector(".groq-key-select");
 
+  const texterVal = texterSel ? (texterSel.getAttribute("data-value") || "") : "";
+  const groqVal   = groqSel   ? (groqSel.getAttribute("data-value")   || "") : "";
+
   // Auto-assign Groq key if texter was changed
   if (sel.classList.contains("assign-select")) {
-    if (texterSel.value) {
+    if (texterVal) {
       // Only auto-assign if Groq key is not already set (respect manual overrides)
-      if (!groqSel.value && GROQ_KEYS.length > 0) {
+      if (!groqVal && GROQ_KEYS.length > 0) {
         const allCards = Array.from(document.querySelectorAll("#assign-list [data-email]"));
         const cardIdx = allCards.indexOf(card);
         if (cardIdx >= 0) {
           const key = GROQ_KEYS[cardIdx % GROQ_KEYS.length];
-          groqSel.value = String(key.id);
+          groqSel.setAttribute("data-value", String(key.id));
+          groqSel.value = key.label;
         }
       }
     } else {
       // If texter unassigned, clear Groq key as per user request
+      groqSel.setAttribute("data-value", "");
       groqSel.value = "";
     }
   }
 
-  const hasTexter = !!texterSel?.value;
-  const hasKey = !!groqSel?.value;
+  const hasTexter = !!texterSel?.getAttribute("data-value");
+  const hasKey = !!groqSel?.getAttribute("data-value");
   const status = (hasTexter && hasKey) ? "full" : ((hasTexter || hasKey) ? "partial" : "none");
   const borderColor =
     status === "full" ? "rgba(37,99,235,.35)" :
@@ -3721,6 +3818,9 @@ async function copyLatestAssignments(btn) {
   } finally {
     btn.disabled = false;
     btn.innerHTML = originalHtml;
+    if (msgEl && msgEl.textContent) {
+      setTimeout(() => { if (msgEl.textContent.includes("✓") || msgEl.textContent.includes("No new")) msgEl.textContent = ""; }, 3000);
+    }
   }
 }
 
@@ -3735,8 +3835,8 @@ async function saveAssignments() {
     const email     = row.dataset.email;
     const sel       = row.querySelector(".assign-select");
     const groqSel   = row.querySelector(".groq-key-select");
-    const agentName = sel ? sel.value : "";
-    const groqKeyId = groqSel ? groqSel.value : "";
+    const agentName = sel ? (sel.getAttribute("data-value") || "") : "";
+    const groqKeyId = groqSel ? (groqSel.getAttribute("data-value") || "") : "";
     if (!agentName && !groqKeyId) continue; // skip untouched unassigned rows
     if (!agentName || !groqKeyId) { errors++; continue; }
     try {
@@ -3762,7 +3862,7 @@ async function saveAssignments() {
       msgEl.style.color = "#dc2626";
       msgEl.textContent = `Saved ${saved}, ${errors} error${errors !== 1 ? "s" : ""}`;
     }
-    setTimeout(() => { if (msgEl) msgEl.textContent = ""; }, 4000);
+    setTimeout(() => { if (msgEl) msgEl.textContent = ""; }, 3000);
     // Keep assignment cache in sync
     await refreshTodayAssignments();
   }
