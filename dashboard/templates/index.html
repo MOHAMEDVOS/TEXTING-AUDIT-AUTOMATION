@@ -3860,9 +3860,14 @@ async function saveAssignments() {
         saved++;
         row.classList.remove("is-dirty");
       } else {
+        const errData = await res.json();
+        console.error("Save error for", email, errData.detail);
         errors++;
       }
-    } catch (_) { errors++; }
+    } catch (err) { 
+      console.error("Save catch error:", err);
+      errors++; 
+    }
   }
 
   if (msgEl) {
@@ -3908,12 +3913,20 @@ async function _confirmClearAssignments() {
     
     // Immediate UI feedback
     const rows = document.querySelectorAll("#assign-list [data-email]");
+    const rows = document.querySelectorAll("#assign-list [data-email]");
     rows.forEach(row => {
       const sel = row.querySelector(".assign-select");
       const groqSel = row.querySelector(".groq-key-select");
-      if (sel) sel.value = "";
-      if (groqSel) groqSel.value = "";
-      _onAssignChange(sel || groqSel);
+      if (sel) {
+        sel.setAttribute("data-value", "");
+        sel.value = "";
+      }
+      if (groqSel) {
+        groqSel.setAttribute("data-value", "");
+        groqSel.value = "";
+      }
+      _onAssignChange(sel || groqSel, false);
+      row.classList.remove("is-dirty");
     });
 
     await loadAssignments();
