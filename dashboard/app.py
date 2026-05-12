@@ -1659,10 +1659,53 @@ async def api_post_assignment(body: AssignmentRequest):
                        assigned_at=CURRENT_TIMESTAMP""",
                 email, agent_name, groq_key_id, date_obj,
             )
-        logger.info(f"Assignment saved: {email} â†’ {agent_name} (groq_key_id={groq_key_id}) on {date}")
+        logger.info(f"Assignment saved: {email} -> {agent_name} (groq_key_id={groq_key_id}) on {date}")
         return {"success": True}
     except Exception as exc:
         logger.exception("Error in POST /api/assignments")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/assignments/copy-latest")
+async def api_copy_latest_assignments(date: str = ""):
+    """
+    Find the most recent date with any assignments and copy them to the target date.
+    """
+    from datetime import date as _date
+    if not date:
+        date = get_now().date().isoformat()
+    
+    try:
+        target_date = _date.fromisoformat(date)
+        async with app.state.pool.acquire() as conn:
+            # 1. Find the most recent date with assignments BEFORE target_date
+            latest_date = await conn.fetchval(
+                "SELECT MAX(assigned_date) FROM account_assignments WHERE assigned_date < $1",
+                target_date
+            )
+            
+            if not latest_date:
+                return {"success": False, "error": "No previous assignments found to copy."}
+            
+            # 2. Copy those assignments to target_date
+            # Use ON CONFLICT to avoid overwriting existing assignments if the user already made some for today
+            result = await conn.execute(
+                """
+                INSERT INTO account_assignments (account_email, agent_name, groq_key_id, assigned_date)
+                SELECT account_email, agent_name, groq_key_id, $1
+                FROM account_assignments
+                WHERE assigned_date = $2
+                ON CONFLICT (account_email, assigned_date) DO NOTHING
+                """,
+                target_date, latest_date
+            )
+            
+            count = int(result.split()[-1]) if "INSERT" in result else 0
+            logger.info(f"Assignments copied from {latest_date} to {target_date} (count: {count})")
+            return {"success": True, "from_date": str(latest_date), "count": count}
+            
+    except Exception as exc:
+        logger.exception("Error in POST /api/assignments/copy-latest")
         raise HTTPException(status_code=500, detail=str(exc))
 
 
