@@ -332,3 +332,90 @@ def apply_label_guards(result: dict, messages: list[dict]) -> None:
             result["label_should_be"] = "Bluffer"
             result["label_reason"] = "Contact used joke/inflated price, so the correct label is Bluffer or DO Not Call."
         return
+
+
+# ── Full-Convo Reversal Guard ────────────────────────────────────────────────
+# Detects when a contact re-engages AFTER a negative signal (opt-out, hostility,
+# NI, etc.). If the contact reversed, the pipeline should NOT short-circuit —
+# the full conversation arc matters more than any single phrase.
+
+_REVERSAL_ENGAGEMENT_RE = re.compile(
+    r"\b("
+    # ── Price inquiry: contact is asking about agent's offer ──────────────────
+    r"how\s*[?.!,]*\s*much\s+(do|would|will|can|are)\s+you\s+(want|pay|offer|give|thinking)"
+    r"|much\s+(do|would|will|can)\s+you\s+(want|pay|offer|give)"
+    r"|what\s+(would|do|will|can)\s+you\s+(pay|offer|give)"
+    r"|what.{0,20}\b(offer|buying\s+for|purchase\s+price)"
+    r"|what'?s?\s+(your|the)\s+offer"
+    r"|make\s+(me\s+)?an?\s+offer"
+    r"|what\s+are\s+you\s+(willing|able|offering)(\s+to\s+pay)?"
+    r"|what\s+kind\s+of\s+offer"
+    r"|depends\s+on\s+the\s+price"
+    r"|what\s+do\s+you\s+(have\s+in\s+mind|think\s+it'?s?\s+worth)"
+    # ── Call request: contact wants to talk ───────────────────────────────────
+    r"|call\s+me"
+    r"|give\s+me\s+a\s+call"
+    r"|reach\s+me\s+at"
+    r"|schedule\s+a\s+call"
+    r"|we\s+can\s+talk"
+    r"|let'?s\s+talk"
+    # ── Direct interest: contact is explicitly engaged ────────────────────────
+    r"|yes\s+(please|i\s+(am|do|would|want|can))"
+    r"|i'?m\s+(interested|open\s+to|willing)"
+    r"|tell\s+me\s+more"
+    r"|send\s+me\s+(info|details|the\s+offer)"
+    r"|how\s+does\s+(your|the)\s+process\s+work"
+    r"|what\s+(company|is\s+your\s+process)"
+    r"|interested\s+in\s+(two|2|three|3|multiple|several)\s+propert"
+    r"|we\s+can\s+chat"
+    # ── Property detail sharing: contact discussing their property ────────────
+    r"|bedroom|bathroom|bath|kitchen|garage|pool|basement|attic"
+    r"|sqft|sq\s*ft|square\s+feet|acre"
+    r"|roof|foundation|floor(ing)?|hvac"
+    r"|renovated|remodel|new\s+(roof|floor|kitchen|bath)"
+    r"|great\s+condition|good\s+condition|needs?\s+(work|repair|update)"
+    r"|fixer|move.?in\s+ready"
+    # ── Timeline discussion: contact engaging on timing ──────────────────────
+    r"|asap|right\s+away|soon|urgently"
+    r"|couple\s+(of\s+)?(weeks|months)"
+    r"|few\s+(weeks|months)"
+    r"|end\s+of\s+(the\s+)?(month|year)"
+    r"|next\s+(week|month|year)"
+    # ── Motivation sharing: contact explaining why they'd sell ────────────────
+    r"|divorce|inherit|estate|probate|relocat|moving|downsize"
+    r"|behind\s+on|foreclos|retir|need\s+to\s+sell|want\s+to\s+sell|ready\s+to\s+sell"
+    r")\b",
+    re.I,
+)
+
+
+def contact_reversed_after_index(messages: list[dict], signal_idx: int) -> bool:
+    """
+    Check if contact showed genuine engagement AFTER a negative signal.
+
+    Scans all contact messages after ``signal_idx`` for positive engagement
+    indicators (price inquiry, property details, call requests, timeline
+    discussion, etc.).
+
+    Returns True if contact reversed → caller should NOT short-circuit.
+    Returns False if no reversal detected → safe to short-circuit.
+
+    NOTE: This guard is deliberately conservative. It only fires on explicit
+    engagement patterns — a simple "ok" or "?" reply does NOT count as a
+    reversal. This prevents false Potential labels on contacts who just
+    acknowledge receipt without re-engaging.
+    """
+    if not messages or signal_idx < 0:
+        return False
+
+    for m in messages[signal_idx + 1:]:
+        sender = (m.get("sender") or "").strip().lower()
+        if sender not in ("contact", "lead"):
+            continue
+        body = (m.get("message") or m.get("body") or "").strip()
+        if not body or len(body) < 3:
+            continue
+        if _REVERSAL_ENGAGEMENT_RE.search(body):
+            return True
+
+    return False

@@ -490,16 +490,74 @@ _POSITIVE_ENGAGEMENT = [
     re.compile(r"\bwhat.{0,20}\b(offer|pay|buying\s+for|purchase\s+price)\b", re.I),
     # "Much do you want to pay" (no 'how')
     re.compile(r"\bmuch\s+(do|would|will|can)\s+you\s+(want|pay|offer|give)\b", re.I),
+
+    # ── Full-convo reversal patterns (Phase 3 expansion) ─────────────────────
+    # "what kind of offer" / "depends on the price" — contact is conditionally open
+    re.compile(r"\bwhat\s+kind\s+of\s+offer\b", re.I),
+    re.compile(r"\bdepends\s+on\s+(the\s+)?price\b", re.I),
+    re.compile(r"\bdepends\s+on\s+(the\s+)?(offer|amount|number)\b", re.I),
+    # Contact sharing property details — engaged, not declining
+    re.compile(r"\b(bedroom|bathroom|bath|kitchen|garage|pool|basement|attic)\b", re.I),
+    re.compile(r"\b(sqft|sq\s*ft|square\s+feet|acre)\b", re.I),
+    re.compile(r"\b(great\s+condition|good\s+condition|needs?\s+(work|repair|update))\b", re.I),
+    re.compile(r"\b(fixer|move.?in\s+ready)\b", re.I),
+    # Call/talk request — contact wants to continue the conversation
+    re.compile(r"\bcall\s+me\b", re.I),
+    re.compile(r"\bgive\s+me\s+a\s+call\b", re.I),
+    re.compile(r"\blet'?s\s+talk\b", re.I),
+    re.compile(r"\bschedule\s+a\s+call\b", re.I),
+    # Direct interest signals
+    re.compile(r"\bi'?m\s+(interested|open\s+to|willing)\b", re.I),
+    re.compile(r"\btell\s+me\s+more\b", re.I),
+    re.compile(r"\bsend\s+me\s+(info|details|the\s+offer)\b", re.I),
+    # Motivation sharing — contact explaining WHY they'd sell (engaged)
+    re.compile(r"\b(divorce|inherit|estate|probate|relocat|moving|downsize)\b", re.I),
+    re.compile(r"\b(need\s+to\s+sell|want\s+to\s+sell|ready\s+to\s+sell)\b", re.I),
+    # Timeline engagement — contact discussing WHEN
+    re.compile(r"\b(asap|right\s+away|soon|urgently)\b", re.I),
+    re.compile(r"\b(couple\s+(of\s+)?(weeks|months)|few\s+(weeks|months))\b", re.I),
 ]
 
 
 def _contact_reversed_to_interested(messages: list[dict]) -> bool:
-    """True if contact initially declined but later showed genuine interest."""
-    contact_msgs = [_body(m) for m in messages if _sender(m) == "contact" and _body(m)]
+    """True if contact initially declined but later showed genuine interest.
+
+    Reads the FULL conversation arc: finds the first negative signal from
+    the contact, then checks if any LATER contact message contains positive
+    engagement. This ensures the label reflects the conversation's outcome,
+    not just its opening.
+    """
+    contact_msgs = [(i, _body(m)) for i, m in enumerate(messages)
+                    if _sender(m) == "contact" and _body(m)]
     if len(contact_msgs) < 2:
         return False
-    later_msgs = "\n".join(contact_msgs[1:])
-    return any(p.search(later_msgs) for p in _POSITIVE_ENGAGEMENT)
+
+    # Find the first negative signal (NI, opt-out, hostility)
+    _NI_SIGNAL = re.compile(
+        r"\b(not\s+interested|no\s+thanks?|not\s+selling|not\s+for\s+sale"
+        r"|stop\s+texting|leave\s+me\s+alone|no\b)", re.I
+    )
+    first_negative_idx = None
+    for msg_idx, body in contact_msgs:
+        if _NI_SIGNAL.search(body):
+            first_negative_idx = msg_idx
+            break
+
+    if first_negative_idx is None:
+        # No negative signal → can't have a reversal
+        return False
+
+    # Check ALL contact messages after the negative signal for engagement
+    for m in messages[first_negative_idx + 1:]:
+        if _sender(m) != "contact":
+            continue
+        body = _body(m)
+        if not body:
+            continue
+        if any(p.search(body) for p in _POSITIVE_ENGAGEMENT):
+            return True
+
+    return False
 
 
 _STOPPED_RESPONDING_LABELS = {

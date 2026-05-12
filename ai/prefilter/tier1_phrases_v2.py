@@ -19,6 +19,7 @@ import re
 from typing import Optional
 
 from ._pipeline_types import PipelineResult as PrefilterResult
+from ._guards import contact_reversed_after_index
 
 logger = logging.getLogger(__name__)
 
@@ -1103,33 +1104,49 @@ def evaluate(
     # Must be checked BEFORE T3 runs — T3 ML misclassifies these as 'Do Not Call'
     # because they are very short messages with no strong feature signal.
     # EXCEPTION: DNC wins over Sold — if contact opted out AND said sold, DNC is correct.
+    # REVERSAL GUARD: If contact said "sold" but later re-engaged with property
+    # details / price inquiry → they may own a different property. Defer to T4.
     _sold_match = any(p.search(contact_text) for p in _SOLD_SC_PATTERNS)
     _sold_neighbor = _SOLD_NEIGHBOR_SC.search(contact_text)
     if _sold_match and not _sold_neighbor and not _contact_opted_out_early:
-        from . import summary_builder as _sb
-        _sold_scores = {
-            "compliance_score": 100, "sentiment_score": 80,
-            "professionalism_score": 90, "script_adherence_score": 100,
-        }
-        _sold_summary = _sb.build_summary(
-            messages, agent_name, contact_name, _sold_scores,
-            model_used="prefilter_t1_v2",
+        # Find the index of the sold message
+        _sold_idx = next(
+            (i for i, m in enumerate(messages)
+             if _sender(m) == "contact"
+             and any(p.search(_body(m)) for p in _SOLD_SC_PATTERNS)),
+            None,
         )
-        return PrefilterResult(
-            tier_hit=1, decision="short_circuit", confidence=0.97,
-            notes=f"[{funnel_tier}] property already sold — contact reply: '{contact_text[:40]}'",
-            predicted_scores=_sold_scores,
-            result=_clean_result(
-                contact_name,
-                summary=_sold_summary,
-                scores=_sold_scores,
-                funnel_tier=funnel_tier,
-                funnel_stage="none",
-                label_assigned="Sold",
-                label_reason="ML detected sold-property language — property is already sold or under contract.",
-                actual_label=_actual_label,
-            ),
-        )
+        # REVERSAL CHECK: if contact re-engaged after sold → defer to T4
+        if _sold_idx is not None and contact_reversed_after_index(messages, _sold_idx):
+            logger.info(
+                f"[T1] {contact_name}: sold detected but contact re-engaged after — "
+                "deferring to T4 for full-convo analysis"
+            )
+        else:
+            from . import summary_builder as _sb
+            _sold_scores = {
+                "compliance_score": 100, "sentiment_score": 80,
+                "professionalism_score": 90, "script_adherence_score": 100,
+            }
+            _sold_summary = _sb.build_summary(
+                messages, agent_name, contact_name, _sold_scores,
+                model_used="prefilter_t1_v2",
+            )
+            return PrefilterResult(
+                tier_hit=1, decision="short_circuit", confidence=0.97,
+                notes=f"[{funnel_tier}] property already sold — contact reply: '{contact_text[:40]}'",
+                predicted_scores=_sold_scores,
+                result=_clean_result(
+                    contact_name,
+                    summary=_sold_summary,
+                    scores=_sold_scores,
+                    funnel_tier=funnel_tier,
+                    funnel_stage="none",
+                    label_assigned="Sold",
+                    label_reason="ML detected sold-property language — property is already sold or under contract.",
+                    actual_label=_actual_label,
+                ),
+            )
 
     for pat in _HARASSMENT_DNC_PATTERNS:
         if pat.search(contact_text):
@@ -1210,8 +1227,23 @@ def evaluate(
 
     # ── FIRST: profanity / clear hostility → DNC short-circuit ──────────────
     # No Groq needed — hostile contact is an unambiguous DO Not Call.
+    # REVERSAL GUARD: If contact used profanity but later re-engaged with
+    # genuine property interest → they vented, then came back. Defer to T4.
     for pat in _PROFANITY_DNC_PATTERNS:
         if pat.search(contact_text):
+            # Find the index of the profanity message
+            _prof_idx = next(
+                (i for i, m in enumerate(messages)
+                 if _sender(m) == "contact" and pat.search(_body(m))),
+                None,
+            )
+            # REVERSAL CHECK: if contact re-engaged after profanity → defer
+            if _prof_idx is not None and contact_reversed_after_index(messages, _prof_idx):
+                logger.info(
+                    f"[T1] {contact_name}: profanity detected but contact re-engaged after — "
+                    "deferring to T4 for full-convo analysis"
+                )
+                break  # exit profanity loop, let downstream tiers handle
             matched = pat.pattern
             from . import summary_builder
             scores = {"compliance_score": 100, "sentiment_score": 60,
@@ -1234,8 +1266,23 @@ def evaluate(
 
     # ── HARD OPT-OUTS → DNC short-circuit ──────────────
     # Unambiguous opt-outs ("stop texting me", "harassing me") must be DNC.
+    # REVERSAL GUARD: If contact opted out but later re-engaged with genuine
+    # property interest → they changed their mind. Defer to T4.
     for pat in _HARD_OPTOUT_DNC_PATTERNS:
         if pat.search(contact_text):
+            # Find the index of the opt-out message
+            _optout_idx_hard = next(
+                (i for i, m in enumerate(messages)
+                 if _sender(m) == "contact" and pat.search(_body(m))),
+                None,
+            )
+            # REVERSAL CHECK: if contact re-engaged after opt-out → defer
+            if _optout_idx_hard is not None and contact_reversed_after_index(messages, _optout_idx_hard):
+                logger.info(
+                    f"[T1] {contact_name}: hard opt-out detected but contact re-engaged after — "
+                    "deferring to T4 for full-convo analysis"
+                )
+                break  # exit opt-out loop, let downstream tiers handle
             matched = pat.pattern
             from . import summary_builder
             scores = {"compliance_score": 100, "sentiment_score": 80,
@@ -1607,6 +1654,7 @@ def evaluate(
 
     # ── Check 4: Clean opt-out (agent stopped correctly) ─────────────────────
     # DNC HAS PRIORITY OVER WRONG NUMBER as per user/owner requirement.
+    # REVERSAL GUARD: If contact opted out but later re-engaged → defer to T4.
     contact_opted_out = any(p.search(contact_text) for p in _OPT_OUT_PATTERNS)
     if contact_opted_out:
         optout_idx = next(
@@ -1616,27 +1664,34 @@ def evaluate(
             None,
         )
         if optout_idx is not None:
-            agent_after_optout = [m for m in messages[optout_idx + 1:] if _is_agent(m)]
-            if len(agent_after_optout) <= 1:
-                scores = {
-                    "compliance_score": 100, "sentiment_score": 80,
-                    "professionalism_score": 90, "script_adherence_score": 80,
-                }
-                return PrefilterResult(
-                    tier_hit=1, decision="short_circuit", confidence=0.95,
-                    notes=f"[{funnel_tier}] opt-out, agent stopped correctly",
-                    predicted_scores=scores,
-                    result=_clean_result(
-                        contact_name,
-                        summary="Contact opted out. Texter stopped messaging correctly. Compliance clean.",
-                        scores=scores,
-                        funnel_tier=funnel_tier,
-                        funnel_stage="none",
-                        label_assigned="DO Not Call",
-                        label_reason="Contact used explicit opt-out language.",
-                        actual_label=_actual_label,
-                    ),
+            # REVERSAL CHECK: if contact re-engaged after opt-out → defer
+            if contact_reversed_after_index(messages, optout_idx):
+                logger.info(
+                    f"[T1] {contact_name}: clean opt-out detected but contact re-engaged after — "
+                    "deferring to T4 for full-convo analysis"
                 )
+            else:
+                agent_after_optout = [m for m in messages[optout_idx + 1:] if _is_agent(m)]
+                if len(agent_after_optout) <= 1:
+                    scores = {
+                        "compliance_score": 100, "sentiment_score": 80,
+                        "professionalism_score": 90, "script_adherence_score": 80,
+                    }
+                    return PrefilterResult(
+                        tier_hit=1, decision="short_circuit", confidence=0.95,
+                        notes=f"[{funnel_tier}] opt-out, agent stopped correctly",
+                        predicted_scores=scores,
+                        result=_clean_result(
+                            contact_name,
+                            summary="Contact opted out. Texter stopped messaging correctly. Compliance clean.",
+                            scores=scores,
+                            funnel_tier=funnel_tier,
+                            funnel_stage="none",
+                            label_assigned="DO Not Call",
+                            label_reason="Contact used explicit opt-out language.",
+                            actual_label=_actual_label,
+                        ),
+                    )
 
     # ── Check 5: Wrong Number (explicit or identity mismatch) ─────────────────
     is_wn = any(p.search(contact_text) for p in _WRONG_NUMBER_PATTERNS)
@@ -1798,9 +1853,15 @@ def evaluate(
             contact_price_flipped = any(
                 _POST_NI_PRICE_FLIP_RE.search(_body(m)) for m in contact_after_ni
             )
-            if contact_price_flipped:
-                # Contact reversed: now asking about the price → Potential, not NI
+            # EXPANDED REVERSAL CHECK: use the full reversal guard, not just price-flip
+            contact_any_reversal = contact_reversed_after_index(messages, first_ni_idx)
+            if contact_price_flipped or contact_any_reversal:
+                # Contact reversed: showed genuine engagement after initial NI → Potential
                 # Defer to T4 which will correctly classify as Potential.
+                logger.info(
+                    f"[T1] {contact_name}: NI detected but contact re-engaged after — "
+                    "deferring to T4 for full-convo analysis"
+                )
                 return None
 
             # 0 replies = "gave up" red flag → Groq
