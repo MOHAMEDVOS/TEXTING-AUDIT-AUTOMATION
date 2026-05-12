@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from config.settings import GROQ_MODEL, PROJECT_ROOT
+from config.rate_limiter import get_rate_limiter, groq_key_bucket
 from ai.prompts import get_system_prompt, format_for_analysis
 from ai.providers.base import (
     AIProvider,
@@ -29,6 +30,14 @@ from ai.providers.base import (
     ProviderQuotaExhaustedError,
     ProviderRateLimitError,
 )
+
+# ── Rate-limiter singleton ────────────────────────────────────────────────────
+_rl = get_rate_limiter()
+
+# Groq free-tier bucket defaults — 5 burst, 1 request per 2 s sustained.
+# Override via env vars if you have paid-tier keys.
+_GROQ_BUCKET_CAPACITY = float(os.getenv("GROQ_RL_CAPACITY", "5"))
+_GROQ_BUCKET_RATE     = float(os.getenv("GROQ_RL_RATE",     "0.5"))
 
 logger = logging.getLogger(__name__)
 
@@ -875,6 +884,22 @@ def _run_with_groq_pool(
             continue
 
         try:
+            # ── Token-bucket pre-check (before hitting the API) ──────────
+            _rl_allowed, _rl_retry = _rl.check(
+                groq_key_bucket(api_key),
+                capacity=_GROQ_BUCKET_CAPACITY,
+                rate=_GROQ_BUCKET_RATE,
+            )
+            if not _rl_allowed:
+                # Bucket empty — rotate to the next key instantly (no wait)
+                _db_release_groq_key(key_id)
+                tried_ids.add(key_id)
+                logger.info(
+                    f"[RateLimit] Key […{pk.key[-6:]}] bucket empty for {contact_name} "
+                    f"— rotating (retry_after={_rl_retry:.1f}s, tried={len(tried_ids)})"
+                )
+                raise ProviderRateLimitError(retry_after=_rl_retry)
+
             with _GROQ_CALL_SEMAPHORE:
                 raw = pk.provider.generate(
                     system_prompt=system_prompt,
@@ -966,6 +991,22 @@ def _run_with_pinned_groq_key(
         pk = _pool._groq_by_key.get(api_key) or pinned_key
 
         try:
+            # ── Token-bucket pre-check for pinned key ────────────────────
+            _rl_allowed, _rl_retry = _rl.check(
+                groq_key_bucket(api_key),
+                capacity=_GROQ_BUCKET_CAPACITY,
+                rate=_GROQ_BUCKET_RATE,
+            )
+            if not _rl_allowed:
+                # Pinned key bucket empty — treat as a rate-limit hit so the
+                # existing fallback logic (pinned_rate_limits counter) takes over.
+                _db_release_groq_key(key_id)
+                logger.info(
+                    f"[RateLimit] Pinned key […{key_suffix}] bucket empty for {contact_name} "
+                    f"— deferring to fallback logic (retry_after={_rl_retry:.1f}s)"
+                )
+                raise ProviderRateLimitError(retry_after=_rl_retry)
+
             with _GROQ_CALL_SEMAPHORE:
                 raw = pk.provider.generate(
                     system_prompt=system_prompt,

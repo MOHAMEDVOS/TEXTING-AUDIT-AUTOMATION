@@ -149,15 +149,17 @@ def inject_into_prompt(base_prompt: str) -> str:
     if not rules:
         return base_prompt
 
-    # Build PART 14 block
-    rules_block = "\n\n## PART 14 — DYNAMICALLY LEARNED CORRECTIONS (auto-generated)\n"
-    rules_block += "These rules were derived from real reviewer feedback and take precedence over Part 13.\n\n"
+    # Build LEARNED_RULES block
+    rules_block = "\n\n<LEARNED_RULES>\n"
+    rules_block += "These rules were derived from real reviewer feedback and take precedence over all other logic.\n\n"
 
     for i, rule in enumerate(rules, 1):
         rule_id = rule.get("id", f"lr_{i:03d}")
         category = rule.get("category", "uncategorized")
         text = rule.get("rule_text", "")
         rules_block += f"RULE {rule_id} — {category}\n  {text}\n\n"
+
+    rules_block += "</LEARNED_RULES>\n"
 
     logger.debug(f"[LearnedRules] Injecting {len(rules)} learned rule(s) into prompt")
 

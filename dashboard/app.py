@@ -32,6 +32,18 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from config.settings import MAX_PARALLEL_WORKERS, DATABASE_URL, get_now
+from config.rate_limiter import get_rate_limiter, route_bucket
+
+# ── Route-level rate-limit config ─────────────────────────────────────────────
+# Each entry: (route_prefix, capacity, rate_per_second)
+# More specific prefixes must come first (they are matched top-to-bottom).
+_ROUTE_LIMITS: list[tuple[str, float, float]] = [
+    ("/api/run",              3,  0.1),   # 3 burst, 1 req/10 s  — audit trigger
+    ("/api/rate-limit",     20,  5.0),   # very relaxed — status monitoring only
+    ("/api/ai",             10,  1.0),   # moderate — AI pool status
+    ("/api/",               30,  3.0),   # default for all other /api/ routes
+]
+_dashboard_rl = get_rate_limiter()
 
 # â"€â"€ Project root so we can locate the DB and run main.py â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -98,6 +110,49 @@ app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-7s | %(message)s")
 logger = logging.getLogger(__name__)
+
+# ── Rate-limit middleware ───────────────────────────────────────────────────────────────
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
+from starlette.responses import JSONResponse as StarletteJSONResponse
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """
+    Token-bucket rate limiter applied to all /api/* routes.
+    Non-API paths (/, /static/…, HTML pages) are never touched.
+    Rejected requests receive HTTP 429 with a Retry-After header — instantly,
+    with no queuing and no waiting.
+    """
+
+    async def dispatch(self, request: StarletteRequest, call_next):
+        path = request.url.path
+
+        # Only gate API routes
+        if path.startswith("/api/"):
+            ip = request.client.host if request.client else "unknown"
+
+            # Match most-specific prefix first
+            for prefix, capacity, rate in _ROUTE_LIMITS:
+                if path.startswith(prefix):
+                    bucket_key = route_bucket(ip, prefix)
+                    allowed, retry_after = _dashboard_rl.check(bucket_key, capacity, rate)
+                    if not allowed:
+                        return StarletteJSONResponse(
+                            status_code=429,
+                            content={
+                                "error": "Too Many Requests",
+                                "detail": f"Rate limit exceeded for {prefix}. Try again in {retry_after:.1f}s.",
+                                "retry_after": round(retry_after, 1),
+                            },
+                            headers={"Retry-After": str(int(retry_after) + 1)},
+                        )
+                    break
+
+        return await call_next(request)
+
+
+app.add_middleware(RateLimitMiddleware)
 
 # â"€â"€ In-memory process registry â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 # { "Noah": <Popen> | "done" }
@@ -2038,7 +2093,31 @@ async def api_delete_roster(name: str):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-# â"€â"€ Entry point â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+# ── Rate Limiter Status endpoint ─────────────────────────────────────────────
+
+@app.get("/api/rate-limit/status")
+async def api_rate_limit_status():
+    """
+    Live snapshot of all active token buckets — dashboard routes + Groq keys.
+    Polled every 5 s by the dashboard Rate Limiter widget.
+    Returns fill %, tokens remaining, and all-time allowed/rejected counts.
+    """
+    from ai.analyzer import _rl as groq_rl
+
+    # Dashboard route buckets
+    combined = _dashboard_rl.status()
+
+    # Merge Groq key buckets with a clear label prefix
+    groq_status = groq_rl.status()
+    for k, v in groq_status["buckets"].items():
+        combined["buckets"][f"[groq] {k}"] = v
+
+    combined["summary"]["groq_rejected"] = groq_status["summary"]["total_rejected_all_time"]
+
+    return combined
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     import uvicorn
