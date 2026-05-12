@@ -3710,7 +3710,7 @@ async function loadAssignments() {
         const key = GROQ_KEYS.find(k => String(k.id) === String(r.groq_key_id));
         groqSel.value = key ? key.label : "";
       }
-      _onAssignChange(sel || groqSel);
+      _onAssignChange(sel || groqSel, false);
     });
 
     // Populate the history account dropdown
@@ -3724,9 +3724,10 @@ async function loadAssignments() {
   }
 }
 
-function _onAssignChange(sel) {
+function _onAssignChange(sel, isUserChange = true) {
   const card = sel.closest("[data-email]");
   if (!card) return;
+  if (isUserChange) card.classList.add("is-dirty");
   const texterSel = card.querySelector(".assign-select");
   const groqSel = card.querySelector(".groq-key-select");
 
@@ -3828,7 +3829,7 @@ async function saveAssignments() {
   const dateEl = document.getElementById("assign-date");
   const date   = dateEl ? dateEl.value : _todayISO();
   const msgEl  = document.getElementById("assign-msg");
-  const rows   = document.querySelectorAll("#assign-list [data-email]");
+  const rows   = document.querySelectorAll("#assign-list .is-dirty");
 
   let saved = 0, errors = 0;
   for (const row of rows) {
@@ -3837,8 +3838,10 @@ async function saveAssignments() {
     const groqSel   = row.querySelector(".groq-key-select");
     const agentName = sel ? (sel.getAttribute("data-value") || "") : "";
     const groqKeyId = groqSel ? (groqSel.getAttribute("data-value") || "") : "";
-    if (!agentName && !groqKeyId) continue; // skip untouched unassigned rows
-    if (!agentName || !groqKeyId) { errors++; continue; }
+
+    // Allow saving if agentName is empty (treated as unassign)
+    // But if agentName is present, groqKeyId MUST be present (partial assignment error)
+    if (agentName && !groqKeyId) { errors++; continue; }
     try {
       const res = await fetch("/api/assignments", {
         method:  "POST",
@@ -3850,7 +3853,12 @@ async function saveAssignments() {
           assigned_date: date,
         }),
       });
-      if (!res.ok) { errors++; } else { saved++; }
+      if (res.ok) {
+        saved++;
+        row.classList.remove("is-dirty");
+      } else {
+        errors++;
+      }
     } catch (_) { errors++; }
   }
 

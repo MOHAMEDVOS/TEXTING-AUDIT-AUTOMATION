@@ -1666,10 +1666,20 @@ async def api_post_assignment(body: AssignmentRequest):
     date       = body.assigned_date.strip()
     groq_key_id = body.groq_key_id
 
-    if not email or not agent_name or not date:
-        raise HTTPException(status_code=400, detail="account_email, agent_name, and assigned_date are required")
+    if not email or not date:
+        raise HTTPException(status_code=400, detail="account_email and assigned_date are required")
+
+    # If agent_name is empty, we treat this as an "unassign" action
+    if not agent_name:
+        async with app.state.pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM account_assignments WHERE account_email = $1 AND assigned_date = $2::date",
+                email, date
+            )
+        return {"status": "ok", "message": "Assignment removed"}
+
     if groq_key_id is None:
-        raise HTTPException(status_code=400, detail="groq_key_id is required")
+        raise HTTPException(status_code=400, detail="groq_key_id is required for assignment")
 
     if agent_name not in AGENT_ROSTER:
         raise HTTPException(status_code=400, detail=f"'{agent_name}' is not in the agent roster")
