@@ -257,6 +257,14 @@ _LISTED = [
     re.compile(r"\b(on\s+the\s+market|listed\s+with|have\s+an?\s+agent|with\s+a\s+realtor|on\s+the\s+mls|active\s+listing)\b", re.I),
     re.compile(r"\b(already\s+)?listed\s+for\s+\$?\d", re.I),
     re.compile(r"\bcontract\s+with\s+(a\s+)?(agent|realtor|broker)\b", re.I),
+    # Broker-contact: contact IS an agent/broker and will list the property themselves
+    re.compile(r"\b(i\s+am|i'?m|i\s+will\s+be|we\s+(are|will\s+be))\s+(a|an)\s+(associate\s+)?(re\s+)?(agent|realtor|broker|listing\s+agent)\b", re.I),
+    re.compile(r"\b(will\s+be\s+listing|going\s+to\s+list|plan(ning)?\s+to\s+list|listing\s+(it|the\s+(house|property|home))\s+(soon|shortly|in\s+\d))\b", re.I),
+    re.compile(r"\b\d+[-–]\d+\s+weeks?\s+to\s+list\b", re.I),       # "2-3 weeks to list"
+    re.compile(r"\b(weeks?|months?)\s+to\s+list\b", re.I),           # "X weeks/months to list"
+    re.compile(r"\blisting\s+(it|the\s+(house|property|home))\s+(with|through|via)\b", re.I),
+    re.compile(r"\bmy\s+(own\s+)?(agent|realtor|broker)\b", re.I),   # "listing with my own agent"
+    re.compile(r"\b(already\s+)?working\s+with\s+an?\s+(agent|realtor|broker)\b", re.I),
 ]
 
 # Phrases that indicate "sold" refers to a neighboring/other/third property, not the subject
@@ -568,7 +576,8 @@ def _contact_reversed_to_interested(messages: list[dict]) -> bool:
 
 _STOPPED_RESPONDING_LABELS = {
     "stopped responding", "stop responding", "missed call",
-    "undefined", "listed",
+    "undefined",
+    # NOTE: "listed" removed — it is a valid distinct label, not equivalent to Stopped Responding.
 }
 
 

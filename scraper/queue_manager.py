@@ -26,9 +26,12 @@ class QueueManager:
         results = await qm.run_all()
     """
 
-    def __init__(self, max_workers: int = None, date_filter: str = "today", limit: int = 20):
+    def __init__(self, max_workers: int = None, date_filter: str = "today", limit: int = 20,
+                 date_start: str = None, date_end: str = None):
         self.max_workers = max_workers or MAX_PARALLEL_WORKERS
         self.date_filter = date_filter
+        self.date_start = date_start
+        self.date_end = date_end
         self.limit = limit
         self.agents = []
         self.results = []
@@ -106,6 +109,8 @@ class QueueManager:
                 worker_id=worker_id,
                 date_filter=self.date_filter,
                 limit=self.limit,
+                date_start=self.date_start,
+                date_end=self.date_end,
             )
 
             result = {

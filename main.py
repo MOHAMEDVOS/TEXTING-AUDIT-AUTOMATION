@@ -99,7 +99,8 @@ def _status_message(result: dict) -> tuple[str, str]:
 
 
 
-async def run_single_agent(agent_name: str, date_filter: str = "today", limit: int = 20):
+async def run_single_agent(agent_name: str, date_filter: str = "today", limit: int = 20,
+                           date_start: str = None, date_end: str = None):
     """Run extraction for a single agent."""
     logger.info(f"Running single extraction for: {agent_name}")
     _write_run_status(agent_name, "running", "starting", "Starting audit")
@@ -112,7 +113,8 @@ async def run_single_agent(agent_name: str, date_filter: str = "today", limit: i
         await db.initialize()
         _write_run_status(agent_name, "running", "loading_account", "Loading account")
         current_stage = "loading_account"
-        qm = QueueManager(date_filter=date_filter, limit=limit)
+        qm = QueueManager(date_filter=date_filter, limit=limit,
+                          date_start=date_start, date_end=date_end)
         qm.load_agents()
 
         _write_run_status(agent_name, "running", "logging_in", "Logging in")
@@ -185,7 +187,8 @@ async def run_single_agent(agent_name: str, date_filter: str = "today", limit: i
             await db.close()
 
 
-async def run_test(date_filter: str = "today", limit: int = 20):
+async def run_test(date_filter: str = "today", limit: int = 20,
+                   date_start: str = None, date_end: str = None):
     """Test extraction with the first agent only."""
     logger.info("=" * 60)
     logger.info("  TEST MODE - Processing first agent only")
@@ -195,7 +198,8 @@ async def run_test(date_filter: str = "today", limit: int = 20):
     await db.initialize()
     last_agent_id: int | None = None
     try:
-        qm = QueueManager(max_workers=1, date_filter=date_filter, limit=limit)
+        qm = QueueManager(max_workers=1, date_filter=date_filter, limit=limit,
+                          date_start=date_start, date_end=date_end)
         agents = qm.load_agents()
 
         if not agents:
@@ -253,13 +257,15 @@ async def show_status():
         logger.error(f"Error getting status: {e}")
 
 
-async def run_selected_agents(names: list[str], date_filter: str = "today", limit: int = 20):
+async def run_selected_agents(names: list[str], date_filter: str = "today", limit: int = 20,
+                              date_start: str = None, date_end: str = None):
     """Run extraction for a specific list of agents sequentially."""
     logger.info("=" * 60)
     logger.info(f"  SELECTED RUN — {len(names)} agents")
     logger.info("=" * 60)
     for name in names:
-        await run_single_agent(name, date_filter=date_filter, limit=limit)
+        await run_single_agent(name, date_filter=date_filter, limit=limit,
+                               date_start=date_start, date_end=date_end)
 
 
 def main():
@@ -308,6 +314,18 @@ Examples:
         default=None,
         help="Number of conversation samples to extract per agent (default: 20)",
     )
+    parser.add_argument(
+        "--date-start",
+        type=str,
+        default=None,
+        help="Custom date range start (YYYY-MM-DD). Requires --date-end.",
+    )
+    parser.add_argument(
+        "--date-end",
+        type=str,
+        default=None,
+        help="Custom date range end (YYYY-MM-DD). Requires --date-start.",
+    )
 
     args = parser.parse_args()
 
@@ -315,17 +333,26 @@ Examples:
     date_filter = args.date_filter or DATE_FILTER
     limit = args.limit or DEFAULT_SAMPLE_SIZE
 
+    # Custom date range overrides preset filter
+    date_start = getattr(args, 'date_start', None)
+    date_end = getattr(args, 'date_end', None)
+    if date_start and date_end:
+        date_filter = "custom"
+
     if args.status:
         asyncio.run(show_status())
     elif args.test:
-        asyncio.run(run_test(date_filter=date_filter, limit=limit))
+        asyncio.run(run_test(date_filter=date_filter, limit=limit,
+                             date_start=date_start, date_end=date_end))
     elif args.single:
-        result = asyncio.run(run_single_agent(args.single, date_filter=date_filter, limit=limit))
+        result = asyncio.run(run_single_agent(args.single, date_filter=date_filter, limit=limit,
+                                              date_start=date_start, date_end=date_end))
         if not result or result.get("status") != "success":
             sys.exit(1)
     elif args.agents:
         names = [n.strip() for n in args.agents.split(",") if n.strip()]
-        asyncio.run(run_selected_agents(names, date_filter=date_filter, limit=limit))
+        asyncio.run(run_selected_agents(names, date_filter=date_filter, limit=limit,
+                                        date_start=date_start, date_end=date_end))
     else:
         parser.print_help()
 

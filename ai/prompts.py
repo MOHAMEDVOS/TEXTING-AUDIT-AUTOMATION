@@ -63,7 +63,7 @@ F2 "Used threatening, profane, or deceptive language." (Agent was rude).
 F3 "Stated a specific dollar offer." (Agent made a firm cash offer).
 F4 "Gave up after first no with zero rebuttal." (Lead said no, agent stopped without rebutting).
 F5 "Continued original pitch after wrong number." (Agent kept selling to wrong number).
-F6 "Agreed to call without pre-qualifying." (Agent booked call with 0 questions).
+F6 "Agreed to call without pre-qualifying." (A call was CONFIRMED/BOOKED with 0 qualifying pillars gathered. Do NOT fire this flag if the agent merely OFFERED or ASKED about a call — e.g. "Can my partner give you a call?" is just an offer, not a booking. Only fire when the contact explicitly agreed to a call AND agent gathered 0 pillars beforehand).
 F7 "Started future rebuttal with 6-month window before shorter timeline." (Jumped to 6 months too fast).
 F8 "Sent incoherent message or wrong name." (Agent used wrong name or broken text).
 F9 "Ended conversation after lead showed interest." (Lead engaged, agent stopped).

@@ -130,8 +130,15 @@ async def lifespan(app):
                 schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
                 await conn.execute(schema_sql)
                 # Fix sequence out-of-sync issues that cause UniqueViolationError
-                await conn.execute("SELECT setval('accounts_id_seq', COALESCE((SELECT MAX(id) FROM accounts), 1))")
-                await conn.execute("SELECT setval('account_assignments_id_seq', COALESCE((SELECT MAX(id) FROM account_assignments), 1))")
+                # (only applies when tables use SERIAL; IDENTITY columns have no separate sequence)
+                for seq_sql in [
+                    "SELECT setval('accounts_id_seq', COALESCE((SELECT MAX(id) FROM accounts), 1))",
+                    "SELECT setval('account_assignments_id_seq', COALESCE((SELECT MAX(id) FROM account_assignments), 1))",
+                ]:
+                    try:
+                        await conn.execute(seq_sql)
+                    except Exception as seq_err:
+                        logger.debug(f"Sequence sync skipped (likely IDENTITY column): {seq_err}")
             break
         except Exception as e:
             if attempt == max_retries:
@@ -656,6 +663,8 @@ class RunRequest(BaseModel):
     agent_name: str = ""
     date_filter: str = "today"
     sample_size: int = 10
+    date_start: str = ""   # "YYYY-MM-DD" for custom range
+    date_end: str = ""     # "YYYY-MM-DD" for custom range
 
 
 class AddAgentRequest(BaseModel):
@@ -962,10 +971,17 @@ async def api_run(body: RunRequest):
             "AUDIT_STATUS_FILE": str(status_path),
         }
 
+        cmd = [
+            sys.executable, MAIN_PY, "--single", agent_name,
+            "--date-filter", body.date_filter,
+            "--limit", str(body.sample_size),
+        ]
+        # Append custom date range args if provided
+        if body.date_start and body.date_end:
+            cmd.extend(["--date-start", body.date_start, "--date-end", body.date_end])
+
         proc = subprocess.Popen(
-            [sys.executable, MAIN_PY, "--single", agent_name,
-             "--date-filter", body.date_filter,
-             "--limit", str(body.sample_size)],
+            cmd,
             cwd=str(PROJECT_ROOT),
             creationflags=subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0,
             env={**os.environ, **extra_env},

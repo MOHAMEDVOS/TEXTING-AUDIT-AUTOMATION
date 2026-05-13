@@ -105,12 +105,15 @@ class SmarterContactBot:
     """
 
     def __init__(self, agent_name: str, email: str, password: str, worker_id: int = 0,
-                 date_filter: str = None, limit: int = None):
+                 date_filter: str = None, limit: int = None,
+                 date_start: str = None, date_end: str = None):
         self.agent_name = agent_name
         self.email = email
         self.password = password
         self.worker_id = worker_id
         self.date_filter = date_filter or DATE_FILTER
+        self.date_start = date_start  # "YYYY-MM-DD" for custom range
+        self.date_end = date_end      # "YYYY-MM-DD" for custom range
         self.limit = limit or DEFAULT_SAMPLE_SIZE
         self.browser = None
         self.context: BrowserContext = None
@@ -325,6 +328,39 @@ class SmarterContactBot:
                 await self._take_screenshot("reporting_error")
             return {"error": str(e), "agent_name": self.agent_name}
 
+    async def _open_date_popover(self) -> bool:
+        """
+        Open the SmarterContact date filter popover.
+        Returns True if successfully opened, False otherwise.
+        """
+        open_selectors = [
+            '[data-test-id="messenger_nav_inbox_all_date-filter"]',
+            '[data-test-id*="sort-by-dates"]',
+            'button:has-text("Today"), button:has-text("Last Week"), '
+            'button:has-text("This Month"), button:has-text("All Time"), '
+            '[data-test-id*="date"]',
+        ]
+        for attempt, open_sel in enumerate(open_selectors, 1):
+            try:
+                date_locator = self.page.locator(open_sel).first
+                await date_locator.wait_for(state="visible", timeout=6000)
+                await date_locator.click()
+                logger.info(f"[Worker-{self.worker_id}] Opened date filter popover (attempt {attempt})")
+                return True
+            except Exception as e:
+                logger.warning(f"[Worker-{self.worker_id}] Date filter open attempt {attempt} failed: {e}")
+                try:
+                    await self.page.keyboard.press("Escape")
+                except Exception:
+                    pass
+                await asyncio.sleep(0.5)
+
+        logger.warning(
+            f"[Worker-{self.worker_id}] Could not open date filter — "
+            f"proceeding without filter (all conversations visible)"
+        )
+        return False
+
     async def _apply_date_filter(self, date_filter: str = "today") -> None:
         """
         Apply the date filter in the SmarterContact inbox.
@@ -332,8 +368,17 @@ class SmarterContactBot:
 
         date_filter options:
             "today" | "last_week" | "this_month" | "last_month" |
-            "last_30_days" | "last_year" | "all_time"
+            "last_30_days" | "last_year" | "all_time" | "custom"
+
+        When date_filter="custom", uses self.date_start / self.date_end
+        (YYYY-MM-DD strings) to click specific dates on the calendar.
         """
+        # ── Custom date range ────────────────────────────────────────────
+        if date_filter == "custom" and self.date_start and self.date_end:
+            await self._apply_custom_date_range(self.date_start, self.date_end)
+            return
+
+        # ── Preset filter ────────────────────────────────────────────────
         label_map = {
             "today":        "Today",
             "last_week":    "Last Week",
@@ -345,36 +390,7 @@ class SmarterContactBot:
         }
         option_text = label_map.get(date_filter, "Today")
 
-        # Try up to 2 attempts to open the date filter popover
-        filter_opened = False
-        open_selectors = [
-            '[data-test-id="messenger_nav_inbox_all_date-filter"]',
-            # Fallback: any button/div that contains the current filter text or a calendar icon
-            'button:has-text("Today"), button:has-text("Last Week"), '
-            'button:has-text("This Month"), button:has-text("All Time"), '
-            '[data-test-id*="date"]',
-        ]
-        for attempt, open_sel in enumerate(open_selectors, 1):
-            try:
-                date_locator = self.page.locator(open_sel).first
-                await date_locator.wait_for(state="visible", timeout=6000)
-                await date_locator.click()
-                logger.info(f"[Worker-{self.worker_id}] Opened date filter popover (attempt {attempt})")
-                filter_opened = True
-                break
-            except Exception as e:
-                logger.warning(f"[Worker-{self.worker_id}] Date filter open attempt {attempt} failed: {e}")
-                try:
-                    await self.page.keyboard.press("Escape")
-                except Exception:
-                    pass
-                await asyncio.sleep(0.5)
-
-        if not filter_opened:
-            logger.warning(
-                f"[Worker-{self.worker_id}] Could not open date filter — "
-                f"proceeding without filter (all conversations visible)"
-            )
+        if not await self._open_date_popover():
             return
 
         try:
@@ -391,6 +407,214 @@ class SmarterContactBot:
                 await self.page.keyboard.press("Escape")
             except Exception:
                 pass
+
+    async def _apply_custom_date_range(self, start_date: str, end_date: str) -> None:
+        """
+        Select a custom date range on SmarterContact's react-date-range calendar.
+
+        Args:
+            start_date: "YYYY-MM-DD" format
+            end_date:   "YYYY-MM-DD" format
+
+        Flow:
+            1. Open the date popover
+            2. Click "Clear" to reset any existing range
+            3. Navigate to the start month and click the start day
+            4. Navigate to the end month and click the end day
+        """
+        from datetime import datetime as _dt
+
+        try:
+            start = _dt.strptime(start_date, "%Y-%m-%d")
+            end = _dt.strptime(end_date, "%Y-%m-%d")
+        except ValueError as e:
+            logger.error(f"[Worker-{self.worker_id}] Invalid date format: {e}")
+            return
+
+        if start > end:
+            start, end = end, start
+            logger.info(f"[Worker-{self.worker_id}] Swapped start/end dates (start was after end)")
+
+        logger.info(
+            f"[Worker-{self.worker_id}] Setting custom date range: "
+            f"{start.strftime('%m/%d/%Y')} → {end.strftime('%m/%d/%Y')}"
+        )
+
+        # 1. Open the popover
+        if not await self._open_date_popover():
+            return
+        await human_delay(0.5, 0.8)
+
+        # 2. Click "Clear" first to reset any existing selection
+        try:
+            clear_btn = self.page.locator(
+                '[data-test-id*="clear"], button.rdrClearButton'
+            ).first
+            await clear_btn.wait_for(state="visible", timeout=3000)
+            await clear_btn.click()
+            logger.info(f"[Worker-{self.worker_id}] Cleared existing date selection")
+            await human_delay(0.5, 0.8)
+        except Exception:
+            logger.debug(f"[Worker-{self.worker_id}] No clear button found or not needed")
+
+        # Re-open popover if clearing closed it
+        try:
+            calendar_visible = await self.page.locator(".rdrDateRangePickerWrapper, .rdrCalendarWrapper").first.is_visible()
+        except Exception:
+            calendar_visible = False
+
+        if not calendar_visible:
+            if not await self._open_date_popover():
+                return
+            await human_delay(0.5, 0.8)
+
+        # 3. Navigate to start month and click start day
+        await self._navigate_calendar_to_month(start.year, start.month)
+        await human_delay(0.3, 0.5)
+        await self._click_calendar_day(start.day, start.month, start.year)
+        await human_delay(0.3, 0.5)
+
+        # 4. Navigate to end month and click end day
+        if end.year != start.year or end.month != start.month:
+            await self._navigate_calendar_to_month(end.year, end.month)
+            await human_delay(0.3, 0.5)
+        await self._click_calendar_day(end.day, end.month, end.year)
+
+        logger.info(
+            f"[Worker-{self.worker_id}] ✓ Custom date range set: "
+            f"{start.strftime('%m/%d/%Y')} → {end.strftime('%m/%d/%Y')}"
+        )
+        await human_delay(0.8, 1.5)
+
+        # Close popover by pressing Escape or clicking outside
+        try:
+            await self.page.keyboard.press("Escape")
+        except Exception:
+            pass
+
+    async def _navigate_calendar_to_month(self, target_year: int, target_month: int) -> None:
+        """
+        Navigate the react-date-range calendar to show the target month/year.
+        Uses the month header label to determine current position, then clicks
+        prev/next buttons as needed.
+        """
+        MONTH_NAMES = [
+            "", "January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December"
+        ]
+
+        max_clicks = 24  # safety limit (2 years of navigation)
+        for _ in range(max_clicks):
+            # Read current month/year from the calendar header
+            try:
+                header_label = await self.page.locator(
+                    ".rdrMonthAndYearPickers, .rdrHeaderLabel, .rdrMonthName"
+                ).first.inner_text()
+            except Exception:
+                # Fallback: try reading from select elements
+                try:
+                    month_sel = await self.page.locator("select.rdrMonthPicker").first.input_value()
+                    year_sel = await self.page.locator("select.rdrYearPicker").first.input_value()
+                    current_month = int(month_sel) + 1  # 0-indexed
+                    current_year = int(year_sel)
+                    header_label = f"{MONTH_NAMES[current_month]} {current_year}"
+                except Exception:
+                    logger.warning(f"[Worker-{self.worker_id}] Cannot read calendar header")
+                    return
+
+            # Parse current month/year from header text
+            # e.g. "May 2026" or "May 2026 — Jun 2026"
+            current_month = None
+            current_year = None
+            for i, name in enumerate(MONTH_NAMES):
+                if name and name in header_label:
+                    current_month = i
+                    break
+            import re
+            year_match = re.search(r'\b(20\d{2})\b', header_label)
+            if year_match:
+                current_year = int(year_match.group(1))
+
+            if current_month is None or current_year is None:
+                logger.warning(
+                    f"[Worker-{self.worker_id}] Could not parse calendar header: {header_label}"
+                )
+                return
+
+            # Calculate the difference in months
+            diff = (target_year - current_year) * 12 + (target_month - current_month)
+
+            if diff == 0:
+                return  # Already on the right month
+
+            if diff > 0:
+                btn = self.page.locator(
+                    "button.rdrNextButton, .rdrNextMonth, [aria-label='Next Month']"
+                ).first
+            else:
+                btn = self.page.locator(
+                    "button.rdrPprevButton, .rdrPrevMonth, [aria-label='Previous Month']"
+                ).first
+
+            try:
+                await btn.click()
+                await human_delay(0.2, 0.3)
+            except Exception as e:
+                logger.warning(f"[Worker-{self.worker_id}] Calendar nav click failed: {e}")
+                return
+
+    async def _click_calendar_day(self, day: int, month: int, year: int) -> None:
+        """
+        Click a specific day number on the currently visible calendar.
+        Uses the rdrDay buttons and verifies the day isn't passive (belongs to adjacent month).
+        """
+        try:
+            # react-date-range uses .rdrDay buttons with .rdrDayNumber span inside
+            # Passive days (from adjacent months) have .rdrDayPassive class
+            day_str = str(day)
+
+            # Strategy 1: Use aria-label which contains the full date
+            # e.g., aria-label="May 13, 2026"
+            MONTH_NAMES = [
+                "", "January", "February", "March", "April", "May", "June",
+                "July", "August", "September", "October", "November", "December"
+            ]
+            full_label = f"{MONTH_NAMES[month]} {day}, {year}"
+            aria_locator = self.page.locator(f'button[aria-label="{full_label}"]')
+            try:
+                count = await aria_locator.count()
+                if count > 0:
+                    await aria_locator.first.click()
+                    logger.debug(f"[Worker-{self.worker_id}] Clicked day via aria-label: {full_label}")
+                    return
+            except Exception:
+                pass
+
+            # Strategy 2: Find day number spans and click the non-passive one
+            day_buttons = await self.page.query_selector_all(
+                "button.rdrDay:not(.rdrDayPassive)"
+            )
+            for btn in day_buttons:
+                num_span = await btn.query_selector(".rdrDayNumber span")
+                if num_span:
+                    text = (await num_span.inner_text()).strip()
+                    if text == day_str:
+                        await btn.click()
+                        logger.debug(
+                            f"[Worker-{self.worker_id}] Clicked day via DOM scan: {day_str}"
+                        )
+                        return
+
+            # Strategy 3: Broadest fallback — text match
+            day_locator = self.page.locator(
+                f"button.rdrDay:not(.rdrDayPassive) .rdrDayNumber span:text-is('{day_str}')"
+            )
+            await day_locator.first.click(timeout=3000)
+            logger.debug(f"[Worker-{self.worker_id}] Clicked day via text-is: {day_str}")
+        except Exception as e:
+            logger.warning(
+                f"[Worker-{self.worker_id}] Failed to click day {day}/{month}/{year}: {e}"
+            )
 
     async def extract_conversations(self, limit: int = None) -> list:
         """

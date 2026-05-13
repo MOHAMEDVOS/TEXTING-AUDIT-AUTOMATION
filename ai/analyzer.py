@@ -53,6 +53,78 @@ _COMPACT_ANALYSIS_INPUT_BUDGET_BYTES = 36_000
 _ANALYSIS_INPUT_SLACK_BYTES = 1_200
 _MIN_TRANSCRIPT_BYTES = 1_200
 
+# ── 30-day rolling window for conversation auditing ──────────────────────────
+# Only messages within the last 30 days from the newest message are audited.
+# This prevents stale history (months/years old) from skewing current scores.
+_AUDIT_WINDOW_DAYS = 30
+
+
+def _parse_message_date(date_str: str):
+    """Parse a SmarterContact date string like 'Thursday, March 26, 2026' into a date object.
+
+    Returns None if the string can't be parsed.
+    """
+    from datetime import datetime as _dt
+    if not date_str or not date_str.strip():
+        return None
+    s = date_str.strip()
+    # Format: "Thursday, March 26, 2026" → "%A, %B %d, %Y"
+    for fmt in ("%A, %B %d, %Y", "%B %d, %Y", "%m/%d/%Y"):
+        try:
+            return _dt.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def filter_recent_messages(
+    messages: list[dict],
+    window_days: int = _AUDIT_WINDOW_DAYS,
+) -> list[dict]:
+    """Return only messages within `window_days` of the latest message date.
+
+    Messages without a parseable date are assigned the most recently seen date
+    (same-day messages at the top of the conversation have date="").
+
+    If no dates can be parsed at all, returns the original list unchanged.
+    """
+    from datetime import timedelta
+
+    if not messages:
+        return messages
+
+    # Pass 1: parse all dates, propagate to dateless messages
+    dated: list[tuple[dict, "date | None"]] = []
+    last_known_date = None
+    for msg in messages:
+        d = _parse_message_date(msg.get("date") or "")
+        if d is not None:
+            last_known_date = d
+        dated.append((msg, d if d is not None else last_known_date))
+
+    # Find the latest date across all messages
+    all_dates = [d for _, d in dated if d is not None]
+    if not all_dates:
+        return messages  # no parseable dates → audit everything
+
+    latest_date = max(all_dates)
+    cutoff = latest_date - timedelta(days=window_days)
+
+    # Pass 2: keep only messages on or after the cutoff
+    filtered = [msg for msg, d in dated if d is not None and d >= cutoff]
+
+    if not filtered:
+        return messages  # safety: never return empty if input had messages
+
+    if len(filtered) < len(messages):
+        dropped = len(messages) - len(filtered)
+        logger.info(
+            f"[Analyzer] 30-day window: kept {len(filtered)}/{len(messages)} messages "
+            f"(dropped {dropped} older than {cutoff.isoformat()})"
+        )
+
+    return filtered
+
 # ── Global concurrency cap ────────────────────────────────────────────────────
 # Limits how many Groq API calls are in-flight at the SAME MOMENT across ALL
 # parallel agents. With 14 free-tier keys (~2 burst req/sec each), capping at
@@ -653,6 +725,9 @@ def analyze_conversation(
     if not messages:
         return _empty_result("No messages to analyze", contact_name)
 
+    # ── 30-day rolling window: drop messages older than 30 days ──────
+    messages = filter_recent_messages(messages)
+
     # ── ML pre-filter (Tier 1/2/3) — may short-circuit Groq ──────────
     try:
         from ai.prefilter import run_prefilter
@@ -1162,6 +1237,9 @@ def analyze_batch(
                 f"────── CONVERSATION {i}: {contact} ──────\n(No messages)\n"
             )
             continue
+
+        # 30-day rolling window: audit only recent messages
+        parsed = filter_recent_messages(parsed)
 
         transcript = format_for_analysis(parsed, agent_name, contact)
         label_line = (

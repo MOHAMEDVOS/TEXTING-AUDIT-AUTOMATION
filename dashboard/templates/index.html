@@ -667,6 +667,123 @@
       background: var(--surface-elevated); border-color: var(--surface-border);
     }
     [data-theme="dark"] .score-metric .metric-tip::before { border-bottom-color: var(--surface-border); }
+    /* ── Date Range Picker ── */
+    .drp-trigger {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: .73rem; font-family: var(--font-text); font-weight: 400;
+      padding: 5px 10px; border-radius: 8px;
+      background: var(--input-bg); color: var(--text-primary);
+      border: 1px solid var(--surface-border); outline: none;
+      cursor: pointer; letter-spacing: -0.01em;
+      transition: border-color .18s, box-shadow .18s;
+      user-select: none; white-space: nowrap;
+    }
+    .drp-trigger:hover, .drp-trigger:focus {
+      border-color: var(--brand);
+      box-shadow: 0 0 0 3px rgba(0,113,227,.1);
+    }
+    .drp-trigger svg { flex-shrink: 0; }
+    .drp-chevron { transition: transform .2s; }
+    .drp-trigger.open .drp-chevron { transform: rotate(180deg); }
+
+    .drp-popover {
+      display: none; position: absolute; top: calc(100% + 6px); right: 0;
+      z-index: 200;
+      background: var(--surface); border: 1px solid var(--surface-border);
+      border-radius: 14px; box-shadow: var(--shadow-md);
+      overflow: hidden; min-width: 520px;
+      animation: modalIn .18s ease;
+    }
+    .drp-popover.show { display: flex; }
+    [data-theme="dark"] .drp-popover,
+    :root:not([data-theme="light"]) .drp-popover {
+      background: #0f1623; border-color: rgba(59,130,246,.22);
+    }
+
+    /* Left presets panel */
+    .drp-presets {
+      width: 140px; padding: 10px 8px; border-right: 1px solid var(--surface-border);
+      display: flex; flex-direction: column; gap: 2px;
+    }
+    .drp-preset {
+      padding: 7px 12px; border-radius: 8px; border: none;
+      background: transparent; color: var(--text-secondary);
+      font-size: .75rem; font-family: var(--font-text); font-weight: 400;
+      cursor: pointer; text-align: left; transition: background .15s, color .15s;
+    }
+    .drp-preset:hover { background: var(--surface-elevated); color: var(--text-primary); }
+    .drp-preset.active { background: var(--brand-bg); color: var(--brand); font-weight: 600; }
+    .drp-preset.drp-clear {
+      margin-top: auto; color: var(--danger); border-top: 1px solid var(--surface-border);
+      padding-top: 10px; border-radius: 0 0 8px 8px;
+    }
+    .drp-preset.drp-clear:hover { background: rgba(239,68,68,.08); }
+
+    /* Calendar panel */
+    .drp-calendar {
+      padding: 12px 16px; flex: 1;
+    }
+    .drp-cal-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .drp-cal-nav {
+      width: 28px; height: 28px; border-radius: 7px; border: none;
+      background: var(--surface-elevated); color: var(--text-secondary);
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: background .15s, color .15s;
+    }
+    .drp-cal-nav:hover { background: var(--brand-bg); color: var(--brand); }
+    .drp-cal-title {
+      font-size: .82rem; font-weight: 600; color: var(--text-primary);
+      letter-spacing: -0.01em;
+    }
+    .drp-months {
+      display: flex; gap: 16px;
+    }
+    .drp-month-grid {
+      flex: 1;
+    }
+    .drp-month-label {
+      font-size: .7rem; font-weight: 600; color: var(--text-secondary);
+      text-align: center; margin-bottom: 6px;
+    }
+    .drp-weekdays {
+      display: grid; grid-template-columns: repeat(7, 1fr);
+      font-size: .6rem; font-weight: 600; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: .04em;
+      margin-bottom: 4px; text-align: center;
+    }
+    .drp-days {
+      display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px;
+    }
+    .drp-day {
+      width: 100%; aspect-ratio: 1; border: none; border-radius: 7px;
+      background: transparent; color: var(--text-primary);
+      font-size: .72rem; font-family: var(--font-text);
+      cursor: pointer; transition: background .12s, color .12s;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .drp-day:hover:not(.drp-day-empty):not(.drp-day-disabled) {
+      background: var(--brand-bg); color: var(--brand);
+    }
+    .drp-day.drp-day-empty { cursor: default; }
+    .drp-day.drp-day-disabled { color: var(--text-muted); opacity: .4; cursor: not-allowed; }
+    .drp-day.drp-day-today {
+      font-weight: 700;
+      box-shadow: inset 0 0 0 1.5px var(--brand);
+    }
+    .drp-day.drp-day-selected {
+      background: var(--brand) !important; color: #fff !important;
+      font-weight: 600;
+    }
+    .drp-day.drp-day-in-range {
+      background: var(--brand-bg);
+      border-radius: 0;
+    }
+    .drp-day.drp-day-range-start { border-radius: 7px 0 0 7px; }
+    .drp-day.drp-day-range-end { border-radius: 0 7px 7px 0; }
+    .drp-day.drp-day-range-start.drp-day-range-end { border-radius: 7px; }
   </style>
 </head>
 
@@ -722,17 +839,59 @@
     </button>
     <span id="last-ref" style="font-size:.58rem; color:var(--text-muted);"></span>
 
-    <!-- Date filter -->
-    <select id="date-filter"
-      style="font-size:.73rem; font-family:var(--font-text); font-weight:400; padding:5px 10px; border-radius:8px; background:var(--input-bg); color:var(--text-primary); border:1px solid var(--surface-border); outline:none; cursor:pointer; letter-spacing:-0.01em;"
-      onfocus="this.style.borderColor='var(--brand)'" onblur="this.style.borderColor='var(--surface-border)'">
-      <option value="today" selected>Today</option>
-      <option value="last_week">Last Week</option>
-      <option value="this_month">This Month</option>
-      <option value="last_month">Last Month</option>
-      <option value="last_30_days">Last 30 days</option>
-      <option value="last_year">Last Year</option>
-    </select>
+    <!-- Date Range Picker -->
+    <div id="drp-wrapper" style="position:relative; display:inline-block;">
+      <button class="drp-trigger" id="drp-trigger" onclick="toggleDatePicker()">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        <span id="drp-label">Today</span>
+        <svg class="drp-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <!-- Hidden select for backward-compatible value storage -->
+      <select id="date-filter" style="display:none;">
+        <option value="today" selected>Today</option>
+        <option value="last_week">Last Week</option>
+        <option value="this_month">This Month</option>
+        <option value="last_month">Last Month</option>
+        <option value="last_30_days">Last 30 days</option>
+        <option value="last_year">Last Year</option>
+        <option value="custom">Custom</option>
+      </select>
+      <div class="drp-popover" id="drp-popover">
+        <!-- Presets -->
+        <div class="drp-presets">
+          <button class="drp-preset active" data-preset="today" onclick="applyDatePreset('today')">Today</button>
+          <button class="drp-preset" data-preset="last_week" onclick="applyDatePreset('last_week')">Last Week</button>
+          <button class="drp-preset" data-preset="this_month" onclick="applyDatePreset('this_month')">This Month</button>
+          <button class="drp-preset" data-preset="last_month" onclick="applyDatePreset('last_month')">Last Month</button>
+          <button class="drp-preset" data-preset="last_30_days" onclick="applyDatePreset('last_30_days')">Last 30 days</button>
+          <button class="drp-preset" data-preset="last_year" onclick="applyDatePreset('last_year')">Last Year</button>
+          <button class="drp-preset drp-clear" onclick="applyDatePreset('all_time')">Clear</button>
+        </div>
+        <!-- Calendar -->
+        <div class="drp-calendar">
+          <div class="drp-cal-header">
+            <div style="display:flex; gap:4px;">
+              <button class="drp-cal-nav" onclick="drpNavMonth(-12)" title="Previous year">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
+              </button>
+              <button class="drp-cal-nav" onclick="drpNavMonth(-1)" title="Previous month">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+              </button>
+            </div>
+            <span class="drp-cal-title" id="drp-cal-title"></span>
+            <div style="display:flex; gap:4px;">
+              <button class="drp-cal-nav" onclick="drpNavMonth(1)" title="Next month">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+              <button class="drp-cal-nav" onclick="drpNavMonth(12)" title="Next year">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="drp-months" id="drp-months"></div>
+        </div>
+      </div>
+    </div>
 
     <!-- Sample size -->
     <div style="display:flex; align-items:center; gap:4px;">
@@ -2505,10 +2664,17 @@ function updateRunButton() {
 }
 
 function getRunParams() {
-  return {
-    date_filter: document.getElementById("date-filter").value,
+  const filter = document.getElementById("date-filter").value;
+  const params = {
+    date_filter: filter,
     sample_size: parseInt(document.getElementById("sample-size").value, 10) || 10,
   };
+  // Include custom date range if set
+  if (filter === "custom" && window._drpDateStart && window._drpDateEnd) {
+    params.date_start = window._drpDateStart;
+    params.date_end = window._drpDateEnd;
+  }
+  return params;
 }
 
 async function runAgent(name, evt) {
@@ -3673,13 +3839,13 @@ async function loadAssignments() {
           </div>
           <div class="searchable-select-container" data-type="texter">
             <input type="text" class="searchable-select-input assign-select" placeholder="— unassigned —"
-              onfocus="showSearchableDropdown(this)" oninput="filterSearchableDropdown(this)" onblur="setTimeout(()=>hideSearchableDropdown(this), 180)">
+              onfocus="showSearchableDropdown(this)" oninput="filterSearchableDropdown(this)" onblur="setTimeout(()=>hideSearchableDropdown(this), 250)">
             <svg class="searchable-select-arrow" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
             <div class="searchable-select-dropdown"></div>
           </div>
           <div class="searchable-select-container" data-type="groq">
             <input type="text" class="searchable-select-input groq-key-select" placeholder="— select Groq key —"
-              onfocus="showSearchableDropdown(this)" oninput="filterSearchableDropdown(this)" onblur="setTimeout(()=>hideSearchableDropdown(this), 180)">
+              onfocus="showSearchableDropdown(this)" oninput="filterSearchableDropdown(this)" onblur="setTimeout(()=>hideSearchableDropdown(this), 250)">
             <svg class="searchable-select-arrow" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
             <div class="searchable-select-dropdown"></div>
           </div>
@@ -3829,7 +3995,28 @@ async function saveAssignments() {
   const dateEl = document.getElementById("assign-date");
   const date   = dateEl ? dateEl.value : _todayISO();
   const msgEl  = document.getElementById("assign-msg");
-  const rows   = document.querySelectorAll("#assign-list .is-dirty");
+
+  // Save ALL cards that have any assignment value (not just dirty ones)
+  // This handles the race-condition where is-dirty may not be set if
+  // the blur fires before the dropdown option onclick registers.
+  const allCards = document.querySelectorAll("#assign-list [data-email]");
+  const rows = Array.from(allCards).filter(card => {
+    const sel     = card.querySelector(".assign-select");
+    const groqSel = card.querySelector(".groq-key-select");
+    const agentName = sel ? (sel.getAttribute("data-value") || "") : "";
+    const groqKeyId = groqSel ? (groqSel.getAttribute("data-value") || "") : "";
+    // Include if: has both (full assignment), or is dirty (any user change including unassign)
+    return (agentName && groqKeyId) || card.classList.contains("is-dirty");
+  });
+
+  if (rows.length === 0) {
+    if (msgEl) {
+      msgEl.style.color = "var(--text-muted)";
+      msgEl.textContent = "Nothing to save — select a texter and Groq key first";
+      setTimeout(() => { if (msgEl) msgEl.textContent = ""; }, 3000);
+    }
+    return;
+  }
 
   let saved = 0, errors = 0;
   for (const row of rows) {
@@ -3857,6 +4044,8 @@ async function saveAssignments() {
         saved++;
         row.classList.remove("is-dirty");
       } else {
+        const errData = await res.json().catch(() => ({}));
+        console.warn("Assignment save error:", errData);
         errors++;
       }
     } catch (_) { errors++; }
@@ -3868,9 +4057,9 @@ async function saveAssignments() {
       msgEl.textContent = `✓ Saved ${saved} assignment${saved !== 1 ? "s" : ""}`;
     } else {
       msgEl.style.color = "#dc2626";
-      msgEl.textContent = `Saved ${saved}, ${errors} error${errors !== 1 ? "s" : ""}`;
+      msgEl.textContent = `Saved ${saved}, ${errors} error${errors !== 1 ? "s" : ""}${errors > 0 ? " — check Groq key" : ""}`;
     }
-    setTimeout(() => { if (msgEl) msgEl.textContent = ""; }, 3000);
+    setTimeout(() => { if (msgEl) msgEl.textContent = ""; }, 4000);
     // Keep assignment cache in sync
     await refreshTodayAssignments();
   }
@@ -4253,7 +4442,232 @@ document.addEventListener("DOMContentLoaded", () => {
   if (sEl) sEl.value = startISO;
   if (eEl) eEl.value = today;
   if (dEl) dEl.value = today;
+
+  // Initialize date picker calendar
+  drpRenderCalendar();
 });
+
+/* ═══════════════════════════════════════════════════════════
+   DATE RANGE PICKER  — SmarterContact-style
+   ═══════════════════════════════════════════════════════════ */
+
+const DRP_MONTHS = [
+  "January","February","March","April","May","June",
+  "July","August","September","October","November","December"
+];
+
+// State
+let _drpViewYear, _drpViewMonth;
+{
+  const n = new Date(); _drpViewYear = n.getFullYear(); _drpViewMonth = n.getMonth();
+}
+window._drpDateStart = "";  // "YYYY-MM-DD"
+window._drpDateEnd   = "";
+let _drpPickStep = 0; // 0 = pick start, 1 = pick end
+
+function toggleDatePicker() {
+  const pop = document.getElementById("drp-popover");
+  const trig = document.getElementById("drp-trigger");
+  const open = pop.classList.contains("show");
+  pop.classList.toggle("show", !open);
+  trig.classList.toggle("open", !open);
+  if (!open) drpRenderCalendar();
+}
+
+function closeDatePicker() {
+  const pop = document.getElementById("drp-popover");
+  const trig = document.getElementById("drp-trigger");
+  if (pop) pop.classList.remove("show");
+  if (trig) trig.classList.remove("open");
+}
+
+// Close when clicking outside
+document.addEventListener("click", (e) => {
+  const wrapper = document.getElementById("drp-wrapper");
+  if (wrapper && !wrapper.contains(e.target)) closeDatePicker();
+});
+
+function drpNavMonth(delta) {
+  _drpViewMonth += delta;
+  while (_drpViewMonth < 0)  { _drpViewMonth += 12; _drpViewYear--; }
+  while (_drpViewMonth > 11) { _drpViewMonth -= 12; _drpViewYear++; }
+  drpRenderCalendar();
+}
+
+function applyDatePreset(preset) {
+  const today = new Date();
+  const labelMap = {
+    today: "Today", last_week: "Last Week", this_month: "This Month",
+    last_month: "Last Month", last_30_days: "Last 30 days",
+    last_year: "Last Year", all_time: "All Time"
+  };
+
+  // Set the hidden select
+  const sel = document.getElementById("date-filter");
+  if (preset === "all_time") {
+    sel.value = "today";  // Default fallback
+  } else {
+    sel.value = preset;
+  }
+
+  // Clear custom dates
+  window._drpDateStart = "";
+  window._drpDateEnd = "";
+  _drpPickStep = 0;
+
+  // Update label
+  document.getElementById("drp-label").textContent = labelMap[preset] || preset;
+
+  // Highlight active preset
+  document.querySelectorAll(".drp-preset").forEach(b => {
+    b.classList.toggle("active", b.dataset.preset === preset);
+  });
+
+  // Calculate date range for calendar highlighting
+  let startD = null, endD = null;
+  if (preset === "today") {
+    startD = endD = new Date(today);
+  } else if (preset === "last_week") {
+    const dow = today.getDay();
+    startD = new Date(today); startD.setDate(today.getDate() - dow - 7);
+    endD = new Date(startD); endD.setDate(startD.getDate() + 6);
+  } else if (preset === "this_month") {
+    startD = new Date(today.getFullYear(), today.getMonth(), 1);
+    endD = new Date(today);
+  } else if (preset === "last_month") {
+    startD = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    endD = new Date(today.getFullYear(), today.getMonth(), 0);
+  } else if (preset === "last_30_days") {
+    startD = new Date(today); startD.setDate(today.getDate() - 30);
+    endD = new Date(today);
+  } else if (preset === "last_year") {
+    startD = new Date(today.getFullYear() - 1, 0, 1);
+    endD = new Date(today.getFullYear() - 1, 11, 31);
+  }
+
+  // Store computed dates for calendar display (but NOT as custom)
+  if (startD && endD) {
+    window._drpPreviewStart = _drpToISO(startD);
+    window._drpPreviewEnd = _drpToISO(endD);
+    // Navigate calendar to show the start month
+    _drpViewYear = startD.getFullYear();
+    _drpViewMonth = startD.getMonth();
+  } else {
+    window._drpPreviewStart = "";
+    window._drpPreviewEnd = "";
+  }
+
+  drpRenderCalendar();
+  closeDatePicker();
+}
+
+function _drpToISO(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+
+function drpClickDay(iso) {
+  // Custom date picking
+  if (_drpPickStep === 0) {
+    window._drpDateStart = iso;
+    window._drpDateEnd = "";
+    _drpPickStep = 1;
+  } else {
+    // Ensure start <= end
+    if (iso < window._drpDateStart) {
+      window._drpDateEnd = window._drpDateStart;
+      window._drpDateStart = iso;
+    } else {
+      window._drpDateEnd = iso;
+    }
+    _drpPickStep = 0;
+  }
+
+  // Update UI
+  if (window._drpDateStart && window._drpDateEnd) {
+    const s = _drpFormatDisplay(window._drpDateStart);
+    const e = _drpFormatDisplay(window._drpDateEnd);
+    document.getElementById("drp-label").textContent = `${s} – ${e}`;
+    document.getElementById("date-filter").value = "custom";
+    window._drpPreviewStart = window._drpDateStart;
+    window._drpPreviewEnd = window._drpDateEnd;
+    // Deactivate all preset buttons
+    document.querySelectorAll(".drp-preset").forEach(b => b.classList.remove("active"));
+    closeDatePicker();
+  } else {
+    document.getElementById("drp-label").textContent = _drpFormatDisplay(window._drpDateStart) + " – …";
+    window._drpPreviewStart = window._drpDateStart;
+    window._drpPreviewEnd = window._drpDateStart;
+  }
+
+  drpRenderCalendar();
+}
+
+function _drpFormatDisplay(iso) {
+  if (!iso) return "…";
+  const [y, m, d] = iso.split("-");
+  return `${m}/${d}/${y}`;
+}
+
+function drpRenderCalendar() {
+  const monthsEl = document.getElementById("drp-months");
+  const titleEl = document.getElementById("drp-cal-title");
+  if (!monthsEl || !titleEl) return;
+
+  const m1 = _drpViewMonth;
+  const y1 = _drpViewYear;
+  const m2 = m1 === 11 ? 0 : m1 + 1;
+  const y2 = m1 === 11 ? y1 + 1 : y1;
+
+  titleEl.textContent = `${DRP_MONTHS[m1]} ${y1} — ${DRP_MONTHS[m2]} ${y2}`;
+
+  monthsEl.innerHTML = _drpBuildMonth(y1, m1) + _drpBuildMonth(y2, m2);
+}
+
+function _drpBuildMonth(year, month) {
+  const today = _drpToISO(new Date());
+  const firstDay = new Date(year, month, 1).getDay(); // 0=Sun
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  const pStart = window._drpPreviewStart || window._drpDateStart || "";
+  const pEnd = window._drpPreviewEnd || window._drpDateEnd || "";
+
+  let html = `<div class="drp-month-grid">
+    <div class="drp-month-label">${DRP_MONTHS[month]} ${year}</div>
+    <div class="drp-weekdays"><span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span></div>
+    <div class="drp-days">`;
+
+  // Empty cells before first day
+  for (let i = 0; i < firstDay; i++) {
+    html += `<button class="drp-day drp-day-empty" disabled></button>`;
+  }
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const iso = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const classes = ["drp-day"];
+
+    if (iso === today) classes.push("drp-day-today");
+
+    // Range highlighting
+    if (pStart && pEnd) {
+      if (iso === pStart && iso === pEnd) {
+        classes.push("drp-day-selected", "drp-day-range-start", "drp-day-range-end");
+      } else if (iso === pStart) {
+        classes.push("drp-day-selected", "drp-day-range-start");
+      } else if (iso === pEnd) {
+        classes.push("drp-day-selected", "drp-day-range-end");
+      } else if (iso > pStart && iso < pEnd) {
+        classes.push("drp-day-in-range");
+      }
+    } else if (pStart && iso === pStart) {
+      classes.push("drp-day-selected");
+    }
+
+    html += `<button class="${classes.join(" ")}" onclick="drpClickDay('${iso}')">${d}</button>`;
+  }
+
+  html += `</div></div>`;
+  return html;
+}
 </script>
 
 <!-- Not Valid Modal -->

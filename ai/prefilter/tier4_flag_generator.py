@@ -198,9 +198,20 @@ def generate(
                     break
 
     # ── FLAG 6: Agreed to call without pre-qualifying ────────────────
+    # GUARD: Only fire if a call was actually CONFIRMED/BOOKED.
+    # "Can my partner give you a call?" is just an OFFER — not a booking.
+    # Suppress if the agent message is a question/offer (ends with ? or uses "can/could/would/may").
+    _CALL_OFFER_RE = re.compile(
+        r"\\b(can|could|would|may|is\\s+it\\s+ok|is\\s+it\\s+alright|mind\\s+if)"
+        r".{0,60}\\b(call|give\\s+you\\s+a\\s+call|ring\\s+you)\\b",
+        re.I,
+    )
     for m in agent_msgs:
         body = (m.get("message") or m.get("body") or "").strip()
         if _CALL_AGREE_RE.search(body):
+            # Skip if this is a polite call OFFER/QUESTION, not a booking confirmation
+            if _CALL_OFFER_RE.search(body) or body.rstrip().endswith("?"):
+                break
             # Check if any pillars were gathered before the call offer
             all_text_before = " ".join(
                 (prior.get("message") or prior.get("body") or "")
@@ -214,6 +225,7 @@ def generate(
             if pillars_hit < 2:
                 raw_flags.append("Agreed to call without pre-qualifying.")
             break
+
 
     # ── FLAG 7: Revealed or promised 6+ month timeline ───────────────
     # Only flag if agent uses reveal/promise language with the 6+ month pattern.
