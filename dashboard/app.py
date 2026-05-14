@@ -1042,6 +1042,17 @@ class ToolAccessRequest(BaseModel):
     email: str
 
 
+_OWNER_EMAILS = {e.lower() for e in TOOL_ACCESS_SEED_EMAILS}
+
+def _mask_added_by(added_by: str) -> str:
+    """Never expose the owner's email — show 'Owner' instead."""
+    if not added_by:
+        return "Owner"
+    if added_by.lower() in _OWNER_EMAILS or added_by in ("system", "Owner"):
+        return "Owner"
+    return added_by
+
+
 @app.get("/api/tool-access")
 async def api_tool_access_list():
     try:
@@ -1052,7 +1063,7 @@ async def api_tool_access_list():
         return {"success": True, "data": [
             {
                 "email": r["email"],
-                "added_by": r["added_by"],
+                "added_by": _mask_added_by(r["added_by"] or ""),
                 "added_at": r["added_at"].isoformat() if r["added_at"] else None,
                 "is_active": r["is_active"],
             }
@@ -1068,7 +1079,8 @@ async def api_tool_access_add(body: ToolAccessRequest, request: Request):
     email = body.email.strip().lower()
     if not email or "@" not in email:
         raise HTTPException(status_code=400, detail="Valid email required")
-    added_by = request.session.get("user_email", "unknown")
+    requester = (request.session.get("user_email") or "").lower()
+    added_by = "Owner" if requester in _OWNER_EMAILS else requester
     try:
         async with app.state.pool.acquire() as conn:
             exists = await conn.fetchrow(
@@ -1079,7 +1091,7 @@ async def api_tool_access_add(body: ToolAccessRequest, request: Request):
             await conn.execute(
                 "INSERT INTO tool_access (email, added_by) VALUES ($1, $2)", email, added_by
             )
-        logger.info(f"tool_access add: {email} by {added_by}")
+        logger.info(f"tool_access add: {email} by {requester}")
         return {"success": True, "data": {"email": email, "added_by": added_by}}
     except HTTPException:
         raise
