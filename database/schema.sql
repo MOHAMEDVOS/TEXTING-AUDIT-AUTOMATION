@@ -272,3 +272,13 @@ CREATE INDEX IF NOT EXISTS idx_validation_conv  ON validation_log(conversation_i
 -- conversation_scores.source tracks which tier/provider produced the result
 -- Values: 'groq' | 'prefilter_t1' | 'prefilter_t2' | 'prefilter_t3' | 'prefilter_t4' | 'groq_override'
 ALTER TABLE conversation_scores ADD COLUMN IF NOT EXISTS source TEXT;
+
+-- ── tool_access (dashboard login allowlist) ───────────────────────────────────
+CREATE TABLE IF NOT EXISTS tool_access (
+    id        SERIAL PRIMARY KEY,
+    email     TEXT NOT NULL UNIQUE,
+    added_by  TEXT NOT NULL DEFAULT 'system',
+    added_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    is_active BOOLEAN NOT NULL DEFAULT TRUE
+);
+CREATE INDEX IF NOT EXISTS idx_tool_access_email ON tool_access(LOWER(email));

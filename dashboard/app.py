@@ -27,12 +27,17 @@ from pathlib import Path
 import asyncpg
 from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from starlette.middleware.sessions import SessionMiddleware
+from authlib.integrations.httpx_client import AsyncOAuth2Client
 from pydantic import BaseModel
 
-from config.settings import MAX_PARALLEL_WORKERS, DATABASE_URL, get_now
+from config.settings import (
+    DATABASE_URL, get_now,
+    GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, APP_BASE_URL,
+    SESSION_SECRET_KEY, TOOL_ACCESS_SEED_EMAILS,
+)
 from config.rate_limiter import get_rate_limiter, route_bucket
 
 # ── Route-level rate-limit config ─────────────────────────────────────────────
@@ -150,6 +155,9 @@ async def lifespan(app):
     await _load_agent_roster_from_db()
     logger.info(f"Loaded {len(AGENT_ROSTER)} texters from database")
 
+    # Seed tool_access allowlist from env var (runs once when table is empty)
+    await _seed_tool_access(app.state.pool)
+
     # Start scheduled reset task
     reset_task = asyncio.create_task(_scheduled_reset_all(app.state.pool))
 
@@ -164,14 +172,49 @@ async def lifespan(app):
     await app.state.pool.close()
 
 
-app       = FastAPI(lifespan=lifespan)
-templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
-app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
+app = FastAPI(lifespan=lifespan)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-7s | %(message)s")
 logger = logging.getLogger(__name__)
 
-# ── Rate-limit middleware ───────────────────────────────────────────────────────────────
+_SILENT_ROUTES = {"/api/status", "/api/agents", "/api/flags/realtime"}
+
+
+class _SilencePollingRoutes(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        return not any(route in msg for route in _SILENT_ROUTES)
+
+
+logging.getLogger("uvicorn.access").addFilter(_SilencePollingRoutes())
+
+# Owner email — permanent, cannot be removed via API
+OWNER_EMAIL = "mohamedibrahimpayonner@gmail.com"
+
+# ── Seed helper ────────────────────────────────────────────────────────────────
+async def _seed_tool_access(pool) -> None:
+    """Always ensure the owner email exists. Seed other bootstrap emails only once."""
+    async with pool.acquire() as conn:
+        # Owner is always upserted — can never be lost
+        await conn.execute(
+            "INSERT INTO tool_access (email, added_by) VALUES ($1, 'owner') "
+            "ON CONFLICT (email) DO UPDATE SET is_active = TRUE, added_by = 'owner'",
+            OWNER_EMAIL,
+        )
+        # Other seed emails only inserted if table had just the owner (first run)
+        if TOOL_ACCESS_SEED_EMAILS:
+            count = await conn.fetchval("SELECT COUNT(*) FROM tool_access")
+            if count <= 1:
+                for email in TOOL_ACCESS_SEED_EMAILS:
+                    if email != OWNER_EMAIL:
+                        await conn.execute(
+                            "INSERT INTO tool_access (email, added_by) VALUES ($1, 'system') ON CONFLICT DO NOTHING",
+                            email,
+                        )
+    logger.info(f"tool_access: owner '{OWNER_EMAIL}' ensured")
+
+
+# ── Middleware ─────────────────────────────────────────────────────────────────
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request as StarletteRequest
 from starlette.responses import JSONResponse as StarletteJSONResponse
@@ -212,7 +255,50 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+class SessionAuthMiddleware(BaseHTTPMiddleware):
+    """
+    Enforce session authentication on / and /api/* routes.
+    Open paths: /login, /auth/*, /static/*
+    API paths get 401 JSON; HTML paths get a redirect to /login.
+    """
+    _OPEN = {"/login", "/auth/google", "/auth/callback", "/auth/logout"}
+
+    async def dispatch(self, request: StarletteRequest, call_next):
+        path = request.url.path
+        if path in self._OPEN or path.startswith("/auth/") or path.startswith("/static/"):
+            return await call_next(request)
+        user = request.session.get("user_email")
+        if not user:
+            if path.startswith("/api/"):
+                return StarletteJSONResponse(
+                    {"success": False, "error": "Not authenticated"}, status_code=401
+                )
+            # Only show "session expired" if user had a cookie before (was previously logged in).
+            # Fresh visitors with no cookie go straight to /login with no error message.
+            had_cookie = "vos_session" in request.cookies
+            location = "/login?error=session_expired" if had_cookie else "/login"
+            return StarletteJSONResponse(
+                status_code=302,
+                content={},
+                headers={"Location": location},
+            )
+        return await call_next(request)
+
+
+# Middleware add order is REVERSE of execution order in Starlette.
+# Request flow: SessionMiddleware → RateLimitMiddleware → SessionAuthMiddleware → routes
+# So: SessionAuthMiddleware added first (innermost), SessionMiddleware added last (outermost).
+app.add_middleware(SessionAuthMiddleware)
 app.add_middleware(RateLimitMiddleware)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=SESSION_SECRET_KEY,
+    session_cookie="vos_session",
+    max_age=60 * 60 * 24 * 7,   # 7 days
+    same_site="lax",
+    https_only=APP_BASE_URL.startswith("https://"),
+)
+app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 
 
 # ── Admin auth (env-gated) ────────────────────────────────────────────────────
@@ -880,11 +966,150 @@ async def _save_trend_snapshot(agent_name: str) -> None:
 # ── Routes ──────────────────────────────────────────────────────────────────────────
 
 @app.get("/")
-async def index(request: Request):
-    """Render the main dashboard page."""
-    return templates.TemplateResponse(
-        request, "index.html", {"max_workers": MAX_PARALLEL_WORKERS}
-    )
+async def index():
+    return FileResponse(str(Path(__file__).parent / "static" / "index.html"))
+
+
+# ── Auth routes ───────────────────────────────────────────────────────────────
+
+@app.get("/login")
+async def login_page():
+    return FileResponse(str(Path(__file__).parent / "static" / "login.html"))
+
+
+@app.get("/auth/google")
+async def auth_google(request: Request):
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        raise HTTPException(status_code=503, detail="OAuth not configured — set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET")
+    redirect_uri = f"{APP_BASE_URL}/auth/callback"
+    async with AsyncOAuth2Client(client_id=GOOGLE_CLIENT_ID, redirect_uri=redirect_uri) as client:
+        uri, state = client.create_authorization_url(
+            "https://accounts.google.com/o/oauth2/v2/auth",
+            scope="openid email profile",
+        )
+    request.session["oauth_state"] = state
+    return RedirectResponse(uri)
+
+
+@app.get("/auth/callback")
+async def auth_callback(request: Request, code: str = "", state: str = "", error: str = ""):
+    if error:
+        return RedirectResponse(f"/login?error={error}")
+
+    expected = request.session.pop("oauth_state", None)
+    if not expected or state != expected:
+        return RedirectResponse("/login?error=state_mismatch")
+
+    redirect_uri = f"{APP_BASE_URL}/auth/callback"
+    try:
+        async with AsyncOAuth2Client(
+            client_id=GOOGLE_CLIENT_ID,
+            client_secret=GOOGLE_CLIENT_SECRET,
+            redirect_uri=redirect_uri,
+        ) as client:
+            await client.fetch_token("https://oauth2.googleapis.com/token", code=code)
+            resp = await client.get("https://www.googleapis.com/oauth2/v3/userinfo")
+        email = (resp.json().get("email") or "").lower().strip()
+    except Exception as exc:
+        logger.warning(f"OAuth callback error: {exc}")
+        return RedirectResponse("/login?error=oauth_failed")
+
+    if not email:
+        return RedirectResponse("/login?error=no_email")
+
+    async with app.state.pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id FROM tool_access WHERE LOWER(email) = $1 AND is_active = TRUE", email
+        )
+    if not row:
+        logger.warning(f"Unauthorized login attempt: {email}")
+        return RedirectResponse("/login?error=unauthorized")
+
+    request.session["user_email"] = email
+    logger.info(f"Login: {email}")
+    return RedirectResponse("/")
+
+
+@app.get("/auth/logout")
+async def auth_logout(request: Request):
+    request.session.clear()
+    return RedirectResponse("/login")
+
+
+# ── Tool Access API ───────────────────────────────────────────────────────────
+
+class ToolAccessRequest(BaseModel):
+    email: str
+
+
+@app.get("/api/tool-access")
+async def api_tool_access_list():
+    try:
+        async with app.state.pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT email, added_by, added_at, is_active FROM tool_access ORDER BY added_at"
+            )
+        return {"success": True, "data": [
+            {
+                "email": r["email"],
+                "added_by": r["added_by"],
+                "added_at": r["added_at"].isoformat() if r["added_at"] else None,
+                "is_active": r["is_active"],
+            }
+            for r in rows
+        ]}
+    except Exception as exc:
+        logger.exception("Error in GET /api/tool-access")
+        return {"success": False, "error": str(exc)}
+
+
+@app.post("/api/tool-access", dependencies=[Depends(require_admin)])
+async def api_tool_access_add(body: ToolAccessRequest, request: Request):
+    email = body.email.strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Valid email required")
+    added_by = request.session.get("user_email", "unknown")
+    try:
+        async with app.state.pool.acquire() as conn:
+            exists = await conn.fetchrow(
+                "SELECT id FROM tool_access WHERE LOWER(email) = $1", email
+            )
+            if exists:
+                raise HTTPException(status_code=409, detail="Email already in tool_access")
+            await conn.execute(
+                "INSERT INTO tool_access (email, added_by) VALUES ($1, $2)", email, added_by
+            )
+        logger.info(f"tool_access add: {email} by {added_by}")
+        return {"success": True, "data": {"email": email, "added_by": added_by}}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Error in POST /api/tool-access")
+        return {"success": False, "error": str(exc)}
+
+
+@app.delete("/api/tool-access/{email:path}", dependencies=[Depends(require_admin)])
+async def api_tool_access_remove(email: str, request: Request):
+    email = email.strip().lower()
+    requester = request.session.get("user_email", "")
+    if email == OWNER_EMAIL:
+        raise HTTPException(status_code=403, detail="Owner account cannot be removed")
+    if email == requester:
+        raise HTTPException(status_code=400, detail="Cannot remove your own access")
+    try:
+        async with app.state.pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM tool_access WHERE LOWER(email) = $1", email
+            )
+        if result == "DELETE 0":
+            raise HTTPException(status_code=404, detail="Email not found in tool_access")
+        logger.info(f"tool_access remove: {email} by {requester}")
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Error in DELETE /api/tool-access")
+        return {"success": False, "error": str(exc)}
 
 
 @app.get("/api/agents")

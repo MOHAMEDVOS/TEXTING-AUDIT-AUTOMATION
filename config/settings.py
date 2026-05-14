@@ -148,3 +148,28 @@ def get_now() -> datetime:
     return datetime.now(TIMEZONE)
 
 
+# ─── Google OAuth ─────────────────────────────────────────────────────────────
+GOOGLE_CLIENT_ID     = os.getenv("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+APP_BASE_URL         = os.getenv("APP_BASE_URL", "http://localhost:8000").rstrip("/")
+
+# ─── Session Cookie ───────────────────────────────────────────────────────────
+SESSION_SECRET_KEY = os.getenv("SESSION_SECRET_KEY", "")
+if not SESSION_SECRET_KEY:
+    import secrets as _sec
+    SESSION_SECRET_KEY = _sec.token_hex(32)
+    import logging as _log
+    _log.getLogger(__name__).warning(
+        "SESSION_SECRET_KEY not set — using ephemeral random key. "
+        "Sessions will be lost on every server restart. "
+        "Set SESSION_SECRET_KEY in .env or Railway environment variables."
+    )
+
+# ─── Tool Access Bootstrap ────────────────────────────────────────────────────
+TOOL_ACCESS_SEED_EMAILS: list[str] = [
+    e.strip().lower()
+    for e in os.getenv("TOOL_ACCESS_SEED_EMAILS", "").split(",")
+    if e.strip()
+]
+
+

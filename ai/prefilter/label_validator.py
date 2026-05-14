@@ -246,6 +246,14 @@ _DNC = [
     re.compile(r"\bdon'?t\s+(want|need)\s+(any\s+)?(more\s+)?(texts?|messages?|calls?|contact)\b", re.I),
     re.compile(r"\bi\s+don'?t\s+want\s+to\s+(hear|be\s+contacted|be\s+texted|be\s+called)\b", re.I),
     re.compile(r"\bplease\s+(do\s+not|don'?t)\s+(ever\s+)?reach\s+out\b", re.I),
+
+    # ── Real estate professional identity — we do not contact agents/brokers/realtors ──
+    # "I am a real estate broker/agent/realtor" → valid DNC, beats Wrong Number
+    re.compile(r"\b(i\s+am|i'?m)\s+a\s+(real\s+estate\s+)?(licensed\s+)?(agent|realtor|broker|real\s+estate\s+agent|real\s+estate\s+broker)\b", re.I),
+    re.compile(r"\b(i\s+am|i'?m)\s+an?\s+(real\s+estate\s+)?(licensed\s+)?(agent|realtor|broker)\b", re.I),
+    re.compile(r"\b(i\s+work|we\s+work)\s+(in|for)\s+real\s+estate\b", re.I),
+    re.compile(r"\bi\s+(sell|list|represent)\s+(homes?|houses?|properties|real\s+estate)\s+(for\s+a\s+living|professionally|myself)\b", re.I),
+    re.compile(r"\bthis\s+is\s+(a\s+)?(realtor|real\s+estate\s+agent|broker)\b", re.I),
 ]
 
 _SOLD = [
@@ -276,6 +284,10 @@ _SOLD_NEIGHBOR_CONTEXT = [
     # "I sold a 3rd property" / "just sold another property" — not the subject address
     re.compile(r"\b(just\s+)?sold\s+(a|an|another|my\s+(?:2nd|3rd|4th|other|another))\s+(?:\d+\w*\s+)?(?:property|house|home|place)\b", re.I),
     re.compile(r"\bsold\s+(?:a\s+)?(?:2nd|3rd|4th|5th|second|third|fourth|fifth|other|another)\s+(?:property|house|home)\b", re.I),
+    # "Unit 604 just sold for $X" — specific unit/apt number used as a comp, not subject property
+    re.compile(r"\bunit\s+\w+\s+(?:just\s+)?sold\b", re.I),
+    re.compile(r"\b(?:apt|apartment|suite|lot|unit)\s+[#\w]+\b.{0,60}\bsold\b", re.I),
+    re.compile(r"\bsold\b.{0,60}\b(?:not\s+as\s+nice|less\s+nice|worse|smaller|bigger)\s+(?:as|than)\s+(?:my|mine|ours)\b", re.I),
 ]
 
 _NOT_INTERESTED = [
