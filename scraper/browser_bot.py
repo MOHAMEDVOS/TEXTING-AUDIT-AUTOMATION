@@ -503,7 +503,7 @@ class SmarterContactBot:
             "July", "August", "September", "October", "November", "December"
         ]
 
-        max_clicks = 24  # safety limit (2 years of navigation)
+        max_clicks = 60  # safety limit (5 years of navigation)
         for _ in range(max_clicks):
             # Read current month/year from the calendar header
             try:
@@ -523,11 +523,14 @@ class SmarterContactBot:
                     return
 
             # Parse current month/year from header text
-            # e.g. "May 2026" or "May 2026 — Jun 2026"
+            # e.g. "May 2026", "March 2026", or abbreviated "Mar 2026 - Apr 2026"
             current_month = None
             current_year = None
             for i, name in enumerate(MONTH_NAMES):
-                if name and name in header_label:
+                if not name:
+                    continue
+                # Check for full name or 3-letter abbreviation
+                if name in header_label or name[:3] in header_label:
                     current_month = i
                     break
             import re
@@ -547,13 +550,21 @@ class SmarterContactBot:
             if diff == 0:
                 return  # Already on the right month
 
-            if diff > 0:
+            if diff >= 12:
+                btn = self.page.locator(
+                    "button.rdrNextYearButton, [aria-label='Next Year'], .rdrNextYear"
+                ).first
+            elif diff <= -12:
+                btn = self.page.locator(
+                    "button.rdrPrevYearButton, [aria-label='Previous Year'], .rdrPrevYear"
+                ).first
+            elif diff > 0:
                 btn = self.page.locator(
                     "button.rdrNextButton, .rdrNextMonth, [aria-label='Next Month']"
                 ).first
             else:
                 btn = self.page.locator(
-                    "button.rdrPprevButton, .rdrPrevMonth, [aria-label='Previous Month']"
+                    "button.rdrPrevButton, .rdrPrevMonth, [aria-label='Previous Month']"
                 ).first
 
             try:
@@ -590,22 +601,46 @@ class SmarterContactBot:
             except Exception:
                 pass
 
-            # Strategy 2: Find day number spans and click the non-passive one
-            day_buttons = await self.page.query_selector_all(
-                "button.rdrDay:not(.rdrDayPassive)"
-            )
+            # Strategy 2: Find day number spans and click the non-passive one within the correct month container
+            target_month_container = None
+            try:
+                months = await self.page.query_selector_all(".rdrMonth")
+                for m in months:
+                    name_el = await m.query_selector(".rdrMonthName")
+                    if name_el:
+                        name_text = await name_el.inner_text()
+                        target_month_name = MONTH_NAMES[month]
+                        # Check full name or 3-letter abbreviation
+                        if (target_month_name in name_text or target_month_name[:3] in name_text) and str(year) in name_text:
+                            target_month_container = m
+                            break
+            except Exception:
+                pass
+
+            if target_month_container:
+                day_buttons = await target_month_container.query_selector_all("button.rdrDay:not(.rdrDayPassive)")
+            else:
+                day_buttons = await self.page.query_selector_all("button.rdrDay:not(.rdrDayPassive)")
+
             for btn in day_buttons:
                 num_span = await btn.query_selector(".rdrDayNumber span")
                 if num_span:
                     text = (await num_span.inner_text()).strip()
                     if text == day_str:
                         await btn.click()
-                        logger.debug(
-                            f"[Worker-{self.worker_id}] Clicked day via DOM scan: {day_str}"
-                        )
+                        logger.debug(f"[Worker-{self.worker_id}] Clicked day via DOM scan: {day_str}")
                         return
 
             # Strategy 3: Broadest fallback — text match
+            if target_month_container:
+                # Need to use javascript evaluation since we can't easily build a locator from an ElementHandle for text
+                for btn in day_buttons:
+                    inner_text = await btn.inner_text()
+                    if inner_text.strip() == day_str:
+                        await btn.click()
+                        logger.debug(f"[Worker-{self.worker_id}] Clicked day via ElementHandle innerText: {day_str}")
+                        return
+
             day_locator = self.page.locator(
                 f"button.rdrDay:not(.rdrDayPassive) .rdrDayNumber span:text-is('{day_str}')"
             )
