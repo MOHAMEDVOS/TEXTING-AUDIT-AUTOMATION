@@ -37,14 +37,26 @@ For Hot Leads, the system verifies the collection of:
 - **Core**: Python 3.10+
 - **Automation**: Playwright (Async)
 - **AI Models**: Groq (Llama 3.3 70B), local scikit-learn & FAISS
-- **Database**: SQLite (SQLAlchemy)
-- **UI/Dashboard**: Flask / Chakra UI inspired templates
+- **Database**: PostgreSQL (asyncpg, pgvector)
+- **UI/Dashboard**: FastAPI + Jinja2 templates (Apple/Glass design)
+
+## 📁 Top-Level Packages
+
+| Package      | Purpose |
+|--------------|---------|
+| `ai/`        | Groq analyzer, scorer, dream worker, 3-tier ML pre-filter |
+| `config/`    | Settings, rate limiter, key pool config |
+| `dashboard/` | FastAPI app, HTML templates, static assets |
+| `database/`  | Postgres schema + migrations + asyncpg helpers |
+| `scraper/`   | Playwright browser bot, queue manager, anti-detect |
+| `scripts/`   | One-shot CLIs: training, eval, data extraction |
 
 ## 📋 Prerequisites
 
 - Python 3.10 or higher
 - Playwright browsers installed (`playwright install`)
-- Valid Groq API keys in `config/groq_keys.json`
+- PostgreSQL 14+ with `pgvector` extension
+- Groq API keys loaded into the `api_keys` Postgres table (provider='groq')
 
 ## 🚀 Getting Started
 

@@ -12,7 +12,7 @@ An advanced, high-performance automated auditing system for SMS/Texting conversa
 ## Core Rules
 - **Playwright Navigation**: Never use `networkidle` or `wait_for_load_state("networkidle")` — SmarterContact is an SPA that keeps connections open indefinitely. Use `wait_until="load"` or poll for specific URL changes/selectors.
 - **Login Persistence**: After clicking Login, poll URL for `/login` removal. Do NOT check `_is_logged_in()` immediately (React takes 2-3s to render).
-- **AI Key Pool**: Groq keys are in `config/groq_keys.json` (flat list). Dedicated NIM keys (provider: "nim") are in `config/agent_keys.json`. Non-NIM entries in `agent_keys.json` are ignored.
+- **AI Key Pool**: Groq keys live in the `api_keys` Postgres table (`provider='groq'`, `agent_name IS NULL` = shared pool). LRU rotation; rate-limited keys rotate automatically.
 - **ML Gates**: Prefilter promotion requires FALSE-CLEAN ≤ 5%.
 - **Documentation**: Keep Obsidian Brain (`C:\Users\vos\Desktop\obsidian_brain`) updated with verified selectors and known gotchas.
 
@@ -156,23 +156,19 @@ When significant changes happen, update the vault:
 
 ---
 
-## AI Key Pool Model (April 2026)
+## AI Key Pool Model (May 2026)
 
-**Two stores in `ai.analyzer.KeyPoolManager`:**
+**Single shared Groq pool** in `ai.analyzer.KeyPoolManager`. Keys live in the
+`api_keys` Postgres table:
+- `provider = 'groq'`
+- `agent_name IS NULL` → shared pool key (preferred)
 
-1. **Groq shared pool** — `config/groq_keys.json` (flat list of key strings).
-   Every agent NOT listed in `agent_keys.json` as a NIM entry uses this pool.
-   Selection is LRU; rate-limited keys rotate automatically; quota-exhausted
-   keys are permanently removed from rotation.
+Selection is LRU. Rate-limited keys cool down and rotate automatically.
+Quota-exhausted keys are permanently removed from rotation for the process.
 
-2. **NIM dedicated keys** — `config/agent_keys.json` (only `provider: "nim"` entries).
-   Each NIM agent has its own key. Non-NIM entries here are ignored (logged warning).
-
-**Guarantee:** No conversation is skipped due to rate limits. The Groq pool
-cycles up to 10 times (≈140 key attempts) before giving up. A skip only
-happens when the model returns malformed JSON — that is a data issue, not
-a key issue.
+**Guarantee:** No conversation is skipped due to rate limits. The pool cycles
+up to 10 times (≈140 key attempts) before giving up. A skip only happens when
+the model returns malformed JSON — that is a data issue, not a key issue.
 
 **Do NOT:**
-- Put Groq keys in `agent_keys.json` — they'll be logged as warnings and ignored
 - Use `networkidle` waits anywhere (existing rule — SPA login)

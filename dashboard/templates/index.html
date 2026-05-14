@@ -1104,7 +1104,6 @@
               <select id="new-key-provider" class="settings-input" style="width:120px; flex-shrink:0;">
                 <option value="groq">Groq</option>
                 <option value="gemini">Gemini</option>
-                <option value="nim">NIM</option>
               </select>
               <input id="new-key-value" type="text" placeholder="gsk_… or AIzaSy…" class="settings-input" style="flex:1; font-family:monospace; font-size:.8rem;" />
             </div>
@@ -1184,7 +1183,6 @@
               <select id="manage-key-provider" class="settings-input" style="width:120px; flex-shrink:0;">
                 <option value="groq">Groq</option>
                 <option value="gemini">Gemini</option>
-                <option value="nim">NIM</option>
               </select>
               <input id="manage-key-value" type="text" placeholder="Paste new key or leave blank to remove" class="settings-input" style="flex:1; font-family:monospace; font-size:.8rem;" />
             </div>
@@ -4481,8 +4479,12 @@ function closeDatePicker() {
   if (trig) trig.classList.remove("open");
 }
 
-// Close when clicking outside
-document.addEventListener("click", (e) => {
+// Close when clicking outside.
+// Use mousedown (not click): clicking a day re-renders the calendar, which
+// detaches the original button before the bubbled click reaches the document.
+// At that point wrapper.contains(e.target) is false and the picker collapses
+// after picking only the start date. mousedown fires before the re-render.
+document.addEventListener("mousedown", (e) => {
   const wrapper = document.getElementById("drp-wrapper");
   if (wrapper && !wrapper.contains(e.target)) closeDatePicker();
 });

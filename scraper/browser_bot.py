@@ -351,8 +351,8 @@ class SmarterContactBot:
                 logger.warning(f"[Worker-{self.worker_id}] Date filter open attempt {attempt} failed: {e}")
                 try:
                     await self.page.keyboard.press("Escape")
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.debug("swallowed: %r", _e)
                 await asyncio.sleep(0.5)
 
         logger.warning(
@@ -405,8 +405,8 @@ class SmarterContactBot:
             logger.warning(f"[Worker-{self.worker_id}] Date filter option click failed: {e}")
             try:
                 await self.page.keyboard.press("Escape")
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug("swallowed: %r", _e)
 
     async def _apply_custom_date_range(self, start_date: str, end_date: str) -> None:
         """
@@ -489,8 +489,8 @@ class SmarterContactBot:
         # Close popover by pressing Escape or clicking outside
         try:
             await self.page.keyboard.press("Escape")
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.debug("swallowed: %r", _e)
 
     async def _navigate_calendar_to_month(self, target_year: int, target_month: int) -> None:
         """
@@ -598,8 +598,8 @@ class SmarterContactBot:
                     await aria_locator.first.click()
                     logger.debug(f"[Worker-{self.worker_id}] Clicked day via aria-label: {full_label}")
                     return
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug("swallowed: %r", _e)
 
             # Strategy 2: Find day number spans and click the non-passive one within the correct month container
             target_month_container = None
@@ -614,8 +614,8 @@ class SmarterContactBot:
                         if (target_month_name in name_text or target_month_name[:3] in name_text) and str(year) in name_text:
                             target_month_container = m
                             break
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug("swallowed: %r", _e)
 
             if target_month_container:
                 day_buttons = await target_month_container.query_selector_all("button.rdrDay:not(.rdrDayPassive)")
@@ -695,8 +695,8 @@ class SmarterContactBot:
                         "div.ReactVirtualized__Grid__innerScrollContainer > div",
                         timeout=6000,
                     )
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.debug("swallowed: %r", _e)
 
                 unread_rows = await self.page.query_selector_all(
                     "div.ReactVirtualized__Grid__innerScrollContainer > div"
@@ -718,8 +718,8 @@ class SmarterContactBot:
                 close_btn = await self.page.query_selector("button[aria-label='Close Message']")
                 if close_btn:
                     await close_btn.click()
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug("swallowed: %r", _e)
 
             # Apply date filter before reading rows
             await self._apply_date_filter(self.date_filter)
@@ -965,8 +965,8 @@ class SmarterContactBot:
                     try:
                         await self.page.keyboard.press("Escape")
                         await human_delay(0.3, 0.5)
-                    except Exception:
-                        pass
+                    except Exception as _e:
+                        logger.debug("swallowed: %r", _e)
 
                     # Extract Chat Transcript
                     try:
@@ -1422,8 +1422,8 @@ class SmarterContactBot:
                 for name in tag_texts:
                     if name and name not in registry:
                         registry.append(name)
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug("swallowed: %r", _e)
 
             # Deduplicate while preserving order (longer entries first for prefix match)
             seen = set()
@@ -1478,8 +1478,8 @@ class SmarterContactBot:
                 if elem:
                     text = await elem.inner_text()
                     return text.strip()
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.debug("swallowed: %r", _e)
         return ""
 
     async def _extract_metric_by_label(self, label: str) -> str:
@@ -1499,8 +1499,8 @@ class SmarterContactBot:
                 if line != label and line:
                     return line
 
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.debug("swallowed: %r", _e)
 
         try:
             # Strategy 2: Use XPath to find sibling/child with numeric content
@@ -1513,8 +1513,8 @@ class SmarterContactBot:
                     continue
                 if found_label and text.strip():
                     return text.strip()
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.debug("swallowed: %r", _e)
 
         return ""
 

@@ -8,7 +8,9 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
-DB = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/texting_audit")
+DB = os.getenv("DATABASE_URL")
+if not DB:
+    raise SystemExit("DATABASE_URL is not set — define it in .env or the environment")
 
 async def check():
     conn = await asyncpg.connect(DB)

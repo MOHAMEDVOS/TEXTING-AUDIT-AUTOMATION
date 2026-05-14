@@ -1,11 +1,8 @@
 """
-Multi-provider AI analyzer — shared Groq pool + dedicated NIM keys.
+Groq AI analyzer — shared key pool with LRU rotation.
 
-Groq-eligible agents (everything NOT in api_keys with provider="nim")
-use a shared pool of keys loaded from the api_keys database table.
+Keys are loaded from the api_keys database table (provider='groq').
 LRU selection spreads load evenly; rate-limited keys rotate automatically.
-
-NIM agents keep dedicated keys in the api_keys table.
 
 Public API:
     analyze_conversation(...)  → dict
@@ -396,7 +393,7 @@ class PooledKey:
     """One API key + its provider instance + health bookkeeping."""
     key: str
     provider: AIProvider
-    provider_type: str          # "groq" or "nim"
+    provider_type: str = "groq"
     cool_until: float = 0.0     # monotonic timestamp when usable again
     last_used_at: float = 0.0   # monotonic timestamp of most recent use (for LRU)
     quota_exhausted: bool = False  # permanently removed from rotation (daily quota hit)
@@ -416,19 +413,13 @@ class PooledKey:
 
 class KeyPoolManager:
     """
-    Manages two key stores:
-
-    1. _groq_pool: shared list of Groq keys (from api_keys table, provider='groq').
-       All agents NOT in _nim_keys use this pool with LRU selection.
-
-    2. _nim_keys: dedicated NIM keys (from api_keys table, provider='nim').
-       Indexed by agent_name.lower().
+    Manages the shared Groq key pool (api_keys table, provider='groq').
+    Agents select keys via LRU; rate-limited keys rotate automatically.
     """
 
     def __init__(self):
         self._groq_pool: list[PooledKey] = []           # shared pool, LRU-selected
         self._groq_by_key: dict[str, PooledKey] = {}    # api_key → PooledKey (for DB-reservation lookup)
-        self._nim_keys: dict[str, PooledKey] = {}       # agent_name.lower() → dedicated NIM key
         self._lock = threading.Lock()
         self._loaded = False
 
@@ -439,12 +430,8 @@ class KeyPoolManager:
             return
 
         self._load_groq_pool()
-        self._load_nim_keys()
 
-        logger.info(
-            f"[Pool] Loaded {len(self._groq_pool)} Groq keys "
-            f"(shared pool) + {len(self._nim_keys)} NIM dedicated keys"
-        )
+        logger.info(f"[Pool] Loaded {len(self._groq_pool)} Groq keys (shared pool)")
         self._loaded = True
 
     def _load_groq_pool(self) -> None:
@@ -493,47 +480,11 @@ class KeyPoolManager:
             except Exception as e:
                 logger.warning(f"[Pool] Failed to init Groq key [...{api_key[-6:]}]: {e}")
 
-    def _load_nim_keys(self) -> None:
-        """Load dedicated NIM keys from the api_keys table."""
-        import psycopg2
-        from config.settings import DATABASE_URL
-
-        try:
-            conn = psycopg2.connect(DATABASE_URL)
-            cur = conn.cursor()
-            cur.execute("SELECT agent_name, api_key FROM api_keys WHERE provider = 'nim' AND agent_name IS NOT NULL ORDER BY id")
-            nim_rows = cur.fetchall()
-            cur.close()
-            conn.close()
-        except Exception as e:
-            logger.warning(f"[Pool] Could not load NIM keys from database: {e}")
-            return
-
-        for agent_name, api_key in nim_rows:
-            if not api_key:
-                logger.warning(f"[Pool] Agent '{agent_name}' — empty NIM key, skipping")
-                continue
-
-            try:
-                from ai.providers.nim_provider import NimProvider
-                prov = NimProvider(api_key=api_key)
-                pk = PooledKey(key=api_key, provider=prov, provider_type="nim")
-                self._nim_keys[agent_name.lower()] = pk
-                logger.debug(f"[Pool] NIM key for '{agent_name}' [...{api_key[-6:]}]")
-            except Exception as e:
-                logger.warning(f"[Pool] Failed to init NIM key for '{agent_name}': {e}")
-
     def ensure_loaded(self) -> None:
         with self._lock:
             self._load()
 
     # ── Key selection ─────────────────────────────────────────────────────
-
-    def _pick_nim_key(self, agent_name: str) -> "PooledKey | None":
-        """Return the dedicated NIM key for this agent, or None if no NIM entry."""
-        with self._lock:
-            self._load()
-            return self._nim_keys.get(agent_name.lower())
 
     def _pick_groq_key_excluding(self, exclude_keys: set[str]) -> "PooledKey":
         """
@@ -606,7 +557,6 @@ class KeyPoolManager:
     def assign_run_keys(self, agent_names: list[str]) -> dict[str, "PooledKey"]:
         """
         Randomly assign one unique Groq key per agent for a single run.
-        Only assigns to agents that don't already have a NIM key.
         If there are more agents than available keys, keys are reused (round-robin).
         Returns {agent_name.lower(): PooledKey}.
         """
@@ -622,8 +572,6 @@ class KeyPoolManager:
 
             assignment: dict[str, "PooledKey"] = {}
             for i, name in enumerate(agent_names):
-                if self._nim_keys.get(name.lower()):
-                    continue  # NIM agents use their dedicated key, skip
                 assignment[name.lower()] = pool_copy[i % len(pool_copy)]
                 logger.info(
                     f"[Pool] Run assignment: '{name}' → "
@@ -637,7 +585,7 @@ class KeyPoolManager:
         with self._lock:
             self._load()
 
-            all_keys = list(self._groq_pool) + list(self._nim_keys.values())
+            all_keys = list(self._groq_pool)
 
             providers: dict[str, dict] = {}
             for pk in all_keys:
@@ -687,7 +635,7 @@ def get_pool_status() -> dict:
 # ── Helper ────────────────────────────────────────────────────────────────────
 
 def _max_retries() -> int:
-    return 5  # retries per NIM key on rate-limit
+    return 5  # retries per key on rate-limit
 
 
 # ── Main public function — single conversation ───────────────────────────────
@@ -706,11 +654,10 @@ def analyze_conversation(
     db_pool=None,
 ) -> dict:
     """
-    Analyze a single parsed conversation.
+    Analyze a single parsed conversation using the shared Groq pool.
 
-    NIM agents use their dedicated NIM key with cooldown retry.
-    All other agents use the shared Groq pool with LRU rotation.
-    On rate-limit, rotates to the next Groq key — never skips a conversation.
+    LRU key rotation; on rate-limit the analyzer cycles to the next Groq
+    key — a conversation is never skipped due to key issues.
 
     `funnel_tier` and `guidelines` are per-account overrides injected into the
     system prompt. Pass None to use the global prompt only.
@@ -779,17 +726,7 @@ def analyze_conversation(
         f"~{_est_input_tokens + 1200:,} total)"
     )
 
-    # ── NIM agent path: dedicated key, cooldown retry ─────────────────
-    nim_key = _pool._pick_nim_key(agent_name)
-
     def _dispatch(current_system_prompt: str, current_user_content: str) -> dict:
-        if nim_key is not None:
-            return _run_with_nim_key(
-                nim_key,
-                current_user_content,
-                contact_name,
-                current_system_prompt,
-            )
         return _run_with_groq_pool(
             current_user_content,
             contact_name,
@@ -852,56 +789,6 @@ def analyze_conversation(
             )
             logger.error(f"[Analyzer] {msg}")
             return _empty_result(msg, contact_name)
-
-def _run_with_nim_key(
-    pk: "PooledKey", user_content: str, contact_name: str,
-    system_prompt: str,
-) -> dict:
-    retries = _max_retries()
-    raw = ""
-    for attempt in range(retries):
-        if not pk.is_ready:
-            wait = pk.wait_seconds
-            logger.info(
-                f"[Analyzer] NIM key cooling for {contact_name} — waiting {wait:.1f}s"
-            )
-            time.sleep(wait + 0.5)
-        try:
-            raw = pk.provider.generate(
-                system_prompt=system_prompt,
-                user_content=user_content,
-                max_tokens=1200,
-                temperature=0.1,
-            )
-            return _finalize_result(raw, pk, contact_name)
-        except ProviderQuotaExhaustedError as e:
-            _pool.mark_quota_exhausted(pk)
-            return _empty_result(str(e), contact_name)
-        except ProviderRateLimitError as e:
-            _pool.mark_rate_limited(pk, e.retry_after)
-            logger.warning(
-                f"[Analyzer] NIM key rate-limited for {contact_name} — retrying"
-            )
-            continue
-        except ProviderPayloadTooLargeError:
-            logger.warning(
-                f"[Analyzer] NIM request too large for {contact_name} - escalating to caller"
-            )
-            raise
-        except json.JSONDecodeError as e:
-            logger.error(
-                f"[Analyzer] JSON parse error for {contact_name} (nim): {e}\nRaw: {raw[:300]}"
-            )
-            _pool.mark_rate_limited(pk, 5.0)
-            continue
-        except Exception as e:
-            logger.error(f"[Analyzer] NIM failed for {contact_name}: {e}")
-            _pool.mark_rate_limited(pk, 5.0)
-            continue
-    return _empty_result(
-        f"NIM key still rate-limited after {retries} retries", contact_name
-    )
-
 
 def _run_with_groq_pool(
     user_content: str, contact_name: str, system_prompt: str,
@@ -1162,19 +1049,12 @@ _DOLLAR_RE    = re.compile(r"\$[\d]", re.I)
 # All deterministic guard logic lives in _guards.py and is shared with Tier 4.
 from ai.prefilter._guards import (
     WHITELIST_FLAG_OUTPUTS as _WHITELIST_FLAG_OUTPUTS,
-    OPTOUT_TEXT_RE as _OPTOUT_TEXT_RE,
-    SOFT_NO_RE as _SOFT_NO_RE,
-    DNC_LABEL_RE as _DNC_LABEL_RE,
-    DNC_JOKE_PRICE_RE as _DNC_JOKE_PRICE_RE,
-    FLAG_REMAP_RULES as _FLAG_REMAP_RULES,
     _canon_flag_text,
     normalize_red_flags as _normalize_red_flags,
     agent_continued_after_opt_out as _agent_continued_after_opt_out,
     agent_continued_pitch_after_wn as _agent_continued_pitch_after_wn,
     last_message_from_contact as _last_message_from_contact,
     agent_replied_after_first_soft_no as _agent_replied_after_first_soft_no,
-    contact_has_explicit_opt_out as _contact_has_explicit_opt_out,
-    contact_has_dnc_joke_price as _contact_has_dnc_joke_price,
     apply_label_guards as _apply_label_guards,
 )
 
@@ -1263,12 +1143,7 @@ def analyze_batch(
         batch=True, funnel_tier=funnel_tier, guidelines=guidelines
     )
 
-    nim_key = _pool._pick_nim_key(agent_name)
     try:
-        if nim_key is not None:
-            return _run_batch_with_nim_key(
-                nim_key, user_content, contact_names, len(batch), system_prompt
-            )
         if pinned_key is not None and pinned_key.provider_type == "groq":
             return _run_batch_with_pinned_groq_key(
                 user_content, contact_names, len(batch), system_prompt, pinned_key
@@ -1295,49 +1170,6 @@ def analyze_batch(
             )
             for convo in batch
         ]
-
-
-def _run_batch_with_nim_key(
-    pk: "PooledKey",
-    user_content: str,
-    contact_names: list[str],
-    batch_size: int,
-    system_prompt: str,
-) -> list[dict]:
-    retries = _max_retries()
-    raw = ""
-    for attempt in range(retries):
-        if not pk.is_ready:
-            time.sleep(pk.wait_seconds + 0.5)
-        try:
-            raw = pk.provider.generate(
-                system_prompt=system_prompt,
-                user_content=user_content,
-                max_tokens=1200 * batch_size,
-                temperature=0.1,
-            )
-            return _finalize_batch_results(raw, pk, contact_names, batch_size)
-        except ProviderQuotaExhaustedError as e:
-            _pool.mark_quota_exhausted(pk)
-            return [_empty_result(str(e), c) for c in contact_names]
-        except ProviderRateLimitError as e:
-            _pool.mark_rate_limited(pk, e.retry_after)
-            continue
-        except ProviderPayloadTooLargeError:
-            logger.warning("[Analyzer] NIM batch request too large - escalating to caller")
-            raise
-        except json.JSONDecodeError as e:
-            logger.error(f"[Analyzer] Batch JSON parse (nim): {e}\nRaw: {raw[:500]}")
-            _pool.mark_rate_limited(pk, 5.0)
-            continue
-        except Exception as e:
-            logger.error(f"[Analyzer] Batch NIM failed: {e}")
-            _pool.mark_rate_limited(pk, 5.0)
-            continue
-    return [
-        _empty_result(f"NIM batch still rate-limited after {retries} retries", c)
-        for c in contact_names
-    ]
 
 
 def _run_batch_with_groq_pool(

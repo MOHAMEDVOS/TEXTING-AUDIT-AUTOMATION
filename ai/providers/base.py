@@ -1,7 +1,7 @@
 """
 Abstract base for AI providers.
 
-Every provider (Groq, NIM, …) implements this interface so the
+Every provider (currently Groq) implements this interface so the
 KeyPoolManager can treat all keys uniformly regardless of backend.
 """
 from __future__ import annotations
@@ -32,7 +32,7 @@ class AIProvider(ABC):
     @property
     @abstractmethod
     def provider_name(self) -> str:
-        """Short label — 'groq' or 'nim'."""
+        """Short label — currently 'groq'."""
 
     @property
     @abstractmethod

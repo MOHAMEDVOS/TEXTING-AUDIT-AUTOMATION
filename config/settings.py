@@ -53,13 +53,14 @@ USER_AGENTS = [
 
 # ─── Database ────────────────────────────────────────────────
 _raw_db_url = os.getenv("DATABASE_URL")
-if _raw_db_url:
-    DATABASE_URL = _raw_db_url
-    if DATABASE_URL.startswith("postgres://"):
-        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-else:
-    # Fallback for local development
-    DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/texting_audit"
+if not _raw_db_url:
+    raise RuntimeError(
+        "DATABASE_URL is not set. Define it in .env (local) or as a "
+        "Railway service variable (production). No hardcoded fallback."
+    )
+DATABASE_URL = _raw_db_url
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 # ─── Logging ─────────────────────────────────────────────────
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")

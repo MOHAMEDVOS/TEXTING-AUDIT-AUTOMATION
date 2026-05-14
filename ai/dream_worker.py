@@ -130,8 +130,8 @@ def run_dream_worker(db_path: str | None = None, dry_run: bool = False) -> dict:
             try:
                 state = json.loads(DREAM_STATE_PATH.read_text(encoding="utf-8"))
                 last_run_at = state.get("last_run_at", last_run_at)
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug("swallowed: %r", _e)
 
         # Load new feedback since last run
         feedback = _load_new_feedback(last_run_at, db_path)
@@ -223,8 +223,8 @@ def run_dream_worker(db_path: str | None = None, dry_run: bool = False) -> dict:
                 state = json.loads(DREAM_STATE_PATH.read_text(encoding="utf-8"))
                 state["last_run_at"] = now_iso
                 state["last_feedback_consumed_up_to"] = max_dt
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug("swallowed: %r", _e)
 
         state.setdefault("runs", []).append({
             "ran_at": now_iso,

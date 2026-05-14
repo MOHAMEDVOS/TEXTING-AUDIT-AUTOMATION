@@ -41,8 +41,8 @@ def _parse_msg_datetime(msg: dict) -> datetime | None:
         if raw:
             try:
                 return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug("swallowed: %r", _e)
 
     time_str = (msg.get("time") or "").strip()
     if not time_str:

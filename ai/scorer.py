@@ -522,8 +522,6 @@ async def score_agent_conversations(
                         source = "prefilter_t3"
                     elif model_used.startswith("prefilter_t4"):
                         source = "prefilter_t4"
-                    elif model_used.lower().startswith("nim"):
-                        source = "nim"
                     else:
                         source = "groq"
                     try:
@@ -639,16 +637,13 @@ async def score_agent_conversations(
         logger.warning(f"[Scorer] dream_worker check failed (non-fatal): {_e}")
 
     # ── Semantic auto-promote (self-learning pipeline) ──────────────────────
+    # Fire-and-forget: embedding 1000+ convos on CPU can take minutes.
+    # The scorer result is already returned; rebuild happens in background.
     try:
         from config.settings import SEMANTIC_LEARNING_ENABLED
         if SEMANTIC_LEARNING_ENABLED:
             from ai.prefilter.semantic_learner import auto_promote
-            promote_result = await asyncio.to_thread(auto_promote)
-            if promote_result.get("promoted", 0) > 0:
-                logger.info(
-                    f"[Scorer] Semantic auto-promote: {promote_result['promoted']} "
-                    f"candidates promoted, rebuild={'✓' if promote_result.get('rebuild_triggered') else '✗'}"
-                )
+            asyncio.get_event_loop().run_in_executor(None, auto_promote)
     except Exception as _e:
         logger.warning(f"[Scorer] semantic auto-promote failed (non-fatal): {_e}")
 

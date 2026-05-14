@@ -340,8 +340,8 @@ def _msg_date(m: dict) -> str:
         try:
             from datetime import datetime
             return datetime.fromisoformat(s.replace("Z", "+00:00")).date().isoformat()
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.debug("swallowed: %r", _e)
 
     # Scraper path: use the "date" divider string.
     # date_field is None  → key absent entirely → no date info, skip

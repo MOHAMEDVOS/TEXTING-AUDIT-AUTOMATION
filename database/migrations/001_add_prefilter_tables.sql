@@ -46,7 +46,7 @@ CREATE INDEX IF NOT EXISTS idx_conv_embeddings_model
 --    distinguish local predictions from Groq ground-truth in training data.
 ALTER TABLE conversation_scores
     ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'groq'
-    CHECK (source IN ('groq', 'nim', 'prefilter_t1', 'prefilter_t2', 'prefilter_t3'));
+    CHECK (source IN ('groq', 'prefilter_t1', 'prefilter_t2', 'prefilter_t3', 'prefilter_t4'));
 
 CREATE INDEX IF NOT EXISTS idx_conv_scores_source
     ON conversation_scores(source);

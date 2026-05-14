@@ -203,12 +203,12 @@ CREATE INDEX IF NOT EXISTS idx_trends_agent ON trend_snapshots(agent_name);
 CREATE INDEX IF NOT EXISTS idx_trends_date  ON trend_snapshots(audit_date);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_trends_unique ON trend_snapshots(agent_name, audit_date, account_email);
 
--- ── api_keys (Groq shared pool + NIM dedicated keys) ──────────────────────────
+-- ── api_keys (Groq shared pool) ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS api_keys (
     id           SERIAL PRIMARY KEY,
-    provider     TEXT NOT NULL,                -- 'groq' or 'nim'
+    provider     TEXT NOT NULL,                -- 'groq'
     api_key      TEXT NOT NULL,
-    agent_name   TEXT,                         -- NULL = shared pool key; non-NULL = dedicated to that agent
+    agent_name   TEXT,                         -- NULL = shared pool key (preferred)
     created_at   TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(provider, api_key, agent_name)
 );

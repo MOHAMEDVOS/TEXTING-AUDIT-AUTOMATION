@@ -321,8 +321,8 @@ def build(rebuild: bool = False) -> None:
         try:
             with open(manifest_path, "r", encoding="utf-8") as f:
                 manifest = json.load(f)
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.debug("swallowed: %r", _e)
     manifest["knn_index"] = {
         "built_at": datetime.datetime.utcnow().isoformat() + "Z",
         "n_vectors": len(meta),

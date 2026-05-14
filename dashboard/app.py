@@ -26,7 +26,7 @@ from pathlib import Path
 
 import asyncpg
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -114,8 +114,8 @@ async def lifespan(app):
             for f in stale:
                 try:
                     f.unlink()
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.debug("swallowed: %r", _e)
             if stale:
                 logger.info(f"Startup: removed {len(stale)} stale run_status file(s) from previous container")
     except Exception as e:
@@ -213,6 +213,22 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(RateLimitMiddleware)
+
+
+# ── Admin auth (env-gated) ────────────────────────────────────────────────────
+# When ADMIN_TOKEN is unset the gate is disabled (preserves Railway / local-dev
+# behavior). When ADMIN_TOKEN is set, every mutating route requires the same
+# value in the `X-Admin-Token` header. Set the env var on Railway to lock down
+# state-changing endpoints without breaking GET traffic.
+_ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
+
+
+def require_admin(request: Request) -> None:
+    if not _ADMIN_TOKEN:
+        return  # gate disabled — auth not configured
+    provided = request.headers.get("x-admin-token", "") or request.headers.get("X-Admin-Token", "")
+    if provided != _ADMIN_TOKEN:
+        raise HTTPException(status_code=401, detail="Unauthorized: invalid or missing X-Admin-Token")
 
 # â"€â"€ In-memory process registry â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 # { "Noah": <Popen> | "done" }
@@ -584,8 +600,8 @@ def _cleanup_finished():
             )
             try:
                 proc.kill()
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug("swallowed: %r", _e)
             running_processes[name] = "failed"
             running_pinned_keys.pop(name, None)
             _run_started_at.pop(name, None)
@@ -667,6 +683,21 @@ class RunRequest(BaseModel):
     date_end: str = ""     # "YYYY-MM-DD" for custom range
 
 
+class ClearStuckRequest(BaseModel):
+    agent_name: str = ""   # empty = clear all stuck agents
+
+
+# Whitelist for the --date-filter argv flag forwarded to main.py.
+# Keeps subprocess input strictly bounded — any other value is rejected.
+_ALLOWED_DATE_FILTERS = {
+    "today", "yesterday", "last_week", "this_month", "last_month",
+    "last_30_days", "last_year", "all_time", "custom",
+}
+# ISO date: YYYY-MM-DD. Used to validate custom-range args before subprocess.
+import re as _re
+_ISO_DATE_RE = _re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
 class AddAgentRequest(BaseModel):
     name:       str = ""
     email:      str = ""
@@ -684,7 +715,7 @@ class EditAgentRequest(BaseModel):
 
 
 class EditAgentKeyRequest(BaseModel):
-    provider: str = ""   # "groq" or "nim"
+    provider: str = ""   # "groq"
     key:      str = ""   # the API key value (empty string = remove key)
 
 
@@ -784,8 +815,8 @@ async def _save_trend_snapshot(agent_name: str) -> None:
                     import json as _json
                     flags_raw = _json.loads(flags_raw)
                 total_issues = len(flags_raw)
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug("swallowed: %r", _e)
 
             conversations_analyzed = 0
             try:
@@ -797,8 +828,8 @@ async def _save_trend_snapshot(agent_name: str) -> None:
                 conversations_analyzed = len(pc)
                 if total_issues == 0:
                     total_issues = sum(1 for c in pc if c.get("red_flags"))
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug("swallowed: %r", _e)
 
             # Look up today's assignment to resolve the texter name
             assign_row = await conn.fetchrow(
@@ -890,7 +921,7 @@ async def api_agents():
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@app.post("/api/run")
+@app.post("/api/run", dependencies=[Depends(require_admin)])
 async def api_run(body: RunRequest):
     """
     Start a background audit for a single agent.
@@ -902,6 +933,22 @@ async def api_run(body: RunRequest):
 
     if not agent_name:
         raise HTTPException(status_code=400, detail="agent_name is required")
+
+    if body.date_filter not in _ALLOWED_DATE_FILTERS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"date_filter must be one of {sorted(_ALLOWED_DATE_FILTERS)}",
+        )
+    if body.date_start and not _ISO_DATE_RE.match(body.date_start):
+        raise HTTPException(status_code=400, detail="date_start must be YYYY-MM-DD")
+    if body.date_end and not _ISO_DATE_RE.match(body.date_end):
+        raise HTTPException(status_code=400, detail="date_end must be YYYY-MM-DD")
+    try:
+        sample_size = int(body.sample_size)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="sample_size must be an integer")
+    if not (1 <= sample_size <= 1000):
+        raise HTTPException(status_code=400, detail="sample_size must be 1..1000")
 
     _cleanup_finished()
 
@@ -974,7 +1021,7 @@ async def api_run(body: RunRequest):
         cmd = [
             sys.executable, MAIN_PY, "--single", agent_name,
             "--date-filter", body.date_filter,
-            "--limit", str(body.sample_size),
+            "--limit", str(sample_size),
         ]
         # Append custom date range args if provided
         if body.date_start and body.date_end:
@@ -1032,25 +1079,20 @@ async def api_status():
     }
 
 
-@app.post("/api/clear-stuck")
-async def api_clear_stuck(request: Request):
+@app.post("/api/clear-stuck", dependencies=[Depends(require_admin)])
+async def api_clear_stuck(body: ClearStuckRequest = ClearStuckRequest()):
     """
     Force-clear stuck 'Logging in' or 'Failed' badges for one or all agents.
 
     Body (optional JSON):
-        {"agent_name": "Kev1040\"SC\""}   — clear one specific agent
-        {}                                — clear ALL stuck agents
+        {"agent_name": "Kev1040"}   — clear one specific agent
+        {}                          — clear ALL stuck agents
 
     An agent is "stuck" if it is in running_processes but its process has
     already exited OR it has been running longer than _MAX_RUN_MINUTES.
     Failed entries are also cleared so the badge resets to idle.
     """
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-
-    target = (body.get("agent_name") or "").strip() if isinstance(body, dict) else ""
+    target = body.agent_name.strip()
     cleared = []
 
     candidates = [target] if target else list(running_processes.keys())
@@ -1067,8 +1109,8 @@ async def api_clear_stuck(request: Request):
             if not is_terminal:
                 try:
                     proc.kill()
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.debug("swallowed: %r", _e)
             running_processes.pop(name, None)
             running_pinned_keys.pop(name, None)
             _run_started_at.pop(name, None)
@@ -1076,8 +1118,8 @@ async def api_clear_stuck(request: Request):
             if sf and sf.exists():
                 try:
                     sf.unlink()
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.debug("swallowed: %r", _e)
             running_status_details.pop(name, None)
             cleared.append(name)
             logger.info(f"[clear-stuck] Evicted '{name}' from process registry")
@@ -1141,7 +1183,7 @@ async def api_agent_conversations(agent_id: int):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@app.delete("/api/reset-all")
+@app.delete("/api/reset-all", dependencies=[Depends(require_admin)])
 async def api_reset_all():
     """Clear audit score summaries for every agent so the next run starts fresh.
     Conversations, messages, and conversation_scores are preserved for Detailed Dashboard history.
@@ -1160,7 +1202,7 @@ async def api_reset_all():
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@app.delete("/api/agent/{agent_id}/reset")
+@app.delete("/api/agent/{agent_id}/reset", dependencies=[Depends(require_admin)])
 async def api_agent_reset(agent_id: int):
     """
     Clear audit score summary for one agent so the next run scores from scratch.
@@ -1183,15 +1225,15 @@ async def api_agent_reset(agent_id: int):
         if proc not in (None, "done", "failed"):
             try:
                 proc.kill()
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug("swallowed: %r", _e)
         running_pinned_keys.pop(name, None)
         sf = running_status_files.pop(name, None)
         if sf and sf.exists():
             try:
                 sf.unlink()
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug("swallowed: %r", _e)
         running_status_details.pop(name, None)
         logger.info(f"Reset agent_id={agent_id} ('{name}'): cleared scores, archived conversations, evicted process state.")
         return {"status": "ok", "agent_id": agent_id}
@@ -1202,7 +1244,7 @@ async def api_agent_reset(agent_id: int):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@app.post("/api/agents/add")
+@app.post("/api/agents/add", dependencies=[Depends(require_admin)])
 async def api_add_agent(body: AddAgentRequest):
     """Add a new agent to the database."""
     name  = body.name.strip()
@@ -1240,7 +1282,7 @@ async def api_add_agent(body: AddAgentRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@app.put("/api/agents/{agent_id}")
+@app.put("/api/agents/{agent_id}", dependencies=[Depends(require_admin)])
 async def api_edit_agent(agent_id: int, body: EditAgentRequest):
     """Update an agent's name, email, and/or password in the database."""
     name       = body.name.strip()
@@ -1294,7 +1336,7 @@ async def api_edit_agent(agent_id: int, body: EditAgentRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@app.delete("/api/agents/{agent_id}")
+@app.delete("/api/agents/{agent_id}", dependencies=[Depends(require_admin)])
 async def api_delete_agent(agent_id: int):
     """Remove an agent and all their data from the database."""
     try:
@@ -1345,7 +1387,7 @@ async def api_get_agent_key(agent_id: int):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@app.put("/api/agents/{agent_id}/apikey")
+@app.put("/api/agents/{agent_id}/apikey", dependencies=[Depends(require_admin)])
 async def api_set_agent_key(agent_id: int, body: EditAgentKeyRequest):
     """Set or remove the API key for one agent in the database."""
     try:
@@ -1365,8 +1407,8 @@ async def api_set_agent_key(agent_id: int, body: EditAgentKeyRequest):
                     agent_name,
                 )
             else:
-                if provider not in ("groq", "nim"):
-                    raise HTTPException(status_code=400, detail="provider must be 'groq' or 'nim'")
+                if provider != "groq":
+                    raise HTTPException(status_code=400, detail="provider must be 'groq'")
                 # Upsert: delete old + insert new
                 await conn.execute(
                     "DELETE FROM api_keys WHERE LOWER(agent_name) = LOWER($1)",
@@ -1387,7 +1429,7 @@ async def api_set_agent_key(agent_id: int, body: EditAgentKeyRequest):
 
 # â"€â"€ Red Flag Feedback â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
-@app.post("/api/redflag/invalid")
+@app.post("/api/redflag/invalid", dependencies=[Depends(require_admin)])
 async def api_redflag_invalid(body: RedFlagFeedbackRequest):
     """Mark an AI red flag as invalid and retroactively remove it from stored scores."""
     if not body.agent_id or not body.red_flag.strip():
@@ -1510,7 +1552,7 @@ async def api_redflag_invalid(body: RedFlagFeedbackRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@app.post("/api/conversation/valid")
+@app.post("/api/conversation/valid", dependencies=[Depends(require_admin)])
 async def api_conversation_valid(body: ValidationRequest):
     """Mark a conversation's Groq score as confirmed valid."""
     if not body.agent_id or not body.contact_name.strip():
@@ -1672,7 +1714,7 @@ async def api_get_assignments(date: str = ""):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@app.post("/api/assignments")
+@app.post("/api/assignments", dependencies=[Depends(require_admin)])
 async def api_post_assignment(body: AssignmentRequest):
     """
     Assign an agent to an account for a given date (upserts - one assignment per account per day).
@@ -1745,7 +1787,7 @@ async def api_post_assignment(body: AssignmentRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@app.post("/api/assignments/copy-latest")
+@app.post("/api/assignments/copy-latest", dependencies=[Depends(require_admin)])
 async def api_copy_latest_assignments(date: str = ""):
     """
     Find the most recent date with any assignments and copy them to the target date.
@@ -1788,7 +1830,7 @@ async def api_copy_latest_assignments(date: str = ""):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@app.delete("/api/assignments")
+@app.delete("/api/assignments", dependencies=[Depends(require_admin)])
 async def api_delete_assignments(date: str = ""):
     """Clear all account assignments for a given date."""
     from datetime import date as _date
@@ -1894,7 +1936,7 @@ async def api_trends(start: str = "", end: str = "", agent: str = "all"):
 
 
 
-@app.delete("/api/trends")
+@app.delete("/api/trends", dependencies=[Depends(require_admin)])
 async def api_trends_reset(agent: str = "all"):
     """
     Delete trend snapshots - either all records or just one agent's.
@@ -2128,32 +2170,6 @@ async def api_conversation_messages(conversation_id: int):
 
 
 
-@app.get("/api/flags/realtime")
-async def api_flags_realtime():
-    """Return real-time flag counts by date from conversation_scores."""
-    async with app.state.pool.acquire() as conn:
-        rows = await conn.fetch(
-            """SELECT DATE(cs.scored_at) as audit_date,
-                      COUNT(*) as total_conversations,
-                      SUM(CASE WHEN (
-                               (cs.red_flags IS NOT NULL AND cs.red_flags::text NOT IN ('[]','null'))
-                               OR (cs.label_correct = false AND cs.label_assigned IS DISTINCT FROM cs.label_should_be)
-                           ) THEN 1 ELSE 0 END) as flagged_conversations
-               FROM conversation_scores cs
-               WHERE DATE(cs.scored_at) >= CURRENT_DATE - INTERVAL '7 days'
-               GROUP BY DATE(cs.scored_at)
-               ORDER BY audit_date DESC"""
-        )
-    return [
-        {
-            "audit_date": str(r["audit_date"]),
-            "total": r["total_conversations"],
-            "flagged": r["flagged_conversations"],
-        }
-        for r in rows
-    ]
-
-
 @app.get("/api/roster")
 async def api_get_roster():
     """Return the current texter roster list from the database."""
@@ -2161,7 +2177,7 @@ async def api_get_roster():
     return AGENT_ROSTER
 
 
-@app.post("/api/roster")
+@app.post("/api/roster", dependencies=[Depends(require_admin)])
 async def api_post_roster(body: AddTexterRequest):
     """Add a new texter to the database roster."""
     global AGENT_ROSTER
@@ -2182,7 +2198,7 @@ async def api_post_roster(body: AddTexterRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@app.delete("/api/roster/{name:path}")
+@app.delete("/api/roster/{name:path}", dependencies=[Depends(require_admin)])
 async def api_delete_roster(name: str):
     """Remove a texter from the database roster and wipe all their historical data."""
     global AGENT_ROSTER

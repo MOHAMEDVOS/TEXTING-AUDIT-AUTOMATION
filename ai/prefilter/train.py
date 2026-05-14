@@ -280,7 +280,6 @@ def main(test_split: float = 0.0) -> None:
     active_cols = []
     if n_with_labels >= 10:
         if test_split > 0:
-            from sklearn.model_selection import train_test_split as _tts
             ym_tr = y_multilabel[:X_tr.shape[0]]
         else:
             ym_tr = y_multilabel
@@ -355,8 +354,8 @@ def main(test_split: float = 0.0) -> None:
             with open(manifest_path, "r", encoding="utf-8") as f:
                 import json
                 manifest = json.load(f)
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.debug("swallowed: %r", _e)
     manifest["classifier"] = {
         "trained_at": bundle["trained_at"],
         "n_train": bundle["n_train"],
