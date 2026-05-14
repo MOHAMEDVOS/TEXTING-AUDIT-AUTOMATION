@@ -336,6 +336,11 @@ def build(rebuild: bool = False) -> None:
     logger.info(f"Updated manifest → {manifest_path}")
 
 
+def main(rebuild: bool = True) -> None:
+    """Programmatic entrypoint used by semantic_learner. Defaults to rebuild=True."""
+    build(rebuild=rebuild)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Build Tier 2 kNN index.")
     parser.add_argument("--rebuild", action="store_true",

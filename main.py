@@ -21,6 +21,24 @@ if sys.platform == "win32":
     title = os.environ.get("PYTITLE", "TEXTING Scraper")
     os.system(f"title {title}")
 
+    # Silence the noisy "RuntimeError: Event loop is closed" raised by
+    # asyncio's _ProactorBasePipeTransport.__del__ during interpreter shutdown.
+    # This is a well-known cosmetic bug — the loop has already finished its
+    # work; the GC just runs after asyncio.run() closed the loop. Suppressing
+    # it stops one finishing subprocess from spamming errors that look like
+    # a crash to the dashboard log tail.
+    from asyncio.proactor_events import _ProactorBasePipeTransport  # type: ignore
+
+    _orig_del = _ProactorBasePipeTransport.__del__
+
+    def _silent_del(self, *args, **kwargs):
+        try:
+            _orig_del(self, *args, **kwargs)
+        except (RuntimeError, AttributeError):
+            pass
+
+    _ProactorBasePipeTransport.__del__ = _silent_del  # type: ignore[assignment]
+
 from config.settings import LOG_DIR, LOG_LEVEL, DATE_FILTER, DEFAULT_SAMPLE_SIZE, get_now
 
 from scraper.queue_manager import QueueManager

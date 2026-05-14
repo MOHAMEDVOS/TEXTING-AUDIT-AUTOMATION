@@ -39,10 +39,10 @@ from config.rate_limiter import get_rate_limiter, route_bucket
 # Each entry: (route_prefix, capacity, rate_per_second)
 # More specific prefixes must come first (they are matched top-to-bottom).
 _ROUTE_LIMITS: list[tuple[str, float, float]] = [
-    ("/api/run",              3,  0.1),   # 3 burst, 1 req/10 s  — audit trigger
-    ("/api/rate-limit",     20,  5.0),   # very relaxed — status monitoring only
-    ("/api/ai",             10,  1.0),   # moderate — AI pool status
-    ("/api/",               30,  3.0),   # default for all other /api/ routes
+    ("/api/run",             20,  2.0),   # 20 burst, 2 req/s  — allow launching all bots at once
+    ("/api/rate-limit",      20,  5.0),   # very relaxed — status monitoring only
+    ("/api/ai",              10,  1.0),   # moderate — AI pool status
+    ("/api/",                60,  6.0),   # default for all other /api/ routes
 ]
 _dashboard_rl = get_rate_limiter()
 
