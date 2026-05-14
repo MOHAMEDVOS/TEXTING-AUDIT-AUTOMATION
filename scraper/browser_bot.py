@@ -770,8 +770,8 @@ class SmarterContactBot:
             # contacts (limit * 5 buffer) OR enough plausible candidates
             # (limit * 3).  The total-contacts cap prevents runaway scrolling
             # when the account has many unprocessed/unread conversations.
-            total_stop_target = limit * 5     # hard cap on contacts collected
-            plausible_stop_target = limit * 3  # stop if enough "good" candidates
+            total_stop_target = limit * 10    # hard cap on contacts collected
+            plausible_stop_target = limit * 6  # stop if enough "good" candidates
             plausible_count = 0
 
             if scroll_container:
