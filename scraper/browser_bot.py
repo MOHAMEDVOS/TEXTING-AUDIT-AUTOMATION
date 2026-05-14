@@ -1212,35 +1212,45 @@ class SmarterContactBot:
         """
         Scroll the virtualized list to find and return a row matching target_name.
         hint_scroll: the scrollTop we recorded when we first saw this contact —
-        jump there immediately instead of re-scanning from the top.
+        jump there first for speed, then fall back to a full scan if the list
+        has reordered since Pass 1 (e.g. new messages arrived).
         """
-        # Jump to the approximate position we recorded during Pass 1
-        start = max(0, hint_scroll - 800)  # back up one scroll_step in case of rounding
-        await self.page.evaluate(
-            "({ sel, top }) => { const el = document.querySelector(sel); if (el) el.scrollTop = top; }",
-            {"sel": container_sel, "top": start}
-        )
-        await asyncio.sleep(0.2)
-
-        for step in range(max_scrolls):
-            rows = await self.page.query_selector_all(row_sel)
-            for row in rows:
-                try:
-                    p_tags = await row.query_selector_all("p")
-                    if p_tags:
-                        name = (await p_tags[0].inner_text()).strip()
-                        if name == target_name:
-                            return row
-                except Exception:
-                    continue
-
+        async def _scan_from(start_pos: int, steps: int, sleep_s: float = 0.2):
             await self.page.evaluate(
                 "({ sel, top }) => { const el = document.querySelector(sel); if (el) el.scrollTop = top; }",
-                {"sel": container_sel, "top": start + (step + 1) * 800}
+                {"sel": container_sel, "top": start_pos}
             )
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(sleep_s)
+            for step in range(steps):
+                rows = await self.page.query_selector_all(row_sel)
+                for row in rows:
+                    try:
+                        p_tags = await row.query_selector_all("p")
+                        if p_tags:
+                            name = (await p_tags[0].inner_text()).strip()
+                            if name == target_name:
+                                return row
+                    except Exception:
+                        continue
+                await self.page.evaluate(
+                    "({ sel, top }) => { const el = document.querySelector(sel); if (el) el.scrollTop = top; }",
+                    {"sel": container_sel, "top": start_pos + (step + 1) * 800}
+                )
+                await asyncio.sleep(sleep_s)
+            return None
 
-        return None
+        # Fast path: jump near the recorded hint position
+        row = await _scan_from(max(0, hint_scroll - 800), max_scrolls)
+        if row:
+            return row
+
+        # Fallback: full scan from top — handles list reorder since Pass 1
+        # 100 steps × 800px = 80,000px, covers any realistic inbox size
+        logger.debug(
+            f"[Worker-{self.worker_id}] Hint miss for {target_name} "
+            f"(hint={hint_scroll}) — falling back to full list scan"
+        )
+        return await _scan_from(0, 100, sleep_s=0.15)
 
     async def extract_all(self) -> dict:
         """
