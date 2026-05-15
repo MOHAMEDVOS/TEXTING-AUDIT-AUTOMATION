@@ -4,6 +4,7 @@ Handles login, navigation, and data extraction from SmarterContact.
 """
 import asyncio
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 import random
@@ -96,6 +97,22 @@ async def _read_labels(row, registry: list[str] = None) -> list[str]:
     except Exception as e:
         logger.warning(f"[DEBUG] _read_labels Exception: {e}")
         return []
+
+
+# Matches the SmarterContact inbox-row date, e.g. "05/15/2026".
+_SC_DATE_RE = re.compile(r"\b(\d{1,2}/\d{1,2}/\d{4})\b")
+
+
+def _extract_row_date(row_text: str) -> str:
+    """
+    Pull the SmarterContact inbox-row date (MM/DD/YYYY) out of a row's text.
+    The date column renders as plain text alongside the time and labels, so a
+    regex is more resilient than a class selector. Returns "" if not found.
+    """
+    if not row_text:
+        return ""
+    m = _SC_DATE_RE.search(row_text)
+    return m.group(1) if m else ""
 
 
 class SmarterContactBot:
@@ -820,12 +837,17 @@ class SmarterContactBot:
                                 'div[data-cy="messenger-avatar-icon"] > div:nth-child(2)'
                             )
 
+                            # SmarterContact inbox-row date (MM/DD/YYYY) — shown
+                            # on the conversation card alongside the audit date.
+                            convo_date = _extract_row_date(await vrow.inner_text())
+
                             collected_contacts[name] = {
                                 "labels": labels,
                                 "preview": preview,
                                 "is_unread": bool(unread_badge),
                                 "order": len(collected_contacts),
                                 "row_text": "",
+                                "convo_date": convo_date,
                                 "scroll_pos": current_scroll,  # remember where we found it
                             }
                             # Track plausible candidates (not unread + has real labels)
@@ -880,10 +902,12 @@ class SmarterContactBot:
                         unread_badge = await vrow.query_selector(
                             'div[data-cy="messenger-avatar-icon"] > div:nth-child(2)'
                         )
+                        convo_date = _extract_row_date(await vrow.inner_text())
                         collected_contacts[name] = {
                             "labels": labels, "preview": preview,
                             "is_unread": bool(unread_badge),
                             "order": len(collected_contacts), "row_text": "",
+                            "convo_date": convo_date,
                             "scroll_pos": 0,
                         }
                     except Exception:
@@ -987,6 +1011,7 @@ class SmarterContactBot:
                             "assigned_labels": assigned_labels,
                             "index": idx,
                             "extracted_at": get_now().isoformat(),
+                            "convo_date": info.get("convo_date", ""),
                             "full_transcript": ""
                         }
 

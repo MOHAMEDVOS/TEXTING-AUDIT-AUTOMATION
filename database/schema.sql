@@ -47,8 +47,13 @@ CREATE TABLE IF NOT EXISTS conversations (
     assigned_labels TEXT[],
     extracted_at    TIMESTAMPTZ NOT NULL,
     audit_date      DATE NOT NULL,
+    convo_date      TEXT NOT NULL DEFAULT '',
     is_archived     BOOLEAN DEFAULT FALSE
 );
+
+-- Migration: convo_date holds the SmarterContact inbox-row date (MM/DD/YYYY)
+-- as scraped — shown on the conversation card next to the audit date.
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS convo_date TEXT NOT NULL DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS idx_conversations_agent   ON conversations(agent_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_texter  ON conversations(texter_name);

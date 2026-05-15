@@ -854,6 +854,7 @@
         <option value="last_month">Last Month</option>
         <option value="last_30_days">Last 30 days</option>
         <option value="last_year">Last Year</option>
+        <option value="all_time">All Time</option>
         <option value="custom">Custom</option>
       </select>
       <div class="drp-popover" id="drp-popover">
@@ -2581,8 +2582,12 @@ function renderAiAnalysis(a, invalidatedFlags, isValidated) {
         </div>` : ""}
 
       ${a.summary ? `
-        <div style="font-size:.72rem;color:var(--text-secondary);font-style:italic;line-height:1.6;padding:8px 10px;background:var(--surface-subtle);border-left:2px solid var(--surface-border);border-radius:0 6px 6px 0;margin-bottom:9px;">
-          ${esc(a.summary)}
+        <div style="font-size:.72rem;color:var(--text-secondary);line-height:1.5;padding:8px 10px 6px;background:var(--surface-subtle);border-left:2px solid var(--surface-border);border-radius:0 6px 6px 0;margin-bottom:9px;">
+          ${a.summary.split(/\s*\*\s+/).filter(s=>s.trim()).map(s=>`
+            <div style="display:flex;align-items:flex-start;gap:6px;padding:2px 0;">
+              <span style="color:var(--brand);flex-shrink:0;margin-top:1px;">›</span>
+              <span>${esc(s.trim())}</span>
+            </div>`).join("")}
         </div>` : ""}
 
       <div style="display:flex;justify-content:flex-end;padding-top:4px;">
@@ -4506,11 +4511,7 @@ function applyDatePreset(preset) {
 
   // Set the hidden select
   const sel = document.getElementById("date-filter");
-  if (preset === "all_time") {
-    sel.value = "today";  // Default fallback
-  } else {
-    sel.value = preset;
-  }
+  sel.value = preset;
 
   // Clear custom dates
   window._drpDateStart = "";

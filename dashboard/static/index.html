@@ -249,6 +249,40 @@
     .ci:hover { background: var(--surface-elevated); }
     [data-theme="light"] .ci:hover { background: var(--surface-subtle); }
 
+    /* ── Conversation card: score-forward layout ── */
+    .ci-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+    .ci-head { display: flex; align-items: center; gap: 8px; }
+    .ci-name {
+      flex: 1; min-width: 0; font-size: .92rem; font-weight: 650;
+      color: var(--text-primary); letter-spacing: -.01em;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .ci-flag {
+      flex-shrink: 0; display: inline-flex; align-items: center; gap: 3px;
+      font-size: .63rem; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+      background: rgba(248,113,113,.14); color: var(--danger);
+    }
+    .ci-meta { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+    .ci-correct { font-size: .69rem; font-weight: 700; }
+    .ci-correct.ok  { color: var(--success); }
+    .ci-correct.bad { color: var(--danger); }
+    .ci-funnel { font-size: .67rem; color: var(--text-muted); }
+    .ci-preview {
+      font-size: .73rem; color: var(--text-muted); line-height: 1.4;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .ci-dates { display: flex; align-items: center; gap: 14px; margin-top: 1px; }
+    .ci-date {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: .66rem; color: var(--text-muted);
+    }
+    .ci-date svg { width: 11px; height: 11px; opacity: .65; flex-shrink: 0; }
+    .ci-date b { font-weight: 600; color: var(--text-secondary); }
+
+    /* Right-side aside — audit-method pill + open chevron */
+    .ci-aside { flex-shrink: 0; display: flex; align-items: center; gap: 6px; }
+    .ci-aside svg { width: 13px; height: 13px; }
+
     /* ── Chat bubbles — blue (agent) + white (contact) ── */
     .bw-left  { display: flex; align-items: flex-end; gap: 8px; margin: 4px 0; }
     .bw-right { display: flex; align-items: flex-end; gap: 8px; flex-direction: row-reverse; margin: 4px 0; }
@@ -873,6 +907,7 @@
         <option value="last_month">Last Month</option>
         <option value="last_30_days">Last 30 days</option>
         <option value="last_year">Last Year</option>
+        <option value="all_time">All Time</option>
         <option value="custom">Custom</option>
       </select>
       <div class="drp-popover" id="drp-popover">
@@ -2321,11 +2356,12 @@ function issueCount(a) {
   return flagCount + labelWrong;
 }
 
-function auditMethodPill(source) {
+function auditMethodPill(source, small = false) {
   const method = auditMethod(source);
   const cls = method === "ML" ? "pill-y" : "pill-m";
   const title = method === "ML" ? "Scored by ML prefilter" : "Scored by AI model";
-  return `<span class="pill ${cls}" title="${title}" style="font-size:.68rem;">${method}</span>`;
+  const sizeStyle = small ? "font-size:.56rem;padding:1px 6px;" : "font-size:.68rem;";
+  return `<span class="pill ${cls}" title="${title}" style="${sizeStyle}">${method}</span>`;
 }
 
 function labelValidityHtml(a, compact = false) {
@@ -2353,6 +2389,10 @@ function mlLabelStatusHtml(a, compact = false) {
 
 
 // ── Conversation list ─────────────────────────────────────────────────────────
+// Small inline icons for the card date row (inherit color via currentColor).
+const ICON_CAL  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>`;
+const ICON_CHAT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8 8 0 0 1-11.9 7L4 20l1.5-5A8 8 0 1 1 21 11.5Z"/></svg>`;
+
 function renderConvoList() {
   const el = document.getElementById("ag-convos");
   document.getElementById("ag-ccount").textContent =
@@ -2375,48 +2415,60 @@ function renderConvoList() {
     const flags = issueCount(a);
     const msgs  = c.parsed_messages || [];
     const method = auditMethod(a.source);
-    const mlLabelStatus = method === "ML" ? mlLabelStatusHtml(a, true) : "";
 
-    // Label tag (Lovable style chip)
+    // Label chip
     const labelText = a.label_assigned || (c.assigned_labels?.[0]) || null;
     const labelHtml = labelText
       ? `<span class="tag ${labelTagClass(labelText)}">${esc(labelText)}</span>`
       : `<span class="tag tag-gray">—</span>`;
 
+    // Label correctness — compact inline verdict
+    let correctHtml = "";
+    if (a.label_correct != null) {
+      const sameLabel = (a.label_assigned || "") === (a.label_should_be || "");
+      correctHtml = (a.label_correct === true || sameLabel)
+        ? `<span class="ci-correct ok">✓ label correct</span>`
+        : `<span class="ci-correct bad">✗ should be ${esc(a.label_should_be || "?")}</span>`;
+    } else if (method === "ML" && a.label_assigned) {
+      correctHtml = `<span class="ci-funnel">ML label</span>`;
+    }
+
     // Last message preview
     const lastMsg = msgs.length ? msgs[msgs.length - 1] : null;
-    const preview = lastMsg ? lastMsg.message.slice(0, 70) + (lastMsg.message.length > 70 ? "…" : "") : "";
+    const preview = lastMsg ? lastMsg.message.slice(0, 90) + (lastMsg.message.length > 90 ? "…" : "") : "";
 
     // Contact avatar with color based on name hash
     const contactAvCls = agentAv(c.contact_name || "Contact");
 
     const rowStyle = flags > 0
-      ? `border-left:3px solid var(--danger); background:var(--flagged-row-bg); padding-left:calc(1rem - 3px);`
+      ? `border-left:3px solid var(--danger); background:var(--flagged-row-bg); padding-left:calc(1.25rem - 3px);`
       : ``;
+
+    const datesHtml = (c.audit_date || c.convo_date) ? `
+          <div class="ci-dates">
+            ${c.audit_date ? `<span class="ci-date">${ICON_CAL} Audited <b>${esc(c.audit_date)}</b></span>` : ""}
+            ${c.convo_date ? `<span class="ci-date">${ICON_CHAT} Conversation <b>${esc(c.convo_date)}</b></span>` : ""}
+          </div>` : "";
 
     return `
       <div class="ci" onclick="selectConversation(${i})" style="opacity:0;${rowStyle}">
-        <div class="av av-sm ${contactAvCls}" style="flex-shrink:0;">${fmtInit(c.contact_name)}</div>
-        <div style="flex:1; min-width:0;">
-          <div style="display:flex; align-items:center; gap:8px; margin-bottom:3px;">
-            <span style="font-size:.84rem; font-weight:600; color:var(--text-primary); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(c.contact_name)}</span>
-            ${c.audit_date ? `<span style="font-size:.65rem;color:var(--text-muted);flex-shrink:0;">${esc(c.audit_date)}</span>` : ""}
-            ${flags > 0 ? `<span style="font-size:.68rem;background:rgba(220,38,38,.12);color:var(--danger);font-weight:700;padding:1px 6px;border-radius:99px;flex-shrink:0;">&#9873; ${flags} issue${flags > 1 ? "s" : ""}</span>` : ""}
+        <div class="av av-sm ${contactAvCls}">${fmtInit(c.contact_name)}</div>
+        <div class="ci-body">
+          <div class="ci-head">
+            <span class="ci-name">${esc(c.contact_name)}</span>
+            ${flags > 0 ? `<span class="ci-flag">&#9873; ${flags} issue${flags > 1 ? "s" : ""}</span>` : ""}
           </div>
-          <div style="display:flex; align-items:center; gap:7px; margin-bottom:3px; flex-wrap:wrap;">
+          <div class="ci-meta">
             ${labelHtml}
-            ${a.funnel_stage_reached ? `<span style="font-size:.68rem;color:var(--text-secondary);">· ${esc(a.funnel_stage_reached)}</span>` : ""}
+            ${correctHtml}
+            ${a.funnel_stage_reached ? `<span class="ci-funnel">· ${esc(a.funnel_stage_reached)} funnel</span>` : ""}
           </div>
-          ${mlLabelStatus ? `<div style="margin-bottom:3px;">${mlLabelStatus}</div>` : ""}
-          ${preview ? `<div style="font-size:.68rem;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(preview)}</div>` : ""}
+          ${preview ? `<div class="ci-preview">${esc(preview)}</div>` : ""}
+          ${datesHtml}
         </div>
-        <!-- Score badge -->
-        <div style="flex-shrink:0; display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
-          <div style="display:flex;align-items:center;gap:5px;">
-            ${score != null ? `<span class="pill ${pillClass(score)}">${fmtScore(score)}</span>` : ""}
-            ${Object.keys(a).length ? auditMethodPill(a.source) : ""}
-          </div>
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="#94A3B8" style="width:13px;height:13px;"><path fill-rule="evenodd" d="M8.22 5.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd"/></svg>
+        <div class="ci-aside">
+          ${Object.keys(a).length ? auditMethodPill(a.source, true) : ""}
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="#94A3B8"><path fill-rule="evenodd" d="M8.22 5.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd"/></svg>
         </div>
       </div>`;
   }).join("");
@@ -2656,8 +2708,12 @@ function renderAiAnalysis(a, invalidatedFlags, isValidated) {
         </div>` : ""}
 
       ${a.summary ? `
-        <div style="font-size:.72rem;color:var(--text-secondary);font-style:italic;line-height:1.6;padding:8px 10px;background:var(--surface-subtle);border-left:2px solid var(--surface-border);border-radius:0 6px 6px 0;margin-bottom:9px;">
-          ${esc(a.summary)}
+        <div style="font-size:.72rem;color:var(--text-secondary);line-height:1.5;padding:8px 10px 6px;background:var(--surface-subtle);border-left:2px solid var(--surface-border);border-radius:0 6px 6px 0;margin-bottom:9px;">
+          ${a.summary.split(/\s*\*\s+/).filter(s=>s.trim()).map(s=>`
+            <div style="display:flex;align-items:flex-start;gap:6px;padding:2px 0;">
+              <span style="color:var(--brand);flex-shrink:0;margin-top:1px;">›</span>
+              <span>${esc(s.trim())}</span>
+            </div>`).join("")}
         </div>` : ""}
 
       <div style="display:flex;justify-content:flex-end;padding-top:4px;">
@@ -4666,11 +4722,7 @@ function applyDatePreset(preset) {
 
   // Set the hidden select
   const sel = document.getElementById("date-filter");
-  if (preset === "all_time") {
-    sel.value = "today";  // Default fallback
-  } else {
-    sel.value = preset;
-  }
+  sel.value = preset;
 
   // Clear custom dates
   window._drpDateStart = "";

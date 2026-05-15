@@ -440,6 +440,11 @@ async def _fetch_agents_with_scores() -> list[dict]:
                        JOIN contacts ct ON ct.id = c.contact_id
                        WHERE c.agent_id = $1
                          AND c.audit_date = $2
+                         AND c.is_archived = FALSE
+                         AND cs.id = (
+                           SELECT MAX(cs2.id) FROM conversation_scores cs2
+                           WHERE cs2.conversation_id = c.id
+                         )
                          AND (
                            (cs.red_flags IS NOT NULL AND cs.red_flags::text NOT IN ('[]','null'))
                            OR (cs.label_correct = false AND cs.label_assigned IS DISTINCT FROM cs.label_should_be)
@@ -496,6 +501,11 @@ async def api_flags_realtime():
         FROM conversation_scores cs
         JOIN conversations c ON c.id = cs.conversation_id
         WHERE c.audit_date = $1
+          AND c.is_archived = FALSE
+          AND cs.id = (
+            SELECT MAX(cs2.id) FROM conversation_scores cs2
+            WHERE cs2.conversation_id = c.id
+          )
           AND (
             (cs.red_flags IS NOT NULL AND cs.red_flags::text NOT IN ('[]','null'))
             OR (cs.label_correct = false AND cs.label_assigned IS DISTINCT FROM cs.label_should_be)
@@ -567,7 +577,7 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
 
         # Load all conversations for this agent, newest first
         conv_rows = await conn.fetch(
-            """SELECT c.id, c.extracted_at, c.audit_date, c.assigned_labels, ct.name AS contact_name
+            """SELECT c.id, c.extracted_at, c.audit_date, c.convo_date, c.assigned_labels, ct.name AS contact_name
                FROM conversations c
                JOIN contacts ct ON ct.id = c.contact_id
                WHERE c.agent_id = $1 AND c.is_archived = FALSE
@@ -670,6 +680,7 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
             merged.append({
                 "contact_name":      contact,
                 "audit_date":        str(conv["audit_date"]) if conv["audit_date"] else None,
+                "convo_date":        (conv["convo_date"] or None),
                 "parsed_messages":   parsed_messages,
                 "assigned_labels":   list(conv["assigned_labels"] or []),
                 "analysis":          analysis,

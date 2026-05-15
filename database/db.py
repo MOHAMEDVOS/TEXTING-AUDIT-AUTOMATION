@@ -208,11 +208,12 @@ class Database:
                     contact_id = await self._upsert_contact(conn, contact_name)
 
                     labels = convo.get("assigned_labels") or []
+                    convo_date = (convo.get("convo_date") or "").strip()
 
                     conv_row = await conn.fetchrow(
                         """INSERT INTO conversations
-                               (agent_id, contact_id, texter_name, assigned_labels, extracted_at, audit_date)
-                           VALUES ($1, $2, $3, $4, $5, $6)
+                               (agent_id, contact_id, texter_name, assigned_labels, extracted_at, audit_date, convo_date)
+                           VALUES ($1, $2, $3, $4, $5, $6, $7)
                            RETURNING id""",
                         agent_id,
                         contact_id,
@@ -220,6 +221,7 @@ class Database:
                         labels,
                         extracted_at,
                         audit_date,
+                        convo_date,
                     )
                     conversation_id = conv_row["id"]
                     convo["conversation_id"] = conversation_id
