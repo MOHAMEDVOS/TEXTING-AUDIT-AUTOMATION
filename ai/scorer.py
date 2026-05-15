@@ -628,24 +628,44 @@ async def score_agent_conversations(
     except Exception as _e:
         logger.warning(f"[Scorer] session_logger failed (non-fatal): {_e}")
 
+    # ── Post-audit reflection (detached child process) ──────────────────────
+    # Dream-worker rule learning + semantic kNN rebuild can take minutes.
+    # Running them via run_in_executor does NOT detach — main.py's asyncio.run()
+    # calls loop.shutdown_default_executor() on exit, which blocks until those
+    # threads finish, keeping the dashboard result stuck on "pending".
+    # Spawning a fully detached process lets this audit run exit immediately.
     try:
-        from ai.dream_worker import should_run, run_dream_worker
-        if should_run():
-            logger.info("[Scorer] Dream worker threshold met — triggering reflection run")
-            asyncio.get_event_loop().run_in_executor(None, run_dream_worker)
-    except Exception as _e:
-        logger.warning(f"[Scorer] dream_worker check failed (non-fatal): {_e}")
+        import subprocess
+        import sys
+        from pathlib import Path
 
-    # ── Semantic auto-promote (self-learning pipeline) ──────────────────────
-    # Fire-and-forget: embedding 1000+ convos on CPU can take minutes.
-    # The scorer result is already returned; rebuild happens in background.
-    try:
-        from config.settings import SEMANTIC_LEARNING_ENABLED
-        if SEMANTIC_LEARNING_ENABLED:
-            from ai.prefilter.semantic_learner import auto_promote
-            asyncio.get_event_loop().run_in_executor(None, auto_promote)
+        proj_root = Path(__file__).resolve().parent.parent
+        reflection_script = proj_root / "scripts" / "post_audit_reflection.py"
+        log_dir = proj_root / "logs"
+        log_dir.mkdir(exist_ok=True)
+        refl_log = open(log_dir / "reflection.log", "a", encoding="utf-8")
+
+        popen_kwargs = dict(
+            cwd=str(proj_root),
+            stdin=subprocess.DEVNULL,
+            stdout=refl_log,
+            stderr=refl_log,
+        )
+        if sys.platform == "win32":
+            # CREATE_NO_WINDOW → background console process with no visible
+            # window. CREATE_NEW_PROCESS_GROUP → survives the parent exiting.
+            popen_kwargs["creationflags"] = (
+                subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
+            )
+        else:
+            popen_kwargs["start_new_session"] = True
+
+        subprocess.Popen([sys.executable, str(reflection_script)], **popen_kwargs)
+        logger.info(
+            "[Scorer] Post-audit reflection spawned (detached) — result returned now."
+        )
     except Exception as _e:
-        logger.warning(f"[Scorer] semantic auto-promote failed (non-fatal): {_e}")
+        logger.warning(f"[Scorer] could not spawn reflection process (non-fatal): {_e}")
 
     return {
         "overall_score": overall,

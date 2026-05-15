@@ -49,20 +49,21 @@ def _parse_msg_datetime(msg: dict) -> datetime | None:
         return None
 
     date_str = (msg.get("date") or "").strip()
-    if date_str:
-        # Parse "Thursday, March 26, 2026"
-        try:
-            parts = date_str.replace(",", "").split()
-            # parts = ["Thursday", "March", "26", "2026"]
-            month = _MONTH_MAP.get(parts[1].lower())
-            day = int(parts[2])
-            year = int(parts[3])
-            msg_date = date(year, month, day)
-        except Exception:
-            msg_date = get_now().date()
-    else:
-        # Empty date = today's messages scraped in current session
-        msg_date = get_now().date()
+    if not date_str:
+        # No date divider anywhere — leave unresolved. Never assume "today":
+        # scrapes run long after the conversation. Ordering uses `seq`, not time.
+        return None
+
+    # Parse "Thursday, March 26, 2026"
+    try:
+        parts = date_str.replace(",", "").split()
+        # parts = ["Thursday", "March", "26", "2026"]
+        month = _MONTH_MAP.get(parts[1].lower())
+        day = int(parts[2])
+        year = int(parts[3])
+        msg_date = date(year, month, day)
+    except Exception:
+        return None
 
     try:
         t = datetime.strptime(time_str, "%I:%M %p")
@@ -223,17 +224,19 @@ class Database:
                     conversation_id = conv_row["id"]
                     convo["conversation_id"] = conversation_id
 
-                    # Insert messages
+                    # Insert messages (seq preserves chronological scrape order)
                     parsed_messages = convo.get("parsed_messages") or []
-                    for msg in parsed_messages:
+                    for idx, msg in enumerate(parsed_messages):
                         sender = msg.get("sender", "unknown")
                         body = msg.get("message") or msg.get("text") or ""
                         sent_at = _parse_msg_datetime(msg)
+                        sc_date_label = (msg.get("date") or "").strip()
 
                         await conn.execute(
-                            """INSERT INTO messages (conversation_id, sender, body, sent_at)
-                               VALUES ($1, $2, $3, $4)""",
-                            conversation_id, sender, body, sent_at,
+                            """INSERT INTO messages
+                               (conversation_id, sender, body, sent_at, sc_date_label, seq)
+                               VALUES ($1, $2, $3, $4, $5, $6)""",
+                            conversation_id, sender, body, sent_at, sc_date_label, idx,
                         )
 
         logger.info(
@@ -288,10 +291,10 @@ class Database:
         """Return all messages for a conversation, ordered by sent_at."""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
-                """SELECT sender, body AS message, sent_at AS time
+                """SELECT sender, body AS message, sent_at AS time, sc_date_label
                    FROM messages
                    WHERE conversation_id = $1
-                   ORDER BY sent_at ASC NULLS FIRST, id ASC""",
+                   ORDER BY seq ASC, id ASC""",
                 conversation_id,
             )
             return [dict(r) for r in rows]

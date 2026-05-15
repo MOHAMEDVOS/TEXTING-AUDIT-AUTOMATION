@@ -19,6 +19,7 @@ import logging
 import os
 import subprocess
 import sys
+import threading
 import uuid
 from datetime import datetime, timedelta
 import pytz
@@ -55,6 +56,12 @@ _dashboard_rl = get_rate_limiter()
 PROJECT_ROOT = Path(__file__).parent.parent
 SCHEMA_PATH  = PROJECT_ROOT / "database" / "schema.sql"
 MAIN_PY      = str(PROJECT_ROOT / "main.py")
+
+# ── Persistent embedding service ──────────────────────────────────────────────
+# The dashboard hosts the embedding model (see ai/prefilter/embedding_service.py)
+# and tells every audit subprocess where to reach it, so subprocesses skip the
+# ~15-20s model load. Honors $PORT (Railway) and falls back to local port 5000.
+EMBEDDING_SERVICE_URL = f"http://127.0.0.1:{os.getenv('PORT', '5000')}"
 RUN_STATUS_DIR = PROJECT_ROOT / "logs" / "run_status"
 
 # â"€â"€ App setup â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
@@ -161,6 +168,18 @@ async def lifespan(app):
     # Start scheduled reset task
     reset_task = asyncio.create_task(_scheduled_reset_all(app.state.pool))
 
+    # Warm the embedding model in the background so the persistent embedding
+    # service is ready before the first audit subprocess asks for a vector.
+    # Daemon thread → never blocks startup or shutdown.
+    try:
+        from ai.prefilter.embedding_service import warmup as _warmup_embeddings
+        threading.Thread(
+            target=_warmup_embeddings, name="embed-warmup", daemon=True
+        ).start()
+        logger.info("Embedding model warmup started in background")
+    except Exception as e:
+        logger.warning(f"Could not start embedding warmup: {e}")
+
     yield
 
     # Cleanup
@@ -173,6 +192,13 @@ async def lifespan(app):
 
 
 app = FastAPI(lifespan=lifespan)
+
+# Mount the persistent embedding service endpoints (/internal/embed*).
+try:
+    from ai.prefilter.embedding_service import router as embedding_router
+    app.include_router(embedding_router)
+except Exception as _e:
+    logging.getLogger(__name__).warning(f"Embedding service router not mounted: {_e}")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-7s | %(message)s")
 logger = logging.getLogger(__name__)
@@ -263,10 +289,21 @@ class SessionAuthMiddleware(BaseHTTPMiddleware):
     """
     _OPEN = {"/login", "/auth/google", "/auth/callback", "/auth/logout"}
 
+    # Localhost-only IPs allowed to reach /internal/* (subprocess embedding traffic).
+    _LOCAL_HOSTS = {"127.0.0.1", "::1", "localhost"}
+
     async def dispatch(self, request: StarletteRequest, call_next):
         path = request.url.path
         if path in self._OPEN or path.startswith("/auth/") or path.startswith("/static/"):
             return await call_next(request)
+        # Internal embedding service: open to local subprocess traffic only.
+        if path.startswith("/internal/"):
+            client_host = request.client.host if request.client else ""
+            if client_host in self._LOCAL_HOSTS:
+                return await call_next(request)
+            return StarletteJSONResponse(
+                {"success": False, "error": "Forbidden"}, status_code=403
+            )
         user = request.session.get("user_email")
         if not user:
             if path.startswith("/api/"):
@@ -578,10 +615,10 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
 
             # Load messages for this conversation
             msg_rows = await conn2.fetch(
-                """SELECT sender, body AS message, sent_at AS time
+                """SELECT sender, body AS message, sent_at AS time, sc_date_label
                    FROM messages
                    WHERE conversation_id = $1
-                   ORDER BY sent_at ASC NULLS FIRST, id ASC""",
+                   ORDER BY seq ASC, id ASC""",
                 conv_id,
             )
             parsed_messages = [dict(m) for m in msg_rows]
@@ -1253,6 +1290,9 @@ async def api_run(body: RunRequest):
             "GROQ_PINNED_KEY": assignment["api_key"],
             "GROQ_ASSIGNMENT_STRICT": "1",
             "AUDIT_STATUS_FILE": str(status_path),
+            # Point the subprocess at the dashboard-hosted embedding service so
+            # it skips the in-process sentence-transformer model load.
+            "EMBEDDING_SERVICE_URL": EMBEDDING_SERVICE_URL,
         }
 
         cmd = [
@@ -2261,7 +2301,7 @@ async def api_detailed_dashboard(
                         SELECT m.body FROM messages m
                         WHERE m.conversation_id = c.id
                           AND m.sender = 'agent'
-                        ORDER BY m.sent_at ASC NULLS FIRST, m.id ASC
+                        ORDER BY m.seq ASC, m.id ASC
                         LIMIT 1
                     ) AS preview_snippet
                 FROM conversations c
@@ -2334,10 +2374,10 @@ async def api_conversation_messages(conversation_id: int):
 
             # Messages
             msg_rows = await conn.fetch(
-                """SELECT sender, body AS message, sent_at AS time
+                """SELECT sender, body AS message, sent_at AS time, sc_date_label
                    FROM messages
                    WHERE conversation_id = $1
-                   ORDER BY sent_at ASC NULLS FIRST, id ASC""",
+                   ORDER BY seq ASC, id ASC""",
                 conversation_id,
             )
 

@@ -2497,18 +2497,6 @@ function renderChatMessages(msgs, convo) {
       return `${h}:${String(m).padStart(2, "0")} ${ampm}`;
     } catch { return raw; }
   }
-  // Extract date string for separator: "May 8, 2026"
-  function fmtMsgDate(raw) {
-    if (!raw) return "";
-    try {
-      // If it looks like a day name date ("Thursday, March 26, 2026"), use as-is
-      if (/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)/i.test(raw.trim())) return raw.trim();
-      const d = new Date(raw);
-      if (isNaN(d)) return "";
-      return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-    } catch { return ""; }
-  }
-
   let lastDateShown = "";
 
   msgs.forEach((msg, i) => {
@@ -2528,16 +2516,15 @@ function renderChatMessages(msgs, convo) {
       ? `<div class="bbl-sender">${esc(msg.sender)}</div>`
       : "";
 
-    // Telegram-style date separator — show when date changes
-    const rawTime = msg.time || "";
-    const dateStr = fmtMsgDate(rawTime) || (msg.date ? fmtMsgDate(msg.date) : "");
+    // Date separator — show exactly what SmarterContact showed, when it changes
+    const dateStr = (msg.sc_date_label || "").trim();
     if (dateStr && dateStr !== lastDateShown) {
       lastDateShown = dateStr;
       html.push(`<div class="chat-date-sep"><span>${esc(dateStr)}</span></div>`);
     }
 
     // Clean time for inside the bubble
-    const cleanTime = fmtMsgTime(rawTime);
+    const cleanTime = fmtMsgTime(msg.time || "");
     const timeInBubble = cleanTime
       ? `<span class="bbl-time">${esc(cleanTime)}</span>`
       : "";

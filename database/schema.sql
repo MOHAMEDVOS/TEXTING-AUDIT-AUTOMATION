@@ -61,9 +61,15 @@ CREATE TABLE IF NOT EXISTS messages (
     conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
     sender          TEXT NOT NULL,
     body            TEXT NOT NULL,
-    sent_at         TIMESTAMPTZ
+    sent_at         TIMESTAMPTZ,
+    sc_date_label   TEXT NOT NULL DEFAULT '',
+    seq             INTEGER NOT NULL DEFAULT 0
     -- embedding       VECTOR(1536)   -- pgvector column, NULL for now (future use)
 );
+
+-- Migration: add columns to existing tables
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS sc_date_label TEXT NOT NULL DEFAULT '';
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS seq INTEGER NOT NULL DEFAULT 0;
 
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
 

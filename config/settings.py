@@ -113,6 +113,13 @@ PREFILTER_T3_LABEL_CONFIDENCE = float(os.getenv("PREFILTER_T3_LABEL_CONFIDENCE",
 # Embedding model (sentence-transformers, downloaded on first use).
 PREFILTER_EMBEDDING_MODEL = os.getenv("PREFILTER_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 
+# Persistent embedding service (Solution B). When set, embedder.py fetches
+# vectors over HTTP from a long-lived process (the dashboard) instead of
+# loading the ~80MB sentence-transformer model in every audit subprocess.
+# Empty → load the model in-process (CLI runs, or when no service is up).
+# The dashboard sets this in the env of every subprocess it spawns.
+EMBEDDING_SERVICE_URL = os.getenv("EMBEDDING_SERVICE_URL", "")
+
 # Artifact paths (kNN index + classifier weights).
 PREFILTER_DIR             = PROJECT_ROOT / "ai" / "prefilter" / "artifacts"
 PREFILTER_INDEX_PATH      = PREFILTER_DIR / "knn_index.faiss"

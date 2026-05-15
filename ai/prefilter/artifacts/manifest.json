@@ -1,14 +1,14 @@
 {
   "knn_index": {
-    "built_at": "2026-05-14T02:53:16.094584Z",
-    "n_vectors": 1436,
-    "n_clean": 1350,
-    "n_flagged": 86,
+    "built_at": "2026-05-15T17:00:44.393312Z",
+    "n_vectors": 1472,
+    "n_clean": 1384,
+    "n_flagged": 88,
     "embedding_model": "all-MiniLM-L6-v2",
     "dimension": 384
   },
   "classifier": {
-    "trained_at": "2026-05-14T02:53:56.242210Z",
+    "trained_at": "2026-05-15T17:01:43.391462Z",
     "n_train": 660,
     "n_clean": 575,
     "n_flagged": 85,

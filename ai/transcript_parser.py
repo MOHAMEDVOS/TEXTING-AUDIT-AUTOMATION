@@ -231,6 +231,25 @@ def parse_transcript(
 
     # Reverse so output is chronological (oldest first)
     messages.reverse()
+
+    # Forward-fill date labels. SmarterContact shows one divider per day, so a
+    # message with no divider belongs to the most recent dated message above it.
+    # An undated trailing message is the LAST known day — never "today".
+    last_date = ""
+    for m in messages:
+        if m["date"]:
+            last_date = m["date"]
+        elif last_date:
+            m["date"] = last_date
+
+    # Backfill leading messages that appeared before the first divider.
+    first_date = next((m["date"] for m in messages if m["date"]), "")
+    if first_date:
+        for m in messages:
+            if m["date"]:
+                break
+            m["date"] = first_date
+
     return messages
 
 

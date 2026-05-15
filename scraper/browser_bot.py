@@ -494,85 +494,97 @@ class SmarterContactBot:
 
     async def _navigate_calendar_to_month(self, target_year: int, target_month: int) -> None:
         """
-        Navigate the react-date-range calendar to show the target month/year.
-        Uses the month header label to determine current position, then clicks
-        prev/next buttons as needed.
+        Navigate SmarterContact's custom react-date-range calendar so the target
+        month/year is the FIRST visible month.
+
+        Verified DOM (May 2026):
+          <div class="rdrCustomHeader">
+            <div class="rdrHeaderArrows">
+              <button data-test-id="..._arrow-prev-year">    (« double — year)
+              <button data-test-id="..._arrow-prev-month">   (‹ single — month)
+            </div>
+            <span class="rdrHeaderLabel">May 2026 — Jun 2026</span>
+            <div class="rdrHeaderArrows">
+              <button data-test-id="..._arrow-next-month">   (› single — month)
+              <button data-test-id="..._arrow-next-year">    (» double — year)
+            </div>
+          </div>
+
+        Sequence: fix the YEAR first (double arrows), THEN the MONTH (single
+        arrows). This avoids clicking the single month arrow 10+ times to cross
+        a year boundary.
         """
+        import re
+
         MONTH_NAMES = [
             "", "January", "February", "March", "April", "May", "June",
             "July", "August", "September", "October", "November", "December"
         ]
+        PFX = "messenger_nav_inbox_all_sort-by-dates"
+        SEL_PREV_YEAR  = f'[data-test-id="{PFX}_arrow-prev-year"], .rdrPrevYear'
+        SEL_NEXT_YEAR  = f'[data-test-id="{PFX}_arrow-next-year"], .rdrNextYear'
+        SEL_PREV_MONTH = f'[data-test-id="{PFX}_arrow-prev-month"], .rdrPrevMonth'
+        SEL_NEXT_MONTH = f'[data-test-id="{PFX}_arrow-next-month"], .rdrNextMonth'
 
-        max_clicks = 60  # safety limit (5 years of navigation)
-        for _ in range(max_clicks):
-            # Read current month/year from the calendar header
+        async def _read_current() -> tuple[int | None, int | None]:
+            """Return (year, month) of the FIRST visible calendar month."""
             try:
-                header_label = await self.page.locator(
-                    ".rdrMonthAndYearPickers, .rdrHeaderLabel, .rdrMonthName"
-                ).first.inner_text()
+                label = await self.page.locator(
+                    ".rdrHeaderLabel"
+                ).first.inner_text(timeout=3000)
             except Exception:
-                # Fallback: try reading from select elements
-                try:
-                    month_sel = await self.page.locator("select.rdrMonthPicker").first.input_value()
-                    year_sel = await self.page.locator("select.rdrYearPicker").first.input_value()
-                    current_month = int(month_sel) + 1  # 0-indexed
-                    current_year = int(year_sel)
-                    header_label = f"{MONTH_NAMES[current_month]} {current_year}"
-                except Exception:
-                    logger.warning(f"[Worker-{self.worker_id}] Cannot read calendar header")
-                    return
-
-            # Parse current month/year from header text
-            # e.g. "May 2026", "March 2026", or abbreviated "Mar 2026 - Apr 2026"
-            current_month = None
-            current_year = None
+                return None, None
+            # Label e.g. "May 2026 — Jun 2026" — parse only the part before the dash
+            first = re.split(r"[—–-]", label)[0].strip()
+            month = None
             for i, name in enumerate(MONTH_NAMES):
-                if not name:
-                    continue
-                # Check for full name or 3-letter abbreviation
-                if name in header_label or name[:3] in header_label:
-                    current_month = i
+                if name and (name in first or name[:3] in first):
+                    month = i
                     break
-            import re
-            year_match = re.search(r'\b(20\d{2})\b', header_label)
-            if year_match:
-                current_year = int(year_match.group(1))
+            ym = re.search(r"\b(20\d{2})\b", first)
+            year = int(ym.group(1)) if ym else None
+            return year, month
 
-            if current_month is None or current_year is None:
+        # ── Phase 1: YEAR — double arrows ──────────────────────────────────
+        for _ in range(20):
+            year, _month = await _read_current()
+            if year is None:
                 logger.warning(
-                    f"[Worker-{self.worker_id}] Could not parse calendar header: {header_label}"
+                    f"[Worker-{self.worker_id}] Cannot read calendar header (year phase)"
                 )
                 return
-
-            # Calculate the difference in months
-            diff = (target_year - current_year) * 12 + (target_month - current_month)
-
-            if diff == 0:
-                return  # Already on the right month
-
-            if diff >= 12:
-                btn = self.page.locator(
-                    "button.rdrNextYearButton, [aria-label='Next Year'], .rdrNextYear"
-                ).first
-            elif diff <= -12:
-                btn = self.page.locator(
-                    "button.rdrPrevYearButton, [aria-label='Previous Year'], .rdrPrevYear"
-                ).first
-            elif diff > 0:
-                btn = self.page.locator(
-                    "button.rdrNextButton, .rdrNextMonth, [aria-label='Next Month']"
-                ).first
-            else:
-                btn = self.page.locator(
-                    "button.rdrPrevButton, .rdrPrevMonth, [aria-label='Previous Month']"
-                ).first
-
+            if year == target_year:
+                break
+            sel = SEL_NEXT_YEAR if year < target_year else SEL_PREV_YEAR
             try:
-                await btn.click()
-                await human_delay(0.2, 0.3)
+                await self.page.locator(sel).first.click()
+                await human_delay(0.2, 0.35)
             except Exception as e:
-                logger.warning(f"[Worker-{self.worker_id}] Calendar nav click failed: {e}")
+                logger.warning(f"[Worker-{self.worker_id}] Year arrow click failed: {e}")
                 return
+
+        # ── Phase 2: MONTH — single arrows ─────────────────────────────────
+        for _ in range(14):
+            _year, month = await _read_current()
+            if month is None:
+                logger.warning(
+                    f"[Worker-{self.worker_id}] Cannot read calendar header (month phase)"
+                )
+                return
+            if month == target_month:
+                break
+            sel = SEL_NEXT_MONTH if month < target_month else SEL_PREV_MONTH
+            try:
+                await self.page.locator(sel).first.click()
+                await human_delay(0.2, 0.35)
+            except Exception as e:
+                logger.warning(f"[Worker-{self.worker_id}] Month arrow click failed: {e}")
+                return
+
+        logger.info(
+            f"[Worker-{self.worker_id}] ✓ Calendar at "
+            f"{MONTH_NAMES[target_month]} {target_year}"
+        )
 
     async def _click_calendar_day(self, day: int, month: int, year: int) -> None:
         """
