@@ -121,6 +121,13 @@ def _canon_flag_text(text: str) -> str:
     return t
 
 
+def canon_flag_text(text: str) -> str:
+    """Public alias for flag-text canonicalization — lets the deterministic T4
+    tier and the dream worker share one normalization when comparing flag
+    strings (learned-rule suppression matching)."""
+    return _canon_flag_text(text)
+
+
 _WHITELIST_CANON = {_canon_flag_text(x): x for x in WHITELIST_FLAG_OUTPUTS}
 
 

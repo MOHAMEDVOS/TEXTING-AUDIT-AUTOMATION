@@ -332,6 +332,31 @@ def _cluster_feedback(entries: list[dict]) -> list[dict]:
     return clusters
 
 
+def _match_t4_whitelist(flags: list[str]) -> list[str]:
+    """
+    Return the canonical Tier-4 whitelist flag texts that `flags` map onto.
+
+    Used to decide whether a feedback cluster should also suppress a
+    deterministic T4 flag. Empty list when none of the flags are T4 flags
+    (e.g. label-only feedback) — in that case only the Groq prompt is updated.
+    """
+    try:
+        from ai.prefilter._guards import WHITELIST_FLAG_OUTPUTS, canon_flag_text
+    except Exception as e:
+        logger.debug("[DreamWorker] T4 whitelist match skipped: %r", e)
+        return []
+
+    t4_canon = {canon_flag_text(w): w for w in WHITELIST_FLAG_OUTPUTS}
+    matched: list[str] = []
+    for f in flags:
+        if not isinstance(f, str) or not f.strip():
+            continue
+        canonical = t4_canon.get(canon_flag_text(f))
+        if canonical and canonical not in matched:
+            matched.append(canonical)
+    return matched
+
+
 def _extract_local_rules(clusters: list[dict]) -> list[dict]:
     """
     Generate correction rules from feedback clusters using local pattern analysis.
@@ -397,13 +422,24 @@ def _extract_local_rules(clusters: list[dict]) -> list[dict]:
                 f"false positives in this pattern."
             )
 
-        rules.append({
+        rule = {
             "rule_text": rule_text,
             "category": category,
             "source_flags": list(set(all_flags[:5])),  # Deduplicated, capped at 5
             "extraction_method": "local_pattern",
             "cluster_count": count,
-        })
+        }
+
+        # C.7 — route feedback into the deterministic Tier-4 tier too. If the
+        # rejected flags map onto canonical T4 whitelist flags (and confidence
+        # is high, i.e. count >= 2), attach a structured suppression list so
+        # tier4_flag_generator masks the pattern — parity with the Groq path.
+        if confidence == "high":
+            suppresses_t4 = _match_t4_whitelist(all_flags)
+            if suppresses_t4:
+                rule["suppresses_t4_flags"] = suppresses_t4
+
+        rules.append(rule)
 
     logger.info(
         f"[DreamWorker] Local extractor produced {len(rules)} rule(s) "

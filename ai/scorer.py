@@ -78,6 +78,40 @@ def _load_invalid_flag_patterns(dsn: str) -> set[str]:
         return set()
 
 
+def _load_invalid_flags_by_conversation(dsn: str) -> dict[int, set[str]]:
+    """
+    Load reviewer-rejected flags keyed by their exact source conversation.
+
+    Conversation-scoped counterpart to _load_invalid_flag_patterns: when a
+    reviewer marks a flag "Not Valid" on a specific conversation, that flag
+    must never re-appear on a re-audit of THAT conversation — even if the same
+    flag text is legitimate elsewhere. Precise, no global over-suppression.
+
+    Returns {conversation_id: {lowercased flag text, ...}}.
+    Returns empty dict on any error so scoring always continues.
+    """
+    try:
+        with psycopg2.connect(dsn) as con:
+            with con.cursor() as cur:
+                cur.execute(
+                    "SELECT conversation_id, red_flag FROM flag_feedback "
+                    "WHERE status = 'invalid' AND conversation_id IS NOT NULL"
+                )
+                by_conv: dict[int, set[str]] = {}
+                for cid, flag in cur.fetchall():
+                    if cid is None or not flag:
+                        continue
+                    by_conv.setdefault(int(cid), set()).add(flag.lower().strip())
+        logger.debug(
+            f"[Scorer] Loaded conversation-scoped rejected flags for "
+            f"{len(by_conv)} conversation(s)"
+        )
+        return by_conv
+    except Exception as e:
+        logger.warning(f"[Scorer] Could not load conversation-scoped flags: {e}")
+        return {}
+
+
 def _filter_flags(flags: list[str], patterns: set[str]) -> list[str]:
     """
     Remove any flag whose text fuzzy-matches a known-invalid pattern.
@@ -196,6 +230,9 @@ async def score_agent_conversations(
 
     # Loaded once per run — mid-run DB changes are fine; they take effect on the next full run.
     invalid_patterns = _load_invalid_flag_patterns(DATABASE_URL)
+    # Conversation-scoped rejections: a flag a reviewer killed on conversation X
+    # must not re-appear when X is re-audited (one query, applied per conversation).
+    conv_rejected = _load_invalid_flags_by_conversation(DATABASE_URL)
 
     # ── Per-account audit config (funnel tier + guidelines) ────────────────
     # Fetched once per scoring run; same config applies to every conversation
@@ -271,6 +308,12 @@ async def score_agent_conversations(
                 result["conversation_id"] = convo["conversation_id"]
 
             result["red_flags"] = _filter_flags(result.get("red_flags") or [], invalid_patterns)
+            # Conversation-scoped: drop flags a reviewer rejected on THIS exact conversation.
+            _cid = convo.get("conversation_id")
+            if _cid is not None:
+                _cr = conv_rejected.get(int(_cid)) if str(_cid).isdigit() else None
+                if _cr:
+                    result["red_flags"] = _filter_flags(result["red_flags"], _cr)
 
             score = result.get("compliance_score")
             flags = len(result.get("red_flags") or [])
@@ -332,6 +375,11 @@ async def score_agent_conversations(
     # Strip any injected wrong-label flags that are known-invalid
     for r in per_convo:
         r["red_flags"] = _filter_flags(r.get("red_flags") or [], invalid_patterns)
+        _cid = r.get("conversation_id")
+        if _cid is not None and str(_cid).isdigit():
+            _cr = conv_rejected.get(int(_cid))
+            if _cr:
+                r["red_flags"] = _filter_flags(r["red_flags"], _cr)
 
     # ── Red flags: count conversations with ≥1 flag (not total mistakes) ────
     # Each flagged conversation counts as 1, regardless of how many issues it has.

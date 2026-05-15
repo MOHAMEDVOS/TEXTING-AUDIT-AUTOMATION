@@ -166,6 +166,31 @@ def inject_into_prompt(base_prompt: str) -> str:
     return base_prompt + rules_block
 
 
+def get_t4_suppressed_flags() -> set[str]:
+    """
+    Canonicalized flag texts that the deterministic Tier-4 generator should
+    suppress at output time.
+
+    Sourced from active learned rules carrying a `suppresses_t4_flags` list
+    (written by the dream worker when reviewers repeatedly mark a deterministic
+    flag invalid). Returns an empty set when no such rules exist — a zero-cost
+    path for the common case. This is the T4 counterpart of inject_into_prompt():
+    it routes the same human feedback into the deterministic tier.
+    """
+    rules = load_rules()
+    if not rules:
+        return set()
+
+    from ai.prefilter._guards import canon_flag_text
+
+    suppressed: set[str] = set()
+    for rule in rules:
+        for flag in rule.get("suppresses_t4_flags") or []:
+            if isinstance(flag, str) and flag.strip():
+                suppressed.add(canon_flag_text(flag))
+    return suppressed
+
+
 def get_rules_summary() -> dict:
     """
     Return a summary of loaded rules for dashboard status endpoint.

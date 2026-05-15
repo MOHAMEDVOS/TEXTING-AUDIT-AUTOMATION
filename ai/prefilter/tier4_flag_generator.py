@@ -58,6 +58,49 @@ _INTEREST_PATTERNS = [
     # NOTE: we do NOT include generic affirmatives (yeah, yes, ok) — too many false positives
 ]
 
+# Third-party referral framing — "my neighbor is interested" means the CONTACT
+# is NOT interested themselves; it is a referral (Scenario D), not a hand-raise.
+_REFERRAL_INTEREST_RE = re.compile(
+    r"\b(neighbor|friend|someone\s+else|my\s+(brother|sister|mom|dad|mother|father|"
+    r"son|daughter|cousin|uncle|aunt|partner|wife|husband|buddy|co-?worker))\b",
+    re.I,
+)
+# Negated interest — "not interested", "isn't interested" — the token is NOT a hand-raise.
+_NEGATED_INTEREST_RE = re.compile(
+    r"\b(not|never|no)\b(?:\s+\w+){0,2}\s+interested\b|\bisn'?t\s+interested\b",
+    re.I,
+)
+
+
+def _contact_showed_genuine_interest(contact_msgs: list[dict]) -> bool:
+    """
+    True only when the CONTACT expresses interest in selling THEIR OWN property.
+
+    Excludes third-party referrals ("my neighbor is interested") and negated
+    interest ("not interested") — both falsely matched the bare `interested`
+    keyword and produced invalid F9 abandonment flags.
+    """
+    for m in contact_msgs:
+        body = m.get("message") or m.get("body") or ""
+        if not any(p.search(body) for p in _INTEREST_PATTERNS):
+            continue
+        if _REFERRAL_INTEREST_RE.search(body):
+            continue  # referral — not the contact's own interest
+        if _NEGATED_INTEREST_RE.search(body):
+            continue  # "not interested"
+        return True
+    return False
+
+# Handoff / escalation phrasing — ending an engaged lead with a handoff is the
+# CORRECT close, not abandonment. Used to suppress FLAG 9 false positives.
+_HANDOFF_RE = re.compile(
+    r"\b(partner|team|colleague|manager|specialist|someone)\b.{0,60}"
+    r"\b(touch\s+base|reach\s+out|be\s+in\s+touch|contact\s+you|call\s+you|connect|go\s+over)\b"
+    r"|\bgo\s+over\s+(the\s+)?next\s+steps\b"
+    r"|\b(pass(ing)?|hand(ing)?)\b.{0,30}\b(to\s+(my|our|the)|over|along)\b",
+    re.I,
+)
+
 _PILLAR_KEYWORDS = {
     "condition":  re.compile(r"\b(condition|repair|fix|roof|foundation|needs\s+work|fixer)\b", re.I),
     "price":      re.compile(r"\b(price|how\s+much|worth|value|offer|asking)\b", re.I),
@@ -98,6 +141,14 @@ _CONTACT_PRICE_STATED_RE = re.compile(
     r"(\$\s?\d[\d,]*(?:\s*(?:k|K|thousand|hundred))?)"
     r"|(\b\d[\d,]*\s*(?:k|K|thousand)\b)"
     r"|\b(?:want|asking|ask|need|looking\s+for|take|accept)\s+\$?\s?\d",
+    re.I,
+)
+
+# Rental-income framing around a price ("$75k and I collect $900/mo rent").
+# A price stated alongside rental yield is a DEAL signal, not an above-market quote —
+# it must never trigger the above-market referral-exit flag.
+_RENT_CONTEXT_RE = re.compile(
+    r"\b(rent|rental|tenant|leas(e|ed|ing)|per\s+month|a\s+month|/\s?mo\b|monthly\s+income|cash\s+flow)\b",
     re.I,
 )
 
@@ -248,12 +299,19 @@ def generate(
             break
 
     # ── FLAG 9: Ended conversation after lead showed interest ────────
-    contact_interested = any(
-        p.search((m.get("message") or m.get("body") or ""))
-        for m in contact_msgs
-        for p in _INTEREST_PATTERNS
+    # GUARD: a handoff/escalation is the CORRECT way to close an engaged lead —
+    # not abandonment. Suppress F9 if the agent handed the lead off anywhere in
+    # the thread, or the conversation is labeled as a successful push.
+    agent_handed_off = any(
+        _HANDOFF_RE.search(m.get("message") or m.get("body") or "")
+        for m in agent_msgs
     )
-    if contact_interested and messages:
+    label_is_push = any(
+        ("push" in l.lower() or "deal closed" in l.lower() or l.strip().lower() == "sold")
+        for l in assigned_labels
+    )
+    contact_interested = _contact_showed_genuine_interest(contact_msgs)
+    if contact_interested and messages and not agent_handed_off and not label_is_push:
         last_sender = (messages[-1].get("sender") or "").strip().lower()
         # Agent was last speaker AND no follow-up questions => ended prematurely
         if last_sender not in ("contact", "lead"):
@@ -345,16 +403,51 @@ def generate(
     # ── FLAG 15: Agent kept pushing after above-market price ──────────────────
     # Script: if price is above market, do the $1k referral close and END.
     # If the agent kept pushing (timeline/motivation/etc.) instead → violation.
+    #
+    # GUARD: T4 is the conservative tier and has NO comp/market-value data — it
+    # cannot judge whether an ordinary price (e.g. $75k) is above market. Only
+    # the unambiguous Scenario-G case (joke-tier $1M+ quote) is safe to flag here;
+    # all other above-market judgments are deferred to Groq. Also suppress when
+    # the contact framed the number around rental income — that is a yield/deal
+    # signal, the price is almost certainly below market.
     _abv = detect_abv_mv_response(messages)
     if _abv["contact_stated_price"] and _abv["agent_kept_pushing"] and not _abv["agent_did_referral_close"]:
-        _price = _abv["price_amount"]
-        raw_flags.append(
-            f"Agent kept pushing after above-market price (${_price:,.0f}) "
-            "instead of doing the $1k referral close per script."
-        )
+        _price = _abv["price_amount"] or 0
+        _price_msg = ""
+        if _abv["price_msg_index"] is not None:
+            _pm = messages[_abv["price_msg_index"]]
+            _price_msg = _pm.get("message") or _pm.get("body") or ""
+        _rent_framed = bool(_RENT_CONTEXT_RE.search(_price_msg))
+        if _price >= 1_000_000 and not _rent_framed:
+            raw_flags.append(
+                f"Agent kept pushing after above-market price (${_price:,.0f}) "
+                "instead of doing the $1k referral close per script."
+            )
 
     # ── Normalize through the whitelist ──────────────────────────────
     final_flags = normalize_red_flags(raw_flags)
+
+    # ── C.7: drop flags reviewers have repeatedly marked invalid ──────
+    # The dream worker writes `suppresses_t4_flags` onto learned rules when a
+    # deterministic flag pattern is consistently rejected. Masking it here gives
+    # the deterministic tier parity with the Groq learned-rules path. Zero-cost
+    # when no such rules exist; never blocks generation on error.
+    try:
+        from ai.learned_rules import get_t4_suppressed_flags
+        from ai.prefilter._guards import canon_flag_text
+        _suppressed = get_t4_suppressed_flags()
+        if _suppressed:
+            before = len(final_flags)
+            final_flags = [
+                f for f in final_flags if canon_flag_text(f) not in _suppressed
+            ]
+            if len(final_flags) < before:
+                logger.info(
+                    f"[T4] {contact_name}: suppressed {before - len(final_flags)} "
+                    f"flag(s) via learned feedback rules"
+                )
+    except Exception as e:
+        logger.debug("[T4] learned-flag suppression skipped: %r", e)
 
     # ── Build scores ────────────────────────────────────────────────
     # Calibrated to match Groq's typical score distribution:
