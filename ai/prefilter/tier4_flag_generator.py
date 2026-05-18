@@ -47,6 +47,7 @@ from ai.prefilter.summary_builder import (
     classify_agent_messages,
     detect_abv_mv_response,
 )
+from ai.prefilter.pillar_detection import detect_gathered_pillars
 
 logger = logging.getLogger(__name__)
 
@@ -100,13 +101,6 @@ _HANDOFF_RE = re.compile(
     r"|\b(pass(ing)?|hand(ing)?)\b.{0,30}\b(to\s+(my|our|the)|over|along)\b",
     re.I,
 )
-
-_PILLAR_KEYWORDS = {
-    "condition":  re.compile(r"\b(condition|repair|fix|roof|foundation|needs\s+work|fixer)\b", re.I),
-    "price":      re.compile(r"\b(price|how\s+much|worth|value|offer|asking)\b", re.I),
-    "timeline":   re.compile(r"\b(timeline|when|how\s+soon|ready\s+to|urgency|asap)\b", re.I),
-    "motivation": re.compile(r"\b(motivation|why\s+(sell|selling)|reason|situation|circumstance)\b", re.I),
-}
 
 _WRONG_NAME_RE = re.compile(r"\b(wrong\s+name|that.?s\s+not\s+my\s+name|who\s+is\s+\w+)\b", re.I)
 
@@ -263,16 +257,10 @@ def generate(
             # Skip if this is a polite call OFFER/QUESTION, not a booking confirmation
             if _CALL_OFFER_RE.search(body) or body.rstrip().endswith("?"):
                 break
-            # Check if any pillars were gathered before the call offer
-            all_text_before = " ".join(
-                (prior.get("message") or prior.get("body") or "")
-                for prior in messages
-                if messages.index(prior) < messages.index(m)
-            ).lower()
-            pillars_hit = sum(
-                1 for p_re in _PILLAR_KEYWORDS.values()
-                if p_re.search(all_text_before)
-            )
+            # Check if the lead actually answered any pillars before the
+            # call offer — agent questions alone do not pre-qualify.
+            idx = messages.index(m)
+            pillars_hit = len(detect_gathered_pillars(messages[:idx]))
             if pillars_hit < 2:
                 raw_flags.append("Agreed to call without pre-qualifying.")
             break
@@ -320,14 +308,16 @@ def generate(
             if len(last_body) < 30 and not any(w in last_body for w in ["?", "call", "schedule", "when"]):
                 raw_flags.append("Ended conversation after lead showed interest.")
 
-    # ── Shared text vars (used by FLAG 10, 11, 12, and result builder) ─
-    all_text = " ".join(
-        (m.get("message") or m.get("body") or "") for m in messages
-    ).lower()
+    # ── Shared vars (used by FLAG 10, 11, 12, and result builder) ─────
     agent_text = " ".join(
         (m.get("message") or m.get("body") or "") for m in agent_msgs
     ).lower()
-    pillar_count = sum(1 for p_re in _PILLAR_KEYWORDS.values() if p_re.search(all_text))
+    # Pillars count only when the LEAD positively answered them — never when
+    # the agent merely asked. Counting topic keywords across the whole
+    # transcript used to inflate pillar_count and fire a false "all 4 pillars
+    # gathered" flag.
+    gathered_pillars = detect_gathered_pillars(messages)
+    pillar_count = len(gathered_pillars)
 
     # ── FLAG 10: Pushed to close with zero property info ─────────────
     # Only flag on explicit contract/signing language — 'deal' and 'close' are too
@@ -500,10 +490,7 @@ def generate(
         "script_adherence_score": script,
         "red_flags": final_flags,
         "funnel_stage_reached": funnel_stage,
-        "pillars_gathered": [
-            name for name, p_re in _PILLAR_KEYWORDS.items()
-            if p_re.search(all_text)
-        ],
+        "pillars_gathered": sorted(gathered_pillars),
         # Accurate rebuttal breakdown from SMS-script classifier
         "rebuttals_used": [
             f"{_msg_cls['rebuttals']} rebuttal(s)",

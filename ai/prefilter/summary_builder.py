@@ -16,6 +16,8 @@ from __future__ import annotations
 import re
 from typing import Optional
 
+from ai.prefilter.pillar_detection import detect_gathered_pillars
+
 
 # ── Tone / intent detection patterns ─────────────────────────────────────────
 
@@ -686,18 +688,6 @@ def _find_first(msgs: list[dict], patterns: list) -> dict | None:
     return None
 
 
-def _pillars_from_text(text: str) -> list[str]:
-    text = text.lower()
-    found = []
-    if any(kw in text for kw in ["condition", "repairs", "roof", "needs work", "updated", "gut"]):
-        found.append("condition")
-    if any(kw in text for kw in ["how much", "price", "offer", "worth", "value"]):
-        found.append("price")
-    if any(kw in text for kw in ["6 month", "timeline", "when", "soon", "asap", "down the road"]):
-        found.append("timeline")
-    if any(kw in text for kw in ["why sell", "motivation", "moving", "divorce", "inherited", "job"]):
-        found.append("motivation")
-    return found
 
 
 def build_summary(
@@ -839,12 +829,9 @@ def build_summary(
     elif tone == "interested":
         first_pos = _find_first(contact_msgs, _POSITIVE_PATTERNS) or contact_msgs[0]
         bullets.append(f"{contact_name} replied: {_q(first_pos)}")
-        all_text = " ".join(
-            (m.get("body") or m.get("message") or "") for m in messages
-        )
-        pillars = _pillars_from_text(all_text)
+        pillars = sorted(detect_gathered_pillars(messages))
         if pillars:
-            bullets.append(f"Topics discussed: {', '.join(pillars)}")
+            bullets.append(f"Pillars gathered: {', '.join(pillars)}")
         # Breakdown: pillar questions asked vs total agent messages
         if pillar_qs:
             bullets.append(f"Texter asked {pillar_qs} qualifying question(s) to gather pillars")
@@ -976,13 +963,9 @@ def detect_funnel_stage(messages: list[dict]) -> str:
         return "none"
 
     if tone in ("interested", "maybe"):
-        # Check if pillars were discussed
-        all_text = " ".join(m.get("body") or m.get("message", "") for m in messages).lower()
-        pillar_hits = sum(1 for kw in [
-            "condition", "price", "timeline", "motivation",
-            "how much", "when", "why sell", "needs work",
-            "roof", "repair", "renovati",
-        ] if kw in all_text)
+        # Count pillars the LEAD actually answered — not topic keywords the
+        # agent merely asked about (that inflated the funnel stage).
+        pillar_hits = len(detect_gathered_pillars(messages))
         if pillar_hits >= 3:
             return "mid_funnel"
         if pillar_hits >= 1:
