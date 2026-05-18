@@ -163,6 +163,12 @@ CREATE TABLE IF NOT EXISTS flag_feedback (
 CREATE INDEX IF NOT EXISTS idx_flag_feedback_agent ON flag_feedback(agent_id);
 CREATE INDEX IF NOT EXISTS idx_flag_feedback_flag  ON flag_feedback(red_flag);
 
+-- Migration 004 (folded in): link each feedback row to its source conversation.
+-- Self-heals existing deployments where the table predates this column.
+ALTER TABLE flag_feedback ADD COLUMN IF NOT EXISTS conversation_id INTEGER
+    REFERENCES conversations(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_flag_feedback_conversation ON flag_feedback(conversation_id);
+
 -- ── session_events (self-learning trigger data) ───────────────────────────────
 CREATE TABLE IF NOT EXISTS session_events (
     id                   SERIAL PRIMARY KEY,
