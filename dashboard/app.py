@@ -696,7 +696,7 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
 _run_started_at: dict[str, datetime] = {}
 
 # Max minutes a process may stay in "running" state before being auto-expired
-_MAX_RUN_MINUTES = 20
+_MAX_RUN_MINUTES = 45
 
 
 def _cleanup_finished():

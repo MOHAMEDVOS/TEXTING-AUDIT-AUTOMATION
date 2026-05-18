@@ -135,7 +135,7 @@ async def run_single_agent(agent_name: str, date_filter: str = "today", limit: i
                           date_start=date_start, date_end=date_end)
         qm.load_agents()
 
-        _write_run_status(agent_name, "running", "logging_in", "Logging in")
+        _write_run_status(agent_name, "running", "extracting_conversations", "Extracting conversations")
         current_stage = "scraping"
         result = await qm.run_single(agent_name)
         if result.get("error") and not result.get("status"):

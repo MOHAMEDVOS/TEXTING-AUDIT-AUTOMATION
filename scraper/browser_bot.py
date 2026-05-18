@@ -1018,18 +1018,18 @@ class SmarterContactBot:
                         panel_selector = 'div[data-test-id="messenger_nav_inbox_all_contact-panel_messages"]'
 
                         try:
-                            chat_panel = await self.page.wait_for_selector(panel_selector, timeout=15000)
-                        except Exception as e:
-                            logger.warning(f"[Worker-{self.worker_id}] Primary panel selector timed out (15s): {e}")
-                            # Take screenshot to debug what's on the page
-                            if SCREENSHOT_ON_ERROR:
-                                await self._take_screenshot(f"chat_panel_timeout_{contact_name[:10]}")
+                            chat_panel = await self.page.wait_for_selector(panel_selector, timeout=5000)
+                        except Exception:
+                            # Panel didn't open — re-click the row and try once more
                             try:
-                                chat_panel = await self.page.wait_for_selector(
-                                    '[data-test-id*="contact-panel"]', timeout=8000
-                                )
-                            except Exception:
-                                logger.warning(f"[Worker-{self.worker_id}] Fallback selector also failed for {contact_name}")
+                                await row.scroll_into_view_if_needed()
+                                await row.click(timeout=5000)
+                                await human_delay(0.5, 1)
+                                chat_panel = await self.page.wait_for_selector(panel_selector, timeout=5000)
+                            except Exception as e:
+                                logger.warning(f"[Worker-{self.worker_id}] Chat panel not found for {contact_name}: {e}")
+                                if SCREENSHOT_ON_ERROR:
+                                    await self._take_screenshot(f"chat_panel_timeout_{contact_name[:10]}")
                                 chat_panel = None
 
                         # Note: Message elements may be in various HTML structures
