@@ -3,6 +3,9 @@ FROM mcr.microsoft.com/playwright/python:v1.49.1-jammy
 WORKDIR /app
 
 # Install Python dependencies
+# Bump PIP_CACHEBUST whenever requirements.txt changes — Railway caches the
+# pip layer and will otherwise reuse a stale install (see Known Gotchas).
+ARG PIP_CACHEBUST=2026-05-18
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
