@@ -38,6 +38,6 @@ jinja2==3.1.5
 sentence-transformers>=2.7.0
 faiss-cpu>=1.7.4
 xgboost>=2.0.0
-scikit-learn==1.8.0  # pinned: prefilter .joblib artifacts are trained with 1.8.0 — a mismatch unpickles to invalid predictions
+scikit-learn==1.7.2  # pinned: highest sklearn for Python 3.10 (Railway base image). Retrain prefilter .joblib artifacts on THIS version.
 pytz>=2024.1
 
