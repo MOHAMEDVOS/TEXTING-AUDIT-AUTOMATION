@@ -849,6 +849,16 @@ _MAYBE_LATER_PATTERNS = [
     re.compile(r"\bmaybe\s+(in\s+)?(the\s+)?future\b", re.I),
     re.compile(r"\bopen\s+to\s+(it\s+)?(in\s+the\s+future|later|down\s+the\s+road)\b", re.I),
     re.compile(r"\bperhaps\s+(later|in\s+the\s+future|next\s+year|in\s+a\s+few)\b", re.I),
+
+    # ── "Keep my number" — contact invites future contact (callback intent) ────
+    re.compile(r"\bkeep\s+(your|my|his|her|the|ur)\s+(number|info|information|card|contact|details)\b", re.I),
+    re.compile(r"\bhold\s+on(\s*to)?\s+(your|the|my)\s+(number|info|contact)\b", re.I),
+    re.compile(r"\bsave\s+(your|my)\s+(number|info|contact)\b", re.I),
+    re.compile(r"\bhang\s+on(\s*to)?\s+(your|the)\s+(number|info)\b", re.I),
+
+    # ── Standalone "possible" — future possibility, not a hard no ──────────────
+    re.compile(r"^\s*possible[.!]*\s*$", re.I | re.MULTILINE),
+    re.compile(r"\b(it'?s|that'?s|is)\s+possible\b", re.I),
 ]
 
 _SIX_MONTH_TIMELINE_RE = re.compile(
@@ -1832,13 +1842,19 @@ def evaluate(
     )
     contact_raised_hand = bool(_RAISED_HAND_RE.search(contact_text))
 
+    # A future-interest signal ("maybe later", "keep your number", "possible")
+    # outranks a soft refusal — computed here so Check 8 can yield to Check 9.
+    is_maybe = any(p.search(contact_text) for p in _MAYBE_LATER_PATTERNS)
+
     # Count NI messages upfront — used by both NI and maybe-later checks.
     ni_msg_count = sum(
         1 for m in contact_msgs
         if any(p.search(_body(m)) for p in _NOT_INTERESTED_PATTERNS)
     ) if is_ni else 0
 
-    if is_ni and not contact_raised_hand:
+    # Check 8 yields to Maybe Later: if the contact also invited future contact,
+    # this is not a flat "Not Interested" — let Check 9 classify it.
+    if is_ni and not contact_raised_hand and not is_maybe:
         first_ni_idx = next(
             (i for i, m in enumerate(messages)
              if _sender(m) == "contact"
@@ -1889,9 +1905,17 @@ def evaluate(
                 )
 
     # ── Check 9: Maybe Later ──────────────────────────────────────────────────
-    # Do not fire if contact also expressed NI (is_ni guard) or multiple refusals.
-    is_maybe = any(p.search(contact_text) for p in _MAYBE_LATER_PATTERNS)
-    if is_maybe and not is_ni and ni_msg_count < 2 and not contact_has_high_price and not contact_raised_hand:
+    # Fires on a future-interest signal even alongside a SOFT refusal — a contact
+    # who says "not for sale, but possible / keep my number" is Maybe Later, not
+    # Not Interested. Still suppressed by a STRONG refusal (opt-out / hostility)
+    # or repeated refusals (ni_msg_count >= 2).
+    if (
+        is_maybe
+        and not _STRONG_NI_RE.search(contact_text)
+        and ni_msg_count < 2
+        and not contact_has_high_price
+        and not contact_raised_hand
+    ):
         scores = {
             "compliance_score": 100, "sentiment_score": 85,
             "professionalism_score": 95, "script_adherence_score": 100,

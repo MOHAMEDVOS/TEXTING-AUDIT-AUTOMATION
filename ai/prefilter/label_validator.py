@@ -369,6 +369,16 @@ _MAYBE_LATER = [
     re.compile(r"\bopen\s+to\s+(it\s+)?(in\s+the\s+future|later|down\s+the\s+road)\b", re.I),
     re.compile(r"\bwilling\s+to\s+(reconsider|consider\s+it)\s+(later|in\s+the\s+future|next\s+year)\b", re.I),
     re.compile(r"\bperhaps\s+(later|in\s+the\s+future|next\s+year|in\s+a\s+few)\b", re.I),
+
+    # ── "Keep my number" — contact invites future contact (callback intent) ────
+    re.compile(r"\bkeep\s+(your|my|his|her|the|ur)\s+(number|info|information|card|contact|details)\b", re.I),
+    re.compile(r"\bhold\s+on(\s*to)?\s+(your|the|my)\s+(number|info|contact)\b", re.I),
+    re.compile(r"\bsave\s+(your|my)\s+(number|info|contact)\b", re.I),
+    re.compile(r"\bhang\s+on(\s*to)?\s+(your|the)\s+(number|info)\b", re.I),
+
+    # ── Standalone "possible" — future possibility, not a hard no ──────────────
+    re.compile(r"^\s*possible[.!]*\s*$", re.I | re.MULTILINE),
+    re.compile(r"\b(it'?s|that'?s|is)\s+possible\b", re.I),
 ]
 
 # Explicit "check back" invitation — contact is saying "contact me again later".
@@ -386,6 +396,7 @@ _FUTURE_CALLBACK = re.compile(
     r"|next\s+(year|month|spring|summer|fall|winter)"
     r"|in\s+\d+\s+(months?|weeks?|years?)"
     r"|in\s+(a\s+)?(few|couple)\s+(months?|years?)"
+    r"|keep\s+(your|my|his|her|the|ur)\s+(number|info|information|card|contact|details)"
     r")\b",
     re.I,
 )
