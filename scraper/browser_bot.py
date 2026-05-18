@@ -201,7 +201,7 @@ class SmarterContactBot:
                 )
 
                 # Navigate to login page
-                await self.page.goto(SMARTERCONTACT_LOGIN_URL, wait_until="load", timeout=30000)
+                await self.page.goto(SMARTERCONTACT_LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
                 await human_delay(0.5, 1)
                 await random_mouse_movement(self.page)
 
@@ -291,12 +291,12 @@ class SmarterContactBot:
         try:
             logger.info(f"[Worker-{self.worker_id}] Extracting reporting data for {self.agent_name}")
 
-            await self.page.goto(SMARTERCONTACT_REPORTING_URL, wait_until="load", timeout=30000)
+            await self.page.goto(SMARTERCONTACT_REPORTING_URL, wait_until="domcontentloaded", timeout=30000)
             await human_delay(1, 2)
             await random_mouse_movement(self.page)
 
             # Wait for the statistics panel to load
-            await self.page.wait_for_load_state("load", timeout=20000)
+            await self.page.wait_for_load_state("domcontentloaded", timeout=20000)
             await human_delay(0.5, 1)
 
             reporting_data = {
@@ -691,7 +691,7 @@ class SmarterContactBot:
         try:
             # Navigate directly to messenger inbox — avoids waiting on a blank post-login page
             inbox_all_url = SMARTERCONTACT_MESSENGER_URL.rstrip("/") + "/inbox/all"
-            await self.page.goto(inbox_all_url, wait_until="load", timeout=30000)
+            await self.page.goto(inbox_all_url, wait_until="domcontentloaded", timeout=30000)
             await self.page.wait_for_selector(
                 "div.ReactVirtualized__Grid__innerScrollContainer, [data-test-class='messenger_nav_inbox_all_messages_row']",
                 timeout=20000,
@@ -715,7 +715,7 @@ class SmarterContactBot:
             inbox_unread_url = SMARTERCONTACT_MESSENGER_URL.rstrip("/") + "/inbox/unread"
             unread_count = 0
             try:
-                await self.page.goto(inbox_unread_url, wait_until="load", timeout=20000)
+                await self.page.goto(inbox_unread_url, wait_until="domcontentloaded", timeout=20000)
                 await human_delay(0.5, 1)
 
                 # Wait for rows to appear (or accept 0 if inbox is empty)
@@ -738,7 +738,7 @@ class SmarterContactBot:
                 logger.warning(f"[Worker-{self.worker_id}] Could not get unread count: {e}")
 
             # Always navigate to inbox/all before processing rows
-            await self.page.goto(inbox_all_url, wait_until="load", timeout=20000)
+            await self.page.goto(inbox_all_url, wait_until="domcontentloaded", timeout=20000)
             await human_delay(1, 1.5)
             self.extracted_data["unread_count"] = unread_count
 
