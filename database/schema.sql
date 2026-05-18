@@ -293,3 +293,24 @@ CREATE TABLE IF NOT EXISTS tool_access (
     is_active BOOLEAN NOT NULL DEFAULT TRUE
 );
 CREATE INDEX IF NOT EXISTS idx_tool_access_email ON tool_access(LOWER(email));
+
+-- ── Sequence repair (safe on every startup after restore/seed) ───────────────
+-- Ensures SERIAL sequences are always ahead of existing rows.
+SELECT setval(pg_get_serial_sequence('accounts',           'id'), COALESCE(MAX(id), 0) + 1, false) FROM accounts;
+SELECT setval(pg_get_serial_sequence('texters',            'id'), COALESCE(MAX(id), 0) + 1, false) FROM texters;
+SELECT setval(pg_get_serial_sequence('contacts',           'id'), COALESCE(MAX(id), 0) + 1, false) FROM contacts;
+SELECT setval(pg_get_serial_sequence('conversations',      'id'), COALESCE(MAX(id), 0) + 1, false) FROM conversations;
+SELECT setval(pg_get_serial_sequence('messages',           'id'), COALESCE(MAX(id), 0) + 1, false) FROM messages;
+SELECT setval(pg_get_serial_sequence('extractions',        'id'), COALESCE(MAX(id), 0) + 1, false) FROM extractions;
+SELECT setval(pg_get_serial_sequence('audit_scores',       'id'), COALESCE(MAX(id), 0) + 1, false) FROM audit_scores;
+SELECT setval(pg_get_serial_sequence('conversation_scores','id'), COALESCE(MAX(id), 0) + 1, false) FROM conversation_scores;
+SELECT setval(pg_get_serial_sequence('audited_chats',      'id'), COALESCE(MAX(id), 0) + 1, false) FROM audited_chats;
+SELECT setval(pg_get_serial_sequence('flag_feedback',      'id'), COALESCE(MAX(id), 0) + 1, false) FROM flag_feedback;
+SELECT setval(pg_get_serial_sequence('session_events',     'id'), COALESCE(MAX(id), 0) + 1, false) FROM session_events;
+SELECT setval(pg_get_serial_sequence('account_assignments','id'), COALESCE(MAX(id), 0) + 1, false) FROM account_assignments;
+SELECT setval(pg_get_serial_sequence('trend_snapshots',    'id'), COALESCE(MAX(id), 0) + 1, false) FROM trend_snapshots;
+SELECT setval(pg_get_serial_sequence('api_keys',           'id'), COALESCE(MAX(id), 0) + 1, false) FROM api_keys;
+SELECT setval(pg_get_serial_sequence('semantic_candidates','id'), COALESCE(MAX(id), 0) + 1, false) FROM semantic_candidates;
+SELECT setval(pg_get_serial_sequence('audit_overrides',    'id'), COALESCE(MAX(id), 0) + 1, false) FROM audit_overrides;
+SELECT setval(pg_get_serial_sequence('validation_log',     'id'), COALESCE(MAX(id), 0) + 1, false) FROM validation_log;
+SELECT setval(pg_get_serial_sequence('tool_access',        'id'), COALESCE(MAX(id), 0) + 1, false) FROM tool_access;
