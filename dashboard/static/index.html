@@ -279,9 +279,19 @@
     .ci-date svg { width: 11px; height: 11px; opacity: .65; flex-shrink: 0; }
     .ci-date b { font-weight: 600; color: var(--text-secondary); }
 
-    /* Right-side aside — audit-method pill + open chevron */
-    .ci-aside { flex-shrink: 0; display: flex; align-items: center; gap: 6px; }
+    /* Right-side aside — convo date stacked above audit-method pill + chevron */
+    .ci-aside {
+      flex-shrink: 0; display: flex; flex-direction: column;
+      align-items: flex-end; gap: 6px;
+    }
+    .ci-aside-row { display: flex; align-items: center; gap: 6px; }
     .ci-aside svg { width: 13px; height: 13px; }
+    .ci-aside-date {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: .66rem; color: var(--text-muted); white-space: nowrap;
+    }
+    .ci-aside-date svg { width: 11px; height: 11px; opacity: .65; flex-shrink: 0; }
+    .ci-aside-date b { font-weight: 600; color: var(--text-secondary); }
 
     /* ── Chat bubbles — blue (agent) + white (contact) ── */
     .bw-left  { display: flex; align-items: flex-end; gap: 8px; margin: 4px 0; }
@@ -2336,6 +2346,12 @@ function renderFunnelPill() {
   el.textContent = parts.join(" · ");
 }
 
+// Convert ISO date (YYYY-MM-DD) to MM/DD/YYYY to match convo_date format.
+function toMDY(d) {
+  const m = String(d || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[2]}/${m[3]}/${m[1]}` : String(d || "");
+}
+
 function convoDateValue(convo) {
   const raw = convo?.audit_date || convo?.extracted_at || "";
   const value = raw ? Date.parse(raw) : NaN;
@@ -2444,10 +2460,9 @@ function renderConvoList() {
       ? `border-left:3px solid var(--danger); background:var(--flagged-row-bg); padding-left:calc(1.25rem - 3px);`
       : ``;
 
-    const datesHtml = (c.audit_date || c.convo_date) ? `
+    const datesHtml = c.audit_date ? `
           <div class="ci-dates">
-            ${c.audit_date ? `<span class="ci-date">${ICON_CAL} Audited <b>${esc(c.audit_date)}</b></span>` : ""}
-            ${c.convo_date ? `<span class="ci-date">${ICON_CHAT} Conversation <b>${esc(c.convo_date)}</b></span>` : ""}
+            <span class="ci-date">${ICON_CAL} Audited <b>${esc(toMDY(c.audit_date))}</b></span>
           </div>` : "";
 
     return `
@@ -2467,8 +2482,11 @@ function renderConvoList() {
           ${datesHtml}
         </div>
         <div class="ci-aside">
-          ${Object.keys(a).length ? auditMethodPill(a.source, true) : ""}
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="#94A3B8"><path fill-rule="evenodd" d="M8.22 5.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd"/></svg>
+          ${c.convo_date ? `<span class="ci-aside-date">${ICON_CHAT} Conversation <b>${esc(c.convo_date)}</b></span>` : ""}
+          <div class="ci-aside-row">
+            ${Object.keys(a).length ? auditMethodPill(a.source, true) : ""}
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="#94A3B8"><path fill-rule="evenodd" d="M8.22 5.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd"/></svg>
+          </div>
         </div>
       </div>`;
   }).join("");
@@ -3629,19 +3647,9 @@ function _showUnassignedBlock(blockedNames, reason = "texter") {
 // ── Not Valid Modal ───────────────────────────────────────────────────────────
 let _nvmCtx = {};
 
-async function openNotValidModal(btn) {
+function openNotValidModal(btn) {
   _nvmCtx = { btn, flag: btn.dataset.flag };
   document.getElementById("nvm-flag-text").textContent = _nvmCtx.flag;
-  document.getElementById("nvm-reason").value   = "";
-  document.getElementById("nvm-category").value = "";
-
-  // Load autocomplete suggestions
-  try {
-    const res = await fetch("/api/redflag/autocomplete");
-    const reasons = await res.json();
-    const dl = document.getElementById("nvm-reasons-list");
-    dl.innerHTML = reasons.map(r => `<option value="${esc(r)}">`).join("");
-  } catch (_) {}
 
   const overlay = document.getElementById("notValidModal");
   overlay.style.display = "flex";
@@ -3657,14 +3665,6 @@ function closeNotValidModal() {
 }
 
 async function submitNotValid() {
-  const reason = document.getElementById("nvm-reason").value.trim();
-  if (!reason) {
-    document.getElementById("nvm-reason").focus();
-    document.getElementById("nvm-reason").style.borderColor = "#ef4444";
-    return;
-  }
-  document.getElementById("nvm-reason").style.borderColor = "";
-
   const { btn, flag } = _nvmCtx;
   const body = {
     agent_id:        selectedAgent?.id || 0,
@@ -3672,8 +3672,8 @@ async function submitNotValid() {
     contact_name:    currentContactName,
     red_flag:        flag,
     evidence:        "",
-    reason,
-    category:        document.getElementById("nvm-category").value,
+    reason:          "",
+    category:        "",
     conversation_id: currentConversationId,
   };
 
@@ -4887,27 +4887,12 @@ function _drpBuildMonth(year, month) {
 <!-- Not Valid Modal -->
 <div id="notValidModal" class="nv-overlay" style="display:none" onclick="if(event.target===this)closeNotValidModal()">
   <div id="nvm-box" class="nv-box">
-    <h3>Mark Flag as Not Valid</h3>
+    <h3>Clear this flag?</h3>
     <div id="nvm-flag-text" class="nv-flag-preview"></div>
-
-    <label>Reason</label>
-    <input id="nvm-reason" type="text" placeholder="e.g. WL Drip = Warm, acceptable equivalent"
-           list="nvm-reasons-list" autocomplete="off" onkeydown="if(event.key==='Enter')submitNotValid()" />
-    <datalist id="nvm-reasons-list"></datalist>
-
-    <label>Category <span style="font-weight:400;text-transform:none;">(optional)</span></label>
-    <select id="nvm-category">
-      <option value="">— select —</option>
-      <option value="Acceptable equivalent">Acceptable equivalent</option>
-      <option value="Context misread">Context misread</option>
-      <option value="Agent policy exception">Agent policy exception</option>
-      <option value="Incomplete conversation">Incomplete conversation</option>
-      <option value="Other">Other</option>
-    </select>
 
     <div class="nv-actions">
       <button class="nv-btn-cancel" onclick="closeNotValidModal()">Cancel</button>
-      <button class="nv-btn-submit" onclick="submitNotValid()">Submit</button>
+      <button class="nv-btn-submit" onclick="submitNotValid()">Clear Flag</button>
     </div>
   </div>
 </div>

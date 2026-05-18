@@ -3501,19 +3501,9 @@ function _showUnassignedBlock(blockedNames, reason = "texter") {
 // ── Not Valid Modal ───────────────────────────────────────────────────────────
 let _nvmCtx = {};
 
-async function openNotValidModal(btn) {
+function openNotValidModal(btn) {
   _nvmCtx = { btn, flag: btn.dataset.flag };
   document.getElementById("nvm-flag-text").textContent = _nvmCtx.flag;
-  document.getElementById("nvm-reason").value   = "";
-  document.getElementById("nvm-category").value = "";
-
-  // Load autocomplete suggestions
-  try {
-    const res = await fetch("/api/redflag/autocomplete");
-    const reasons = await res.json();
-    const dl = document.getElementById("nvm-reasons-list");
-    dl.innerHTML = reasons.map(r => `<option value="${esc(r)}">`).join("");
-  } catch (_) {}
 
   const overlay = document.getElementById("notValidModal");
   overlay.style.display = "flex";
@@ -3529,14 +3519,6 @@ function closeNotValidModal() {
 }
 
 async function submitNotValid() {
-  const reason = document.getElementById("nvm-reason").value.trim();
-  if (!reason) {
-    document.getElementById("nvm-reason").focus();
-    document.getElementById("nvm-reason").style.borderColor = "#ef4444";
-    return;
-  }
-  document.getElementById("nvm-reason").style.borderColor = "";
-
   const { btn, flag } = _nvmCtx;
   const body = {
     agent_id:        selectedAgent?.id || 0,
@@ -3544,8 +3526,8 @@ async function submitNotValid() {
     contact_name:    currentContactName,
     red_flag:        flag,
     evidence:        "",
-    reason,
-    category:        document.getElementById("nvm-category").value,
+    reason:          "",
+    category:        "",
     conversation_id: currentConversationId,
   };
 
@@ -4676,27 +4658,12 @@ function _drpBuildMonth(year, month) {
 <!-- Not Valid Modal -->
 <div id="notValidModal" class="nv-overlay" style="display:none" onclick="if(event.target===this)closeNotValidModal()">
   <div id="nvm-box" class="nv-box">
-    <h3>Mark Flag as Not Valid</h3>
+    <h3>Clear this flag?</h3>
     <div id="nvm-flag-text" class="nv-flag-preview"></div>
-
-    <label>Reason</label>
-    <input id="nvm-reason" type="text" placeholder="e.g. WL Drip = Warm, acceptable equivalent"
-           list="nvm-reasons-list" autocomplete="off" onkeydown="if(event.key==='Enter')submitNotValid()" />
-    <datalist id="nvm-reasons-list"></datalist>
-
-    <label>Category <span style="font-weight:400;text-transform:none;">(optional)</span></label>
-    <select id="nvm-category">
-      <option value="">— select —</option>
-      <option value="Acceptable equivalent">Acceptable equivalent</option>
-      <option value="Context misread">Context misread</option>
-      <option value="Agent policy exception">Agent policy exception</option>
-      <option value="Incomplete conversation">Incomplete conversation</option>
-      <option value="Other">Other</option>
-    </select>
 
     <div class="nv-actions">
       <button class="nv-btn-cancel" onclick="closeNotValidModal()">Cancel</button>
-      <button class="nv-btn-submit" onclick="submitNotValid()">Submit</button>
+      <button class="nv-btn-submit" onclick="submitNotValid()">Clear Flag</button>
     </div>
   </div>
 </div>

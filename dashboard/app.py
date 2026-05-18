@@ -1885,26 +1885,6 @@ async def api_conversation_valid(body: ValidationRequest):
         raise HTTPException(status_code=500, detail="internal error")
 
 
-@app.get("/api/redflag/library")
-async def api_redflag_library():
-    """Return all invalid flag feedback records for the library view."""
-    async with app.state.pool.acquire() as conn:
-        rows = await conn.fetch(
-            "SELECT * FROM flag_feedback ORDER BY created_at DESC"
-        )
-    return [dict(r) for r in rows]
-
-
-@app.get("/api/redflag/autocomplete")
-async def api_redflag_autocomplete():
-    """Return distinct past reasons for autocomplete."""
-    async with app.state.pool.acquire() as conn:
-        rows = await conn.fetch(
-            "SELECT DISTINCT reason FROM flag_feedback WHERE reason != '' ORDER BY reason"
-        )
-    return [r["reason"] for r in rows]
-
-
 # â"€â"€ Account Assignments â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 @app.get("/api/groq-keys")
