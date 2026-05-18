@@ -266,6 +266,7 @@ class SmarterContactBot:
                     f"[Worker-{self.worker_id}] ✗ Login failed for {self.agent_name} "
                     f"(URL: {current_url}) — attempt {attempt}"
                 )
+                await self._log_page_state(f"login_fail_{attempt}")
                 if SCREENSHOT_ON_ERROR:
                     await self._take_screenshot(f"login_fail_{attempt}")
 
@@ -273,6 +274,7 @@ class SmarterContactBot:
                 logger.error(
                     f"[Worker-{self.worker_id}] Login error for {self.agent_name}: {e}"
                 )
+                await self._log_page_state(f"login_error_{attempt}")
                 if SCREENSHOT_ON_ERROR:
                     await self._take_screenshot(f"login_error_{attempt}")
 
@@ -1028,6 +1030,7 @@ class SmarterContactBot:
                                 chat_panel = await self.page.wait_for_selector(panel_selector, timeout=5000)
                             except Exception as e:
                                 logger.warning(f"[Worker-{self.worker_id}] Chat panel not found for {contact_name}: {e}")
+                                await self._log_page_state(f"panel_fail_{contact_name[:10]}")
                                 if SCREENSHOT_ON_ERROR:
                                     await self._take_screenshot(f"chat_panel_timeout_{contact_name[:10]}")
                                 chat_panel = None
@@ -1575,3 +1578,19 @@ class SmarterContactBot:
             logger.info(f"[Worker-{self.worker_id}] Screenshot saved: {filepath}")
         except Exception as e:
             logger.warning(f"[Worker-{self.worker_id}] Screenshot failed: {e}")
+
+    async def _log_page_state(self, label: str):
+        """Log current page title/url/text to stdout — diagnostic for Cloudflare
+        challenges and rate-limit pages, visible in Railway logs (no file needed)."""
+        try:
+            title = await self.page.title()
+        except Exception:
+            title = "(unavailable)"
+        try:
+            body_text = (await self.page.inner_text("body"))[:300].replace("\n", " ")
+        except Exception:
+            body_text = "(body text unavailable)"
+        logger.warning(
+            f"[Worker-{self.worker_id}] PAGE STATE [{label}] "
+            f"title={title!r} url={self.page.url} text={body_text!r}"
+        )
