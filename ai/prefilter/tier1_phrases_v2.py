@@ -113,6 +113,8 @@ _OPT_OUT_PATTERNS = [
     re.compile(r"\bplease\s+(just\s+)?leave\s+me\s+(alone|be)\b", re.I),
     re.compile(r"\bleave\s+me\s+the\s+(hell|fuck|f\*ck|fck|heck)\s+alone\b", re.I),
     re.compile(r"\bleave\s+(us|him|her|them)\s+(alone|be)\b", re.I),
+    # Hostile dismissal — "go away" is an explicit opt-out (matches label_validator).
+    re.compile(r"\bgo\s+away\b", re.I),
 
     # ── Quit / modal verb variants ──
     re.compile(r"\bquit\s+(texting|calling|messaging|contacting|bothering)\s*me?\b", re.I),
@@ -718,6 +720,19 @@ _NOT_THIS_PERSON_PATTERNS = [
     ),
 ]
 
+# Explicit "you reached the wrong person" signals — used to stop the Sold
+# short-circuit from firing when the contact actually said wrong-number.
+# Deliberately narrow: excludes ambiguous phrases like "I don't own" which
+# can legitimately appear in a genuine Sold conversation.
+_EXPLICIT_WRONG_PERSON_RE = re.compile(
+    r"\bwrong\s+(number|person|guy|gal|name|contact)\b"
+    r"|\byou\s+have\s+the\s+wrong\b"
+    r"|\byou'?ve\s+got\s+the\s+wrong\b"
+    r"|\b(i\s+am|i'?m)\s+not\s+the\s+owner\b"
+    r"|\bnot\s+the\s+(owner|right\s+person)\b",
+    re.I,
+)
+
 _AGENT_PITCH_AFTER_WN = [
     re.compile(r"\b(have\s+you\s+considered|would\s+you\s+be\s+open|thinking\s+about\s+selling|cash\s+offer)\b", re.I),
     re.compile(r"\b(your\s+property\s+at|selling\s+your\s+(property|home|house))\b", re.I),
@@ -934,6 +949,10 @@ _SOLD_NEIGHBOR_SC = re.compile(
     r"|don'?t\s+know|do\s+not\s+know|no\s+idea"
     r"|any\s+(house|home|property|place)"
     r"|in\s+(the\s+)?area|in\s+(the\s+)?neighborhood"
+    # Third-party / deceased context — the sale belongs to someone else,
+    # not the contact. e.g. "Dorothy passed and her property sold years ago".
+    r"|passed\s+away|passed\s+on|is\s+deceased|are\s+deceased"
+    r"|(her|his|their)\s+(property|house|home|place)"
     r")\b",
     re.I,
 )
@@ -1118,7 +1137,16 @@ def evaluate(
     # details / price inquiry → they may own a different property. Defer to T4.
     _sold_match = any(p.search(contact_text) for p in _SOLD_SC_PATTERNS)
     _sold_neighbor = _SOLD_NEIGHBOR_SC.search(contact_text)
-    if _sold_match and not _sold_neighbor and not _contact_opted_out_early:
+    # If the contact explicitly said "wrong person/number", the sale belongs to
+    # someone else — do NOT short-circuit as Sold; let Check 5 (Wrong Number)
+    # handle it. e.g. "Dorothy passed and her property sold... you have the
+    # wrong person" is a Wrong Number, not a Sold lead.
+    _explicit_wrong_person = bool(
+        _EXPLICIT_WRONG_PERSON_RE.search(contact_text)
+        or any(p.search(contact_text) for p in _NOT_THIS_PERSON_PATTERNS)
+    )
+    if (_sold_match and not _sold_neighbor
+            and not _contact_opted_out_early and not _explicit_wrong_person):
         # Find the index of the sold message
         _sold_idx = next(
             (i for i, m in enumerate(messages)
@@ -1721,11 +1749,19 @@ def evaluate(
         agent_text_after_wn = " ".join(_body(m) for m in agent_msgs_after_wn)
         
         # Guard: Check for continued pitch using the helper
-        from ._guards import agent_continued_pitch_after_wn
+        from ._guards import agent_continued_pitch_after_wn, contact_reengaged_after_wn
         continued_pitch = agent_continued_pitch_after_wn(messages)
-        
-        # If agent sent 3+ messages after WN that's suspicious regardless of content
-        if continued_pitch or len(agent_msgs_after_wn) >= 3:
+
+        # If the contact re-engaged after the wrong-number message (offered a
+        # referral, asked a question, gave an address, shared property details),
+        # the agent is EXPECTED to switch into funnel mode. The follow-up
+        # messages are correct handling — not a continued-pitch violation.
+        contact_reengaged = contact_reengaged_after_wn(messages, wn_idx)
+
+        # Fire F5 only when the agent over-messaged AND the contact never
+        # re-engaged. 3+ agent messages after WN is suspicious only if the
+        # contact stayed silent/uninterested.
+        if not contact_reengaged and (continued_pitch or len(agent_msgs_after_wn) >= 3):
             from . import summary_builder
             _e4_scores = {
                 "compliance_score": 60,

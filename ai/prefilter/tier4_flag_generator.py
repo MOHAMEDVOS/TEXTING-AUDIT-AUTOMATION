@@ -34,6 +34,7 @@ from ai.prefilter._guards import (
     REFERRAL_RE,
     agent_continued_after_opt_out,
     agent_replied_after_first_soft_no,
+    contact_reengaged_after_wn,
     last_message_from_contact,
     contact_has_explicit_opt_out,
     contact_has_dnc_joke_price,
@@ -228,7 +229,9 @@ def generate(
         if sender in ("contact", "lead") and WRONG_NUMBER_RE.search(body):
             wrong_number_idx = i
             break
-    if wrong_number_idx is not None:
+    # Suppress F5 entirely if the contact re-engaged after the wrong-number
+    # message — the agent is then expected to switch into funnel mode.
+    if wrong_number_idx is not None and not contact_reengaged_after_wn(messages, wrong_number_idx):
         # Check if agent continued pitching after wrong number
         for later in messages[wrong_number_idx + 1:]:
             sender = (later.get("sender") or "").strip().lower()

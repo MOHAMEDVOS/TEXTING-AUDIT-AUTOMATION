@@ -267,7 +267,14 @@ def agent_continued_pitch_after_wn(messages: list[dict]) -> bool:
     
     if wn_idx is None:
         return False
-    
+
+    # If the contact re-engaged after the wrong-number message (referral,
+    # question, address, property details), the agent is EXPECTED to switch
+    # into funnel mode — later pitch-like messages are correct, not a
+    # continued-pitch violation.
+    if contact_reengaged_after_wn(messages, wn_idx):
+        return False
+
     for later in (messages or [])[wn_idx + 1:]:
         sender = (later.get("sender") or "").strip().lower()
         body = (later.get("message") or later.get("body") or "").strip().lower()
@@ -425,4 +432,63 @@ def contact_reversed_after_index(messages: list[dict], signal_idx: int) -> bool:
         if _REVERSAL_ENGAGEMENT_RE.search(body):
             return True
 
+    return False
+
+
+# ── Wrong-Number Re-engagement Guard ─────────────────────────────────────────
+# After a contact says "wrong number", the agent SHOULD pivot to the referral
+# close. If the contact then re-engages — offers a referral, asks a question,
+# gives an address, or volunteers property details — the agent is expected to
+# switch into funnel mode. The agent's later pitch-like messages are correct
+# handling, NOT a "continued original pitch after wrong number" violation.
+
+_WN_REENGAGE_RE = re.compile(
+    r"\b("
+    # referral: contact offering someone else / another property
+    r"someone|anyone|somebody|anybody|neighbor|friend|cousin|brother|sister"
+    r"|buddy|co-?worker|colleague"
+    r"|my\s+(mom|dad|mother|father|son|daughter|aunt|uncle|family|wife|husband)"
+    r"|i\s+(have|know|own|got|do\s+have)\b"
+    r"|know\s+(of\s+)?(someone|somebody|a\s+guy|anybody)"
+    r"|what\s+about|how\s+about"
+    # property types / details the contact volunteers
+    r"|mobile\s+home|trailer|condo|duplex|townhouse|vacant\s+lot|land"
+    r"|a\s+(house|home|property|lot)\b"
+    r"|rental\s+propert|investment\s+propert"
+    r"|remodel|renovat|bedroom|bathroom|acre"
+    r")\b",
+    re.I,
+)
+
+# Address-like: house number + street name + street-type suffix.
+_WN_ADDRESS_RE = re.compile(
+    r"\b\d{1,6}\s+[\w'.-]+(?:\s+[\w'.-]+){0,5}\s+"
+    r"(dr|drive|st|street|ave|avenue|rd|road|ln|lane|blvd|boulevard"
+    r"|ct|court|way|cir|circle|pl|place|hwy|pkwy|terrace|trail|trl)\b",
+    re.I,
+)
+
+
+def contact_reengaged_after_wn(messages: list[dict], wn_idx: int | None) -> bool:
+    """
+    True if the contact re-engaged AFTER the wrong-number message.
+
+    Re-engagement = offering a referral, asking a substantive question,
+    giving an address, or volunteering property details. When this happens
+    the agent is expected to switch into funnel mode, so FLAG 5 ("continued
+    original pitch after wrong number") must NOT fire.
+    """
+    if wn_idx is None or wn_idx < 0:
+        return False
+    for m in (messages or [])[wn_idx + 1:]:
+        sender = (m.get("sender") or "").strip().lower()
+        if sender not in ("contact", "lead"):
+            continue
+        body = (m.get("message") or m.get("body") or "").strip()
+        if len(body) < 2:
+            continue
+        if (_WN_REENGAGE_RE.search(body)
+                or _WN_ADDRESS_RE.search(body)
+                or _REVERSAL_ENGAGEMENT_RE.search(body)):
+            return True
     return False
