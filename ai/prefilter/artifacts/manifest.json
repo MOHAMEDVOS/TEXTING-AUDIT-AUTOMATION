@@ -8,12 +8,13 @@
     "dimension": 384
   },
   "classifier": {
-    "trained_at": "2026-05-15T17:01:43.391462Z",
+    "trained_at": "2026-05-19T01:08:13.778319Z",
     "n_train": 660,
     "n_clean": 575,
     "n_flagged": 85,
     "n_hard_neg": 85,
     "embedding_model": "all-MiniLM-L6-v2",
-    "feature_dim": 384
+    "feature_dim": 384,
+    "sklearn_version": "1.7.2"
   }
 }

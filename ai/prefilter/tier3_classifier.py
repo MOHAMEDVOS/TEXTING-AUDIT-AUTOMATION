@@ -54,6 +54,17 @@ def _load_classifier() -> bool:
             f"{_classifier_bundle['n_train']} training examples, "
             f"dim={_classifier_bundle['feature_dim']}"
         )
+        # Drift guard: a .joblib pickled by one sklearn and unpickled by another
+        # can yield invalid predictions. Surface a mismatch loudly — the artifact
+        # stamps the version it was trained with (see train.py).
+        import sklearn
+        _artifact_skl = _classifier_bundle.get("sklearn_version")
+        if _artifact_skl and _artifact_skl != sklearn.__version__:
+            logger.warning(
+                "[Prefilter T3] sklearn version drift — artifact trained on %s, "
+                "runtime has %s. Predictions may be invalid; retrain on the "
+                "runtime version.", _artifact_skl, sklearn.__version__,
+            )
         return True
     except Exception as e:
         logger.error(f"[Prefilter T3] Failed to load classifier: {e}")

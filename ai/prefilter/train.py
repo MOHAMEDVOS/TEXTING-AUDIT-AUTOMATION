@@ -134,6 +134,7 @@ def main(test_split: float = 0.0) -> None:
     settings.PREFILTER_DIR.mkdir(parents=True, exist_ok=True)
 
     try:
+        import sklearn
         from sklearn.linear_model import LogisticRegression, Ridge
         from sklearn.multioutput import MultiOutputRegressor
         from sklearn.multiclass import OneVsRestClassifier
@@ -144,6 +145,11 @@ def main(test_split: float = 0.0) -> None:
     except ImportError as e:
         logger.error(f"scikit-learn / joblib missing: {e}")
         sys.exit(1)
+
+    # Stamp the training sklearn version so the runtime can detect drift —
+    # a .joblib pickled by one sklearn and unpickled by another can give
+    # invalid predictions (see tier3_classifier._load_classifier guard).
+    logger.info(f"Training with scikit-learn {sklearn.__version__}")
 
     # Import the whitelist for multi-label target construction
     from ai.prefilter._guards import WHITELIST_FLAG_OUTPUTS, _canon_flag_text
@@ -333,6 +339,7 @@ def main(test_split: float = 0.0) -> None:
         "active_flag_labels": active_flag_labels,   # NEW: subset with enough training data
         "feature_dim":        int(X.shape[1]),
         "model_name":         settings.PREFILTER_EMBEDDING_MODEL,
+        "sklearn_version":    sklearn.__version__,
         "trained_at":         datetime.datetime.utcnow().isoformat() + "Z",
         "n_train":            int(len(yf_tr)),
         "n_clean":            int((yf_tr == 0).sum()),
@@ -364,6 +371,7 @@ def main(test_split: float = 0.0) -> None:
         "n_hard_neg": bundle["n_hard_neg"],
         "embedding_model": bundle["model_name"],
         "feature_dim": bundle["feature_dim"],
+        "sklearn_version": bundle["sklearn_version"],
     }
     import json
     with open(manifest_path, "w", encoding="utf-8") as f:
