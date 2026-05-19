@@ -494,8 +494,9 @@ async def api_flags_realtime():
     Return the number of flagged conversations per agent for the current day.
     Used by the dashboard for the total flag counter in the header.
     """
-    from datetime import date as _date
-    today = _date.today()
+    # EST date — conversations.audit_date is EST; naive date.today() is UTC on
+    # Railway and drifts a day ahead after ~8 PM EST.
+    today = get_now().date()
     sql = """
         SELECT c.agent_id, COUNT(DISTINCT c.contact_id) as flagged
         FROM conversation_scores cs

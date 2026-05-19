@@ -12,7 +12,7 @@ from datetime import datetime, timezone, timedelta
 
 import psycopg2
 
-from config.settings import DATABASE_URL
+from config.settings import DATABASE_URL, get_now
 from ai.analyzer import analyze_conversation
 from ai.prefilter.label_validator import _label_key as _lk
 
@@ -442,8 +442,10 @@ async def score_agent_conversations(
     scored_this_run = list(per_convo)
 
     # ── Write to audit_scores ────────────────────────────────────────────────
-    from datetime import date as _date
-    audit_date = _date.today()
+    # EST date — must match conversations.audit_date and the dashboard, which
+    # all use get_now(). Naive date.today() is UTC on Railway and rolls a day
+    # ahead after ~8 PM EST, breaking the dashboard convo-count JOIN.
+    audit_date = get_now().date()
     if pool:
         async with pool.acquire() as conn:
             # Fetch any existing row for this agent+date so we can merge
