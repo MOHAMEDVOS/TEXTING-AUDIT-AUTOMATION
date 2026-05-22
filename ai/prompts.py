@@ -47,7 +47,7 @@ NF (Narrow Funnel): 3-4 pillars required. Escalate to call.
 
 THE 4 PILLARS (Only counts if the LEAD provides the info):
 1. CONDITION: Property state/repairs.
-2. ASKING PRICE: Number or range stated.
+2. ASKING PRICE: Number or range the lead wants to RECEIVE for the property. Requires explicit intent language ("I want", "I need", "I'm asking", "I'll take") OR a direct answer to a price question. NEVER count renovation costs, repair expenses, or past investments as an asking price — "I spent $30k on bathrooms" or "I put $50k into repairs" is a sunk cost, not a stated price.
 3. MOTIVATION: Reason for selling.
 4. TIMELINE: When they want to close (Max is 6 months).
 </FUNNELS_AND_PILLARS>

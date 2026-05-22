@@ -139,6 +139,15 @@ _CONTACT_PRICE_STATED_RE = re.compile(
     re.I,
 )
 
+# Sunk-cost context: dollar amount is a past expense/renovation, NOT an asking price.
+# "I just spent $30k redoing the bathrooms" = renovation cost ≠ asking price.
+_SUNK_COST_RE = re.compile(
+    r"\b(spent|spend|spending|put\s+in(to)?|invest(ed|ing)?|cost(s|ed)?|paid|pay(ing)?"
+    r"|redo(ing)?|renovate[sd]?|renovating|remodel(ed|ing)?|repair(ed|ing)?|fix(ed|ing)?"
+    r"|upgrad(ed|ing)?|install(ed|ing)?|built?|add(ed|ing)?|replac(ed|ing)?)\b",
+    re.I,
+)
+
 # Rental-income framing around a price ("$75k and I collect $900/mo rent").
 # A price stated alongside rental yield is a DEAL signal, not an above-market quote —
 # it must never trigger the above-market referral-exit flag.
@@ -376,6 +385,10 @@ def generate(
         sender = (m.get("sender") or "").strip().lower()
         body = (m.get("message") or m.get("body") or "").strip()
         if sender in ("contact", "lead") and _CONTACT_PRICE_STATED_RE.search(body):
+            # Skip if the amount is a sunk cost (renovation, repair, expense), not an asking price.
+            # e.g. "I spent $30k redoing the bathrooms" must not count as a stated price.
+            if _SUNK_COST_RE.search(body):
+                continue
             _price_stated_idx = i
             break
 
