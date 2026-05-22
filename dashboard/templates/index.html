@@ -897,7 +897,7 @@
     <!-- Sample size -->
     <div style="display:flex; align-items:center; gap:4px;">
       <label for="sample-size" style="font-size:.6rem; color:var(--text-muted); white-space:nowrap; letter-spacing:-0.01em;">Samples:</label>
-      <input id="sample-size" type="number" value="10" min="1" max="500"
+      <input id="sample-size" type="number" value="50" min="1" max="500"
         style="width:52px; font-size:.73rem; font-family:var(--font-text); font-weight:400; padding:5px 7px; border-radius:8px; background:var(--input-bg); color:var(--text-primary); border:1px solid var(--surface-border); outline:none; text-align:center;"
         onfocus="this.style.borderColor='var(--brand)'" onblur="this.style.borderColor='var(--surface-border)'" />
     </div>
@@ -1878,8 +1878,12 @@ function toggleSelectMode() {
 
 function toggleAgentCheck(id, evt) {
   evt.stopPropagation();
-  if (selectedIds.has(id)) selectedIds.delete(id);
-  else selectedIds.add(id);
+  if (selectedIds.has(id)) {
+    selectedIds.delete(id);
+  } else {
+    if (selectedIds.size >= 5) return;
+    selectedIds.add(id);
+  }
   updateSelectionUI();
   renderSidebar();
 }
@@ -1892,7 +1896,10 @@ function updateSelectionUI() {
 }
 
 function selectAllVisible() {
-  for (const a of filteredAgents) selectedIds.add(a.id);
+  for (const a of filteredAgents) {
+    if (selectedIds.size >= 5) break;
+    selectedIds.add(a.id);
+  }
   updateSelectionUI();
   renderSidebar();
 }
@@ -1927,8 +1934,8 @@ async function runSelectedAgents() {
   const blocked  = selected.filter(a => !_canRunAgent(a));
   const allowed  = selected.filter(a => _canRunAgent(a));
 
-  if (allowed.length > 10) {
-    const over = allowed.length - 10;
+  if (allowed.length > 5) {
+    const over = allowed.length - 5;
     const existing = document.getElementById("run-limit-modal");
     if (existing) existing.remove();
     const modal = document.createElement("div");
@@ -1942,11 +1949,11 @@ async function runSelectedAgents() {
           </div>
           <div>
             <div style="font-size:.95rem;font-weight:700;color:var(--text-primary);">Too Many Agents Selected</div>
-            <div style="font-size:.75rem;color:var(--text-muted);margin-top:1px;">${allowed.length} selected — maximum is 10 per run</div>
+            <div style="font-size:.75rem;color:var(--text-muted);margin-top:1px;">${allowed.length} selected — maximum is 5 per run</div>
           </div>
         </div>
         <p style="font-size:.82rem;color:var(--text-secondary);line-height:1.6;margin:0 0 20px;">
-          Each agent gets its own dedicated API key during a run. The limit is <strong style="color:var(--text-primary);">10 agents</strong> to ensure no key is shared or burnt out.
+          Each agent gets its own dedicated API key during a run. The limit is <strong style="color:var(--text-primary);">5 agents</strong> to ensure no key is shared or burnt out.
           Please deselect <strong style="color:#f59e0b;">${over} agent${over > 1 ? "s" : ""}</strong> and try again.
         </p>
         <div style="display:flex;justify-content:flex-end;">
@@ -2670,7 +2677,7 @@ function getRunParams() {
   const filter = document.getElementById("date-filter").value;
   const params = {
     date_filter: filter,
-    sample_size: parseInt(document.getElementById("sample-size").value, 10) || 10,
+    sample_size: parseInt(document.getElementById("sample-size").value, 10) || 50,
   };
   // Include custom date range if set
   if (filter === "custom" && window._drpDateStart && window._drpDateEnd) {
