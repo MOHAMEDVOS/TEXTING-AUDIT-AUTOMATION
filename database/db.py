@@ -81,11 +81,23 @@ class Database:
         self.pool: asyncpg.Pool | None = None
 
     async def initialize(self):
-        """Create connection pool and ensure all tables exist."""
+        """Create connection pool and ensure all tables exist.
+
+        Schema execution is serialized with a PostgreSQL advisory lock
+        (key 987654321) so that parallel agent subprocesses never race on
+        ALTER TABLE / setval statements — the root cause of deadlock errors
+        when multiple agents start simultaneously.
+        """
         self.pool = await asyncpg.create_pool(self.dsn, min_size=2, max_size=10)
         schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
         async with self.pool.acquire() as conn:
-            await conn.execute(schema_sql)
+            # Acquire a session-level advisory lock so only one process runs
+            # the schema at a time. Other processes block here (not deadlock).
+            await conn.execute("SELECT pg_advisory_lock(987654321)")
+            try:
+                await conn.execute(schema_sql)
+            finally:
+                await conn.execute("SELECT pg_advisory_unlock(987654321)")
         logger.info("Database initialized (PostgreSQL)")
 
     async def close(self):
@@ -250,15 +262,25 @@ class Database:
     async def save_results(self, results: list):
         """Save all extraction results from a run, injecting conversation_ids back."""
         for result in results:
-            try:
-                agent_id = await self.upsert_agent(
-                    result.get("agent_name", "Unknown"),
-                    result.get("email", "unknown@unknown.com"),
-                )
-                conversations = await self.save_extraction(agent_id, result)
-                result["_all_conversations"] = conversations
-            except Exception as e:
-                logger.error(f"Error saving result for {result.get('agent_name')}: {e}")
+            agent_id = await self.upsert_agent(
+                result.get("agent_name", "Unknown"),
+                result.get("email", "unknown@unknown.com"),
+            )
+            conversations = await self.save_extraction(agent_id, result)
+            result["_all_conversations"] = conversations
+
+    async def count_valid_scored_conversations(self, agent_id: int) -> int:
+        """Count active conversations with a successful (non-null) score."""
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval(
+                """SELECT COUNT(DISTINCT c.id)
+                   FROM conversations c
+                   JOIN conversation_scores cs ON cs.conversation_id = c.id
+                   WHERE c.agent_id = $1
+                     AND c.is_archived = FALSE
+                     AND cs.compliance_score IS NOT NULL""",
+                agent_id,
+            ) or 0
 
     async def save_conversation_score(self, conversation_id: int, score_data: dict):
         """Insert a conversation_scores row for the given conversation."""

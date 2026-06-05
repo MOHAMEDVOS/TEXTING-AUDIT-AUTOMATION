@@ -126,9 +126,65 @@ _INCOHERENT_RE = re.compile(
     r"(asdf|qwerty|jkl|lorem|test\s+test|placeholder|xxx)", re.I
 )
 
-_CALL_AGREE_RE = re.compile(
-    r"\b(i.?ll\s+call\s+you|let\s+me\s+call|give\s+you\s+a\s+call|i.?ll\s+ring)\b", re.I
+# F6 — contact agreed to a call OR agent confirmed a scheduled call (not a mere offer).
+_CONTACT_CALL_AGREE_RE = re.compile(
+    r"\b(call\s+me|you\s+can\s+call|go\s+ahead\s+and\s+call|phone\s+me|ring\s+me)\b"
+    r"|\b(yes|sure|ok|okay|sounds\s+good|that\s+works|perfect|fine|great)\b.{0,60}\b(call|phone)\b"
+    r"|\b(call|phone)\b.{0,40}\b(yes|sure|ok|okay|works|fine|good|great)\b",
+    re.I,
 )
+_AGENT_CALL_BOOKING_RE = re.compile(
+    r"\b(i.?ll\s+call\s+(?:you\s+)?(?:at|on|tomorrow|today|tonight|this\s+(?:afternoon|evening|morning))"
+    r"|speak\s+(?:with\s+you\s+)?(?:at|on)\b"
+    r"|scheduled\s+(?:for|a)\s+call)\b",
+    re.I,
+)
+
+
+def _contact_body(m: dict) -> str:
+    return (m.get("message") or m.get("body") or "").strip()
+
+
+def _sender(m: dict) -> str:
+    return (m.get("sender") or "").strip().lower()
+
+
+def _is_contact(m: dict) -> bool:
+    return _sender(m) in ("contact", "lead")
+
+
+def _find_call_booking_index(messages: list[dict]) -> int | None:
+    """
+    Index where a call is booked/agreed — not where the agent merely offers a callback.
+    """
+    for i, m in enumerate(messages):
+        body = _contact_body(m)
+        if _is_contact(m) and _CONTACT_CALL_AGREE_RE.search(body):
+            return i
+        if not _is_contact(m) and _AGENT_CALL_BOOKING_RE.search(body):
+            lookback = " ".join(
+                _contact_body(messages[j])
+                for j in range(max(0, i - 5), i)
+                if _is_contact(messages[j])
+            )
+            if _CONTACT_CALL_AGREE_RE.search(lookback) or re.search(
+                r"\b(yes|sure|ok|okay|sounds\s+good|that\s+works|perfect)\b", lookback, re.I
+            ):
+                return i
+    return None
+
+
+def _should_flag_call_without_prequal(messages: list[dict]) -> bool:
+    """
+    F6: call confirmed/booked with zero lead-supplied pillars beforehand.
+    Agent offers like "I can give you a call later" do NOT qualify.
+    """
+    booking_idx = _find_call_booking_index(messages)
+    if booking_idx is None:
+        return False
+    pillars = detect_gathered_pillars(messages[: booking_idx + 1])
+    return len(pillars) == 0
+
 
 # FLAG 13 patterns ─────────────────────────────────────────────────────────
 # Contact stating a specific asking price (number, dollar amount, or range)
@@ -255,28 +311,8 @@ def generate(
                     break
 
     # ── FLAG 6: Agreed to call without pre-qualifying ────────────────
-    # GUARD: Only fire if a call was actually CONFIRMED/BOOKED.
-    # "Can my partner give you a call?" is just an OFFER — not a booking.
-    # Suppress if the agent message is a question/offer (ends with ? or uses "can/could/would/may").
-    _CALL_OFFER_RE = re.compile(
-        r"\\b(can|could|would|may|is\\s+it\\s+ok|is\\s+it\\s+alright|mind\\s+if)"
-        r".{0,60}\\b(call|give\\s+you\\s+a\\s+call|ring\\s+you)\\b",
-        re.I,
-    )
-    for m in agent_msgs:
-        body = (m.get("message") or m.get("body") or "").strip()
-        if _CALL_AGREE_RE.search(body):
-            # Skip if this is a polite call OFFER/QUESTION, not a booking confirmation
-            if _CALL_OFFER_RE.search(body) or body.rstrip().endswith("?"):
-                break
-            # Check if the lead actually answered any pillars before the
-            # call offer — agent questions alone do not pre-qualify.
-            idx = messages.index(m)
-            pillars_hit = len(detect_gathered_pillars(messages[:idx]))
-            if pillars_hit < 2:
-                raw_flags.append("Agreed to call without pre-qualifying.")
-            break
-
+    if _should_flag_call_without_prequal(messages):
+        raw_flags.append("Agreed to call without pre-qualifying.")
 
     # ── FLAG 7: Revealed or promised 6+ month timeline ───────────────
     # Only flag if agent uses reveal/promise language with the 6+ month pattern.

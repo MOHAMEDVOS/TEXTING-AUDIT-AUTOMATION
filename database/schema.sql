@@ -285,6 +285,17 @@ CREATE TABLE IF NOT EXISTS validation_log (
 CREATE INDEX IF NOT EXISTS idx_validation_agent ON validation_log(agent_id);
 CREATE INDEX IF NOT EXISTS idx_validation_conv  ON validation_log(conversation_id);
 
+-- ── flagged_conversation_reviews (manager reviewed flagged convos) ───────────
+CREATE TABLE IF NOT EXISTS flagged_conversation_reviews (
+    id              SERIAL PRIMARY KEY,
+    agent_id        INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    contact_name    TEXT NOT NULL,
+    conversation_id INTEGER REFERENCES conversations(id) ON DELETE SET NULL,
+    reviewed_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(agent_id, contact_name)
+);
+CREATE INDEX IF NOT EXISTS idx_flagged_reviews_agent ON flagged_conversation_reviews(agent_id);
+
 -- ── prefilter_decisions additions ────────────────────────────────────────────
 -- conversation_scores.source tracks which tier/provider produced the result
 -- Values: 'groq' | 'prefilter_t1' | 'prefilter_t2' | 'prefilter_t3' | 'prefilter_t4' | 'groq_override'
@@ -299,6 +310,28 @@ CREATE TABLE IF NOT EXISTS tool_access (
     is_active BOOLEAN NOT NULL DEFAULT TRUE
 );
 CREATE INDEX IF NOT EXISTS idx_tool_access_email ON tool_access(LOWER(email));
+
+-- ── custom_labels (for filtering in scraping UI) ───────────────────────────────
+CREATE TABLE IF NOT EXISTS custom_labels (
+    id         SERIAL PRIMARY KEY,
+    name       TEXT UNIQUE NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ── blacklist_labels (labels that cause a convo to be skipped) ───────────────
+-- skip_mode = 'any'  → skip if this label appears anywhere in the label list
+-- skip_mode = 'only' → skip only if ALL labels are in this set (e.g. "New Lead" alone)
+CREATE TABLE IF NOT EXISTS blacklist_labels (
+    id         SERIAL PRIMARY KEY,
+    name       TEXT UNIQUE NOT NULL,
+    skip_mode  TEXT NOT NULL DEFAULT 'any' CHECK (skip_mode IN ('any', 'only')),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+-- Seed built-in defaults (safe to re-run)
+INSERT INTO blacklist_labels (name, skip_mode) VALUES
+    ('Extra',    'any'),
+    ('New Lead', 'only')
+ON CONFLICT (name) DO NOTHING;
 
 -- ── Sequence repair (safe on every startup after restore/seed) ───────────────
 -- Ensures SERIAL sequences are always ahead of existing rows.
@@ -320,3 +353,5 @@ SELECT setval(pg_get_serial_sequence('semantic_candidates','id'), COALESCE(MAX(i
 SELECT setval(pg_get_serial_sequence('audit_overrides',    'id'), COALESCE(MAX(id), 0) + 1, false) FROM audit_overrides;
 SELECT setval(pg_get_serial_sequence('validation_log',     'id'), COALESCE(MAX(id), 0) + 1, false) FROM validation_log;
 SELECT setval(pg_get_serial_sequence('tool_access',        'id'), COALESCE(MAX(id), 0) + 1, false) FROM tool_access;
+SELECT setval(pg_get_serial_sequence('custom_labels',       'id'), COALESCE(MAX(id), 0) + 1, false) FROM custom_labels;
+SELECT setval(pg_get_serial_sequence('blacklist_labels',    'id'), COALESCE(MAX(id), 0) + 1, false) FROM blacklist_labels;

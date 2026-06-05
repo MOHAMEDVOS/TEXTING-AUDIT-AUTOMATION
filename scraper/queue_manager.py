@@ -27,16 +27,20 @@ class QueueManager:
     """
 
     def __init__(self, max_workers: int = None, date_filter: str = "today", limit: int = 20,
-                 date_start: str = None, date_end: str = None):
+                 date_start: str = None, date_end: str = None, labels: str = None):
         self.max_workers = max_workers or MAX_PARALLEL_WORKERS
         self.date_filter = date_filter
         self.date_start = date_start
         self.date_end = date_end
+        self.labels = labels
         self.limit = limit
         self.agents = []
         self.results = []
         self.failed = []
         self.semaphore = asyncio.Semaphore(self.max_workers)
+        # Blacklist sets loaded from DB (fall back to built-in defaults)
+        self.blacklist_any:  set[str] = {"extra"}
+        self.blacklist_only: set[str] = {"new lead"}
 
         # Progress tracking
         self.total = 0
@@ -70,7 +74,30 @@ class QueueManager:
         ]
 
         logger.info(f"Loaded {len(self.agents)} agents from database")
+        self._load_blacklist(conn_str=DATABASE_URL)
         return self.agents
+
+    def _load_blacklist(self, conn_str: str) -> None:
+        """Load skip-label sets from the blacklist_labels table."""
+        import psycopg2
+        try:
+            conn = psycopg2.connect(conn_str)
+            cur = conn.cursor()
+            cur.execute("SELECT name, skip_mode FROM blacklist_labels")
+            rows = cur.fetchall()
+            cur.close()
+            conn.close()
+            any_set  = {name.lower() for name, mode in rows if mode == "any"}
+            only_set = {name.lower() for name, mode in rows if mode == "only"}
+            if any_set or only_set:
+                self.blacklist_any  = any_set
+                self.blacklist_only = only_set
+                logger.info(
+                    f"Blacklist loaded — skip_any={sorted(self.blacklist_any)}, "
+                    f"skip_only={sorted(self.blacklist_only)}"
+                )
+        except Exception as e:
+            logger.warning(f"Could not load blacklist from DB (using defaults): {e}")
 
     def _create_template(self, filepath: Path):
         """Create a template agents.json file."""
@@ -111,6 +138,9 @@ class QueueManager:
                 limit=self.limit,
                 date_start=self.date_start,
                 date_end=self.date_end,
+                labels=self.labels,
+                blacklist_any=self.blacklist_any,
+                blacklist_only=self.blacklist_only,
             )
 
             result = {

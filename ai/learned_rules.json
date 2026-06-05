@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "last_updated": "2026-05-08T01:27:40.723689Z",
+  "last_updated": "2026-06-05T14:21:46.997514Z",
   "rules": [
     {
       "rule_text": "Do not flag conversations where the issue is related to an incorrect number, as this is not a valid reason for a flag.",
@@ -88,13 +88,30 @@
       "times_applied": 0
     },
     {
-      "rule_text": "Do NOT flag 'Agent re-asked for asking price after owner already stated it' when the contact only mentioned renovation costs, repair expenses, or past investments — e.g. 'I just spent $30k redoing the bathrooms', 'I put $50k into repairs', 'I paid $20k to renovate'. A sunk cost is NOT an asking price. An asking price requires the contact to explicitly state what they WANT to receive for the property, using intent language such as 'I want', 'I need', 'I am asking', 'I will take', or stating a number in direct response to a price question. When this distinction applies, do not fire any price-related flag and do not count the renovation amount as a pillar.",
+      "rule_text": "Do NOT flag 'Agent re-asked for asking price after owner already stated it' when the contact only mentioned renovation costs, repair expenses, or past investments \u2014 e.g. 'I just spent $30k redoing the bathrooms', 'I put $50k into repairs', 'I paid $20k to renovate'. A sunk cost is NOT an asking price. An asking price requires the contact to explicitly state what they WANT to receive for the property, using intent language such as 'I want', 'I need', 'I am asking', 'I will take', or stating a number in direct response to a price question. When this distinction applies, do not fire any price-related flag and do not count the renovation amount as a pillar.",
       "category": "Price Detection",
       "source_flags": [
         "Agent re-asked for asking price after owner already stated it."
       ],
       "id": "lr_008",
       "created_at": "2026-05-22T00:00:00.000000Z",
+      "active": true,
+      "times_applied": 0
+    },
+    {
+      "rule_text": "The flag 're-asked condition same day after contact answered.' was marked incorrect 1 time(s) in the 'uncategorized' category. Review the detection logic for false positives in this pattern.",
+      "category": "uncategorized",
+      "source_flags": [
+        "Re-asked condition same day after contact answered.",
+        "Agreed to call without pre-qualifying."
+      ],
+      "extraction_method": "local_pattern",
+      "cluster_count": 2,
+      "suppresses_t4_flags": [
+        "Agreed to call without pre-qualifying."
+      ],
+      "id": "lr_009",
+      "created_at": "2026-06-05T14:21:46.997307Z",
       "active": true,
       "times_applied": 0
     }

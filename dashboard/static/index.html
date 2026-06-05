@@ -15,9 +15,8 @@
 !function(n,e){"object"==typeof exports&&"undefined"!=typeof module?module.exports=e():"function"==typeof define&&define.amd?define(e):n.anime=e()}(this,function(){"use strict";var i={update:null,begin:null,loopBegin:null,changeBegin:null,change:null,changeComplete:null,loopComplete:null,complete:null,loop:1,direction:"normal",autoplay:!0,timelineOffset:0},M={duration:1e3,delay:0,endDelay:0,easing:"easeOutElastic(1, .5)",round:0},j=["translateX","translateY","translateZ","rotate","rotateX","rotateY","rotateZ","scale","scaleX","scaleY","scaleZ","skew","skewX","skewY","perspective","matrix","matrix3d"],l={CSS:{},springs:{}};function C(n,e,t){return Math.min(Math.max(n,e),t)}function u(n,e){return-1<n.indexOf(e)}function o(n,e){return n.apply(null,e)}var w={arr:function(n){return Array.isArray(n)},obj:function(n){return u(Object.prototype.toString.call(n),"Object")},pth:function(n){return w.obj(n)&&n.hasOwnProperty("totalLength")},svg:function(n){return n instanceof SVGElement},inp:function(n){return n instanceof HTMLInputElement},dom:function(n){return n.nodeType||w.svg(n)},str:function(n){return"string"==typeof n},fnc:function(n){return"function"==typeof n},und:function(n){return void 0===n},nil:function(n){return w.und(n)||null===n},hex:function(n){return/(^#[0-9A-F]{6}$)|(^#[0-9A-F]{3}$)/i.test(n)},rgb:function(n){return/^rgb/.test(n)},hsl:function(n){return/^hsl/.test(n)},col:function(n){return w.hex(n)||w.rgb(n)||w.hsl(n)},key:function(n){return!i.hasOwnProperty(n)&&!M.hasOwnProperty(n)&&"targets"!==n&&"keyframes"!==n}};function d(n){n=/\(([^)]+)\)/.exec(n);return n?n[1].split(",").map(function(n){return parseFloat(n)}):[]}function c(r,t){var n=d(r),e=C(w.und(n[0])?1:n[0],.1,100),a=C(w.und(n[1])?100:n[1],.1,100),o=C(w.und(n[2])?10:n[2],.1,100),n=C(w.und(n[3])?0:n[3],.1,100),u=Math.sqrt(a/e),i=o/(2*Math.sqrt(a*e)),c=i<1?u*Math.sqrt(1-i*i):0,s=i<1?(i*u-n)/c:-n+u;function f(n){var e=t?t*n/1e3:n,e=i<1?Math.exp(-e*i*u)*(+Math.cos(c*e)+s*Math.sin(c*e)):(1+s*e)*Math.exp(-e*u);return 0===n||1===n?n:1-e}return t?f:function(){var n=l.springs[r];if(n)return n;for(var e=0,t=0;;)if(1===f(e+=1/6)){if(16<=++t)break}else t=0;return n=e*(1/6)*1e3,l.springs[r]=n}}function q(e){return void 0===e&&(e=10),function(n){return Math.ceil(C(n,1e-6,1)*e)*(1/e)}}var H=function(b,e,M,t){if(0<=b&&b<=1&&0<=M&&M<=1){var x=new Float32Array(11);if(b!==e||M!==t)for(var n=0;n<11;++n)x[n]=k(.1*n,b,M);return function(n){return b===e&&M===t||0===n||1===n?n:k(r(n),e,t)}}function r(n){for(var e=0,t=1;10!==t&&x[t]<=n;++t)e+=.1;var r=e+.1*((n-x[--t])/(x[t+1]-x[t])),a=O(r,b,M);if(.001<=a){for(var o=n,u=r,i=b,c=M,s=0;s<4;++s){var f=O(u,i,c);if(0===f)return u;u-=(k(u,i,c)-o)/f}return u}if(0===a)return r;for(var l,d,p=n,h=e,g=e+.1,m=b,v=M,y=0;0<(l=k(d=h+(g-h)/2,m,v)-p)?g=d:h=d,1e-7<Math.abs(l)&&++y<10;);return d}};function r(n,e){return 1-3*e+3*n}function k(n,e,t){return((r(e,t)*n+(3*t-6*e))*n+3*e)*n}function O(n,e,t){return 3*r(e,t)*n*n+2*(3*t-6*e)*n+3*e}e={linear:function(){return function(n){return n}}},t={Sine:function(){return function(n){return 1-Math.cos(n*Math.PI/2)}},Expo:function(){return function(n){return n?Math.pow(2,10*n-10):0}},Circ:function(){return function(n){return 1-Math.sqrt(1-n*n)}},Back:function(){return function(n){return n*n*(3*n-2)}},Bounce:function(){return function(n){for(var e,t=4;n<((e=Math.pow(2,--t))-1)/11;);return 1/Math.pow(4,3-t)-7.5625*Math.pow((3*e-2)/22-n,2)}},Elastic:function(n,e){void 0===e&&(e=.5);var t=C(n=void 0===n?1:n,1,10),r=C(e,.1,2);return function(n){return 0===n||1===n?n:-t*Math.pow(2,10*(n-1))*Math.sin((n-1-r/(2*Math.PI)*Math.asin(1/t))*(2*Math.PI)/r)}}},["Quad","Cubic","Quart","Quint"].forEach(function(n,e){t[n]=function(){return function(n){return Math.pow(n,e+2)}}}),Object.keys(t).forEach(function(n){var r=t[n];e["easeIn"+n]=r,e["easeOut"+n]=function(e,t){return function(n){return 1-r(e,t)(1-n)}},e["easeInOut"+n]=function(e,t){return function(n){return n<.5?r(e,t)(2*n)/2:1-r(e,t)(-2*n+2)/2}},e["easeOutIn"+n]=function(e,t){return function(n){return n<.5?(1-r(e,t)(1-2*n))/2:(r(e,t)(2*n-1)+1)/2}}});var e,t,s=e;function P(n,e){if(w.fnc(n))return n;var t=n.split("(")[0],r=s[t],a=d(n);switch(t){case"spring":return c(n,e);case"cubicBezier":return o(H,a);case"steps":return o(q,a);default:return o(r,a)}}function a(n){try{return document.querySelectorAll(n)}catch(n){}}function I(n,e){for(var t,r=n.length,a=2<=arguments.length?e:void 0,o=[],u=0;u<r;u++)u in n&&(t=n[u],e.call(a,t,u,n))&&o.push(t);return o}function f(n){return n.reduce(function(n,e){return n.concat(w.arr(e)?f(e):e)},[])}function p(n){return w.arr(n)?n:(n=w.str(n)?a(n)||n:n)instanceof NodeList||n instanceof HTMLCollection?[].slice.call(n):[n]}function h(n,e){return n.some(function(n){return n===e})}function g(n){var e,t={};for(e in n)t[e]=n[e];return t}function x(n,e){var t,r=g(n);for(t in n)r[t]=(e.hasOwnProperty(t)?e:n)[t];return r}function D(n,e){var t,r=g(n);for(t in e)r[t]=(w.und(n[t])?e:n)[t];return r}function V(n){var e,t,r,a,o,u,i;return w.rgb(n)?(e=/rgb\((\d+,\s*[\d]+,\s*[\d]+)\)/g.exec(t=n))?"rgba("+e[1]+",1)":t:w.hex(n)?(e=(e=n).replace(/^#?([a-f\d])([a-f\d])([a-f\d])$/i,function(n,e,t,r){return e+e+t+t+r+r}),e=/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(e),"rgba("+parseInt(e[1],16)+","+parseInt(e[2],16)+","+parseInt(e[3],16)+",1)"):w.hsl(n)?(t=/hsl\((\d+),\s*([\d.]+)%,\s*([\d.]+)%\)/g.exec(t=n)||/hsla\((\d+),\s*([\d.]+)%,\s*([\d.]+)%,\s*([\d.]+)\)/g.exec(t),n=parseInt(t[1],10)/360,u=parseInt(t[2],10)/100,i=parseInt(t[3],10)/100,t=t[4]||1,0==u?r=a=o=i:(r=c(u=2*i-(i=i<.5?i*(1+u):i+u-i*u),i,n+1/3),a=c(u,i,n),o=c(u,i,n-1/3)),"rgba("+255*r+","+255*a+","+255*o+","+t+")"):void 0;function c(n,e,t){return t<0&&(t+=1),1<t&&--t,t<1/6?n+6*(e-n)*t:t<.5?e:t<2/3?n+(e-n)*(2/3-t)*6:n}}function B(n){n=/[+-]?\d*\.?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?(%|px|pt|em|rem|in|cm|mm|ex|ch|pc|vw|vh|vmin|vmax|deg|rad|turn)?$/.exec(n);if(n)return n[1]}function m(n,e){return w.fnc(n)?n(e.target,e.id,e.total):n}function v(n,e){return n.getAttribute(e)}function y(n,e,t){var r,a,o;return h([t,"deg","rad","turn"],B(e))?e:(r=l.CSS[e+t],w.und(r)?(a=document.createElement(n.tagName),(n=n.parentNode&&n.parentNode!==document?n.parentNode:document.body).appendChild(a),a.style.position="absolute",a.style.width=100+t,o=100/a.offsetWidth,n.removeChild(a),n=o*parseFloat(e),l.CSS[e+t]=n):r)}function $(n,e,t){var r;if(e in n.style)return r=e.replace(/([a-z])([A-Z])/g,"$1-$2").toLowerCase(),e=n.style[e]||getComputedStyle(n).getPropertyValue(r)||"0",t?y(n,e,t):e}function b(n,e){return w.dom(n)&&!w.inp(n)&&(!w.nil(v(n,e))||w.svg(n)&&n[e])?"attribute":w.dom(n)&&h(j,e)?"transform":w.dom(n)&&"transform"!==e&&$(n,e)?"css":null!=n[e]?"object":void 0}function W(n){if(w.dom(n)){for(var e,t=n.style.transform||"",r=/(\w+)\(([^)]*)\)/g,a=new Map;e=r.exec(t);)a.set(e[1],e[2]);return a}}function X(n,e,t,r){var a=u(e,"scale")?1:0+(u(a=e,"translate")||"perspective"===a?"px":u(a,"rotate")||u(a,"skew")?"deg":void 0),o=W(n).get(e)||a;return t&&(t.transforms.list.set(e,o),t.transforms.last=e),r?y(n,o,r):o}function T(n,e,t,r){switch(b(n,e)){case"transform":return X(n,e,r,t);case"css":return $(n,e,t);case"attribute":return v(n,e);default:return n[e]||0}}function E(n,e){var t=/^(\*=|\+=|-=)/.exec(n);if(!t)return n;var r=B(n)||0,a=parseFloat(e),o=parseFloat(n.replace(t[0],""));switch(t[0][0]){case"+":return a+o+r;case"-":return a-o+r;case"*":return a*o+r}}function Y(n,e){var t;return w.col(n)?V(n):/\s/g.test(n)?n:(t=(t=B(n))?n.substr(0,n.length-t.length):n,e?t+e:t)}function F(n,e){return Math.sqrt(Math.pow(e.x-n.x,2)+Math.pow(e.y-n.y,2))}function Z(n){for(var e,t=n.points,r=0,a=0;a<t.numberOfItems;a++){var o=t.getItem(a);0<a&&(r+=F(e,o)),e=o}return r}function G(n){if(n.getTotalLength)return n.getTotalLength();switch(n.tagName.toLowerCase()){case"circle":return 2*Math.PI*v(n,"r");case"rect":return 2*v(t=n,"width")+2*v(t,"height");case"line":return F({x:v(t=n,"x1"),y:v(t,"y1")},{x:v(t,"x2"),y:v(t,"y2")});case"polyline":return Z(n);case"polygon":return e=n.points,Z(n)+F(e.getItem(e.numberOfItems-1),e.getItem(0))}var e,t}function Q(n,e){var e=e||{},n=e.el||function(n){for(var e=n.parentNode;w.svg(e)&&w.svg(e.parentNode);)e=e.parentNode;return e}(n),t=n.getBoundingClientRect(),r=v(n,"viewBox"),a=t.width,t=t.height,e=e.viewBox||(r?r.split(" "):[0,0,a,t]);return{el:n,viewBox:e,x:+e[0],y:+e[1],w:a,h:t,vW:e[2],vH:e[3]}}function z(n,e){var t=/[+-]?\d*\.?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g,r=Y(w.pth(n)?n.totalLength:n,e)+"";return{original:r,numbers:r.match(t)?r.match(t).map(Number):[0],strings:w.str(n)||e?r.split(t):[]}}function A(n){return I(n?f(w.arr(n)?n.map(p):p(n)):[],function(n,e,t){return t.indexOf(n)===e})}function _(n){var t=A(n);return t.map(function(n,e){return{target:n,id:e,total:t.length,transforms:{list:W(n)}}})}function R(e){for(var t=I(f(e.map(function(n){return Object.keys(n)})),function(n){return w.key(n)}).reduce(function(n,e){return n.indexOf(e)<0&&n.push(e),n},[]),a={},n=0;n<t.length;n++)!function(n){var r=t[n];a[r]=e.map(function(n){var e,t={};for(e in n)w.key(e)?e==r&&(t.value=n[e]):t[e]=n[e];return t})}(n);return a}function J(n,e){var t,r=[],a=e.keyframes;for(t in e=a?D(R(a),e):e)w.key(t)&&r.push({name:t,tweens:function(n,t){var e,r=g(t),a=(/^spring/.test(r.easing)&&(r.duration=c(r.easing)),w.arr(n)&&(2===(e=n.length)&&!w.obj(n[0])?n={value:n}:w.fnc(t.duration)||(r.duration=t.duration/e)),w.arr(n)?n:[n]);return a.map(function(n,e){n=w.obj(n)&&!w.pth(n)?n:{value:n};return w.und(n.delay)&&(n.delay=e?0:t.delay),w.und(n.endDelay)&&(n.endDelay=e===a.length-1?t.endDelay:0),n}).map(function(n){return D(n,r)})}(e[t],n)});return r}function K(i,c){var s;return i.tweens.map(function(n){var n=function(n,e){var t,r={};for(t in n){var a=m(n[t],e);w.arr(a)&&1===(a=a.map(function(n){return m(n,e)})).length&&(a=a[0]),r[t]=a}return r.duration=parseFloat(r.duration),r.delay=parseFloat(r.delay),r}(n,c),e=n.value,t=w.arr(e)?e[1]:e,r=B(t),a=T(c.target,i.name,r,c),o=s?s.to.original:a,u=w.arr(e)?e[0]:o,a=B(u)||B(a),r=r||a;return w.und(t)&&(t=o),n.from=z(u,r),n.to=z(E(t,u),r),n.start=s?s.end:0,n.end=n.start+n.delay+n.duration+n.endDelay,n.easing=P(n.easing,n.duration),n.isPath=w.pth(e),n.isPathTargetInsideSVG=n.isPath&&w.svg(c.target),n.isColor=w.col(n.from.original),n.isColor&&(n.round=1),s=n})}var U={css:function(n,e,t){return n.style[e]=t},attribute:function(n,e,t){return n.setAttribute(e,t)},object:function(n,e,t){return n[e]=t},transform:function(n,e,t,r,a){var o;r.list.set(e,t),e!==r.last&&!a||(o="",r.list.forEach(function(n,e){o+=e+"("+n+") "}),n.style.transform=o)}};function nn(n,u){_(n).forEach(function(n){for(var e in u){var t=m(u[e],n),r=n.target,a=B(t),o=T(r,e,a,n),t=E(Y(t,a||B(o)),o),a=b(r,e);U[a](r,e,t,n.transforms,!0)}})}function en(n,e){return I(f(n.map(function(o){return e.map(function(n){var e,t,r=o,a=b(r.target,n.name);if(a)return t=(e=K(n,r))[e.length-1],{type:a,property:n.name,animatable:r,tweens:e,duration:t.end,delay:e[0].delay,endDelay:t.endDelay}})})),function(n){return!w.und(n)})}function tn(n,e){function t(n){return n.timelineOffset||0}var r=n.length,a={};return a.duration=r?Math.max.apply(Math,n.map(function(n){return t(n)+n.duration})):e.duration,a.delay=r?Math.min.apply(Math,n.map(function(n){return t(n)+n.delay})):e.delay,a.endDelay=r?a.duration-Math.max.apply(Math,n.map(function(n){return t(n)+n.duration-n.endDelay})):e.endDelay,a}var rn=0;var N,S=[],an=("undefined"!=typeof document&&document.addEventListener("visibilitychange",function(){L.suspendWhenDocumentHidden&&(n()?N=cancelAnimationFrame(N):(S.forEach(function(n){return n._onDocumentVisibility()}),an()))}),function(){!(N||n()&&L.suspendWhenDocumentHidden)&&0<S.length&&(N=requestAnimationFrame(on))});function on(n){for(var e=S.length,t=0;t<e;){var r=S[t];r.paused?(S.splice(t,1),e--):(r.tick(n),t++)}N=0<t?requestAnimationFrame(on):void 0}function n(){return document&&document.hidden}function L(n){var c,s=0,f=0,l=0,d=0,p=null;function h(n){var e=window.Promise&&new Promise(function(n){return p=n});return n.finished=e}e=x(i,n=n=void 0===n?{}:n),t=J(r=x(M,n),n),n=_(n.targets),r=tn(t=en(n,t),r),a=rn,rn++;var e,t,r,a,k=D(e,{id:a,children:[],animatables:n,animations:t,duration:r.duration,delay:r.delay,endDelay:r.endDelay});h(k);function g(){var n=k.direction;"alternate"!==n&&(k.direction="normal"!==n?"normal":"reverse"),k.reversed=!k.reversed,c.forEach(function(n){return n.reversed=k.reversed})}function m(n){return k.reversed?k.duration-n:n}function o(){s=0,f=m(k.currentTime)*(1/L.speed)}function v(n,e){e&&e.seek(n-e.timelineOffset)}function y(e){for(var n=0,t=k.animations,r=t.length;n<r;){for(var a=t[n],o=a.animatable,u=a.tweens,i=u.length-1,c=u[i],i=(i&&(c=I(u,function(n){return e<n.end})[0]||c),C(e-c.start-c.delay,0,c.duration)/c.duration),s=isNaN(i)?1:c.easing(i),f=c.to.strings,l=c.round,d=[],p=c.to.numbers.length,h=void 0,g=0;g<p;g++){var m=void 0,v=c.to.numbers[g],y=c.from.numbers[g]||0,m=c.isPath?function(e,t,n){function r(n){return e.el.getPointAtLength(1<=t+(n=void 0===n?0:n)?t+n:0)}var a=Q(e.el,e.svg),o=r(),u=r(-1),i=r(1),c=n?1:a.w/a.vW,s=n?1:a.h/a.vH;switch(e.property){case"x":return(o.x-a.x)*c;case"y":return(o.y-a.y)*s;case"angle":return 180*Math.atan2(i.y-u.y,i.x-u.x)/Math.PI}}(c.value,s*v,c.isPathTargetInsideSVG):y+s*(v-y);!l||c.isColor&&2<g||(m=Math.round(m*l)/l),d.push(m)}var b=f.length;if(b)for(var h=f[0],M=0;M<b;M++){f[M];var x=f[M+1],w=d[M];isNaN(w)||(h+=x?w+x:w+" ")}else h=d[0];U[a.type](o.target,a.property,h,o.transforms),a.currentValue=h,n++}}function b(n){k[n]&&!k.passThrough&&k[n](k)}function u(n){var e=k.duration,t=k.delay,r=e-k.endDelay,a=m(n);if(k.progress=C(a/e*100,0,100),k.reversePlayback=a<k.currentTime,c){var o=a;if(k.reversePlayback)for(var u=d;u--;)v(o,c[u]);else for(var i=0;i<d;i++)v(o,c[i])}!k.began&&0<k.currentTime&&(k.began=!0,b("begin")),!k.loopBegan&&0<k.currentTime&&(k.loopBegan=!0,b("loopBegin")),a<=t&&0!==k.currentTime&&y(0),(r<=a&&k.currentTime!==e||!e)&&y(e),t<a&&a<r?(k.changeBegan||(k.changeBegan=!0,k.changeCompleted=!1,b("changeBegin")),b("change"),y(a)):k.changeBegan&&(k.changeCompleted=!0,k.changeBegan=!1,b("changeComplete")),k.currentTime=C(a,0,e),k.began&&b("update"),e<=n&&(f=0,k.remaining&&!0!==k.remaining&&k.remaining--,k.remaining?(s=l,b("loopComplete"),k.loopBegan=!1,"alternate"===k.direction&&g()):(k.paused=!0,k.completed||(k.completed=!0,b("loopComplete"),b("complete"),!k.passThrough&&"Promise"in window&&(p(),h(k)))))}return k.reset=function(){var n=k.direction;k.passThrough=!1,k.currentTime=0,k.progress=0,k.paused=!0,k.began=!1,k.loopBegan=!1,k.changeBegan=!1,k.completed=!1,k.changeCompleted=!1,k.reversePlayback=!1,k.reversed="reverse"===n,k.remaining=k.loop,c=k.children;for(var e=d=c.length;e--;)k.children[e].reset();(k.reversed&&!0!==k.loop||"alternate"===n&&1===k.loop)&&k.remaining++,y(k.reversed?k.duration:0)},k._onDocumentVisibility=o,k.set=function(n,e){return nn(n,e),k},k.tick=function(n){u(((l=n)+(f-(s=s||l)))*L.speed)},k.seek=function(n){u(m(n))},k.pause=function(){k.paused=!0,o()},k.play=function(){k.paused&&(k.completed&&k.reset(),k.paused=!1,S.push(k),o(),an())},k.reverse=function(){g(),k.completed=!k.reversed,o()},k.restart=function(){k.reset(),k.play()},k.remove=function(n){cn(A(n),k)},k.reset(),k.autoplay&&k.play(),k}function un(n,e){for(var t=e.length;t--;)h(n,e[t].animatable.target)&&e.splice(t,1)}function cn(n,e){var t=e.animations,r=e.children;un(n,t);for(var a=r.length;a--;){var o=r[a],u=o.animations;un(n,u),u.length||o.children.length||r.splice(a,1)}t.length||r.length||e.pause()}return L.version="3.2.2",L.speed=1,L.suspendWhenDocumentHidden=!0,L.running=S,L.remove=function(n){for(var e=A(n),t=S.length;t--;)cn(e,S[t])},L.get=T,L.set=nn,L.convertPx=y,L.path=function(n,e){var t=w.str(n)?a(n)[0]:n,r=e||100;return function(n){return{property:n,el:t,svg:Q(t),totalLength:G(t)*(r/100)}}},L.setDashoffset=function(n){var e=G(n);return n.setAttribute("stroke-dasharray",e),e},L.stagger=function(n,e){var i=(e=void 0===e?{}:e).direction||"normal",c=e.easing?P(e.easing):null,s=e.grid,f=e.axis,l=e.from||0,d="first"===l,p="center"===l,h="last"===l,g=w.arr(n),m=g?parseFloat(n[0]):parseFloat(n),v=g?parseFloat(n[1]):0,y=B(g?n[1]:n)||0,b=e.start||0+(g?m:0),M=[],x=0;return function(n,e,t){if(d&&(l=0),p&&(l=(t-1)/2),h&&(l=t-1),!M.length){for(var r,a,o,u=0;u<t;u++)s?(r=p?(s[0]-1)/2:l%s[0],a=p?(s[1]-1)/2:Math.floor(l/s[0]),r=r-u%s[0],a=a-Math.floor(u/s[0]),o=Math.sqrt(r*r+a*a),"x"===f&&(o=-r),M.push(o="y"===f?-a:o)):M.push(Math.abs(l-u)),x=Math.max.apply(Math,M);c&&(M=M.map(function(n){return c(n/x)*x})),"reverse"===i&&(M=M.map(function(n){return f?n<0?-1*n:-n:Math.abs(x-n)}))}return b+(g?(v-m)/x:m)*(Math.round(100*M[e])/100)+y}},L.timeline=function(u){var i=L(u=void 0===u?{}:u);return i.duration=0,i.add=function(n,e){var t=S.indexOf(i),r=i.children;function a(n){n.passThrough=!0}-1<t&&S.splice(t,1);for(var o=0;o<r.length;o++)a(r[o]);t=D(n,x(M,u)),t.targets=t.targets||u.targets,n=i.duration,t.autoplay=!1,t.direction=i.direction,t.timelineOffset=w.und(e)?n:E(e,n),a(i),i.seek(t.timelineOffset),e=L(t),a(e),r.push(e),n=tn(r,u);return i.delay=n.delay,i.endDelay=n.endDelay,i.duration=n.duration,i.seek(0),i.reset(),i.autoplay&&i.play(),i},i},L.easing=P,L.penner=s,L.random=function(n,e){return Math.floor(Math.random()*(e-n+1))+n},L});</script>
   <style>
     /* ══════════════════════════════════════════════════════════════════════════
-       BLACK / ELECTRIC BLUE DESIGN SYSTEM
-       Pure black canvas · Electric blue brand · No grey — black only
-       Chat bubbles: blue (agent) + dark (contact)
+       OBSIDIAN BLACK — Electric blue accents only
+       Chrome #040404 → Sidebar #080809 → Canvas #0c0c0e → Surfaces #141416+
        ══════════════════════════════════════════════════════════════════════════ */
 
     /* ── Typeface stack ── */
@@ -38,26 +37,49 @@
       --brand: #3b82f6; --brand-hover: #2563eb;
       --brand-bg: rgba(59,130,246,.15); --brand-border: rgba(59,130,246,.35);
       --link-color: #60a5fa; --link-color-dark: #93c5fd;
-      /* Text: 3 clear steps — white → soft grey → dim grey */
-      --text-primary: #f1f5f9; --text-secondary: #94a3b8; --text-muted: #64748b;
-      /* Surfaces: 5 clear steps — each visibly different */
-      --body-bg: #0b0f19;
-      --surface-subtle: #0f1623;
-      --surface: #151d2e;
-      --surface-elevated: #1e2a40;
-      --surface-overlay: #273450;
-      --surface-border: rgba(148,163,184,0.12);
-      --surface-border-strong: rgba(148,163,184,0.22);
-      --header-bg: #0f1623; --header-border: rgba(148,163,184,0.12);
-      --sidebar-bg: #0b0f19; --sidebar-border: rgba(148,163,184,0.10);
-      --scrollbar-track: #0b0f19; --scrollbar-thumb: rgba(148,163,184,0.18); --scrollbar-thumb-hover: rgba(148,163,184,0.35);
+      /* Text — neutral zinc (no slate-blue cast) */
+      --text-primary: #f5f5f7; --text-secondary: #98989d; --text-muted: #636366;
+      /* Layout zones — 3-step black hierarchy */
+      --chrome-bg: #040404;
+      --sidebar-bg: #080809;
+      --canvas-bg: #0c0c0e;
+      --body-bg: var(--canvas-bg);
+      /* Surfaces — elevated neutrals on canvas */
+      --surface-subtle: #101012;
+      --surface: #141416;
+      --surface-elevated: #1c1c1f;
+      --surface-overlay: #242428;
+      --surface-border: rgba(255,255,255,0.06);
+      --surface-border-strong: rgba(255,255,255,0.10);
+      --header-bg: var(--chrome-bg); --header-border: var(--surface-border);
+      --sidebar-border: rgba(255,255,255,0.06);
+      --scrollbar-track: var(--canvas-bg);
+      --scrollbar-thumb: rgba(255,255,255,0.12);
+      --scrollbar-thumb-hover: rgba(255,255,255,0.22);
       --success: #34d399; --warning: #fbbf24; --danger: #f87171;
-      --input-bg: #151d2e;
-      --chat-bg: #000000;
+      --review-badge: #fbbf24;
+      --review-badge-muted: #fcd34d;
+      --review-badge-bg: rgba(251, 191, 36, 0.10);
+      --review-badge-ring: rgba(251, 191, 36, 0.38);
+      --review-badge-glow: rgba(251, 191, 36, 0.22);
+      --review-pending: #60a5fa;
+      --review-pending-bg: rgba(37,99,235,.12);
+      --review-pending-border: rgba(96,165,250,.35);
+      --review-done: #fca5a5;
+      --review-done-bg: rgba(127,29,29,.22);
+      --review-done-border: rgba(239,68,68,.45);
+      --input-bg: #161618;
+      --chat-bg: #050506;
       --agent-bubble-bg: #2563eb; --agent-bubble-color: #ffffff;
-      --contact-bubble-bg: #1e2a40; --contact-bubble-color: #f1f5f9; --contact-bubble-border: rgba(148,163,184,0.15);
+      --contact-bubble-bg: #1c1c1f; --contact-bubble-color: #f5f5f7;
+      --contact-bubble-border: rgba(255,255,255,0.08);
       --flagged-row-bg: rgba(248,113,113,.07);
-      --nav-glass: #0f1623;
+      --nav-glass: var(--chrome-bg);
+      --sidebar-rail-width: 52px;
+      --sidebar-panel-width: 290px;
+      --sidebar-shell-width: calc(var(--sidebar-rail-width) + var(--sidebar-panel-width));
+      --header-height: 53px;
+      --footer-height: 28px;
     }
 
     /* ── Light mode tokens — VOS Railway warm stone palette ── */
@@ -70,16 +92,29 @@
       --text-primary: #0f1117; --text-secondary: #3d4452; --text-muted: #6b7280;
       /* Surfaces — warm stone, 3 clear depths */
       --body-bg: #e5e3da;
+      --chrome-bg: #f2f1ec;
+      --canvas-bg: #e5e3da;
       --surface-subtle: #d8d5c7;
-      --surface: #e5e3da;
-      --surface-elevated: #f2f1ec;
+      --surface: #f2f1ec;
+      --surface-elevated: #faf9f5;
       --surface-overlay: #cbc7b5;
       --surface-border: rgba(80,72,50,0.12);
       --surface-border-strong: rgba(80,72,50,0.22);
       --header-bg: rgba(242,241,236,0.90); --header-border: rgba(80,72,50,0.14);
-      --sidebar-bg: #f2f1ec; --sidebar-border: rgba(80,72,50,0.12);
+      --sidebar-bg: #ddd9cc; --sidebar-border: rgba(80,72,50,0.12);
       --scrollbar-track: #e5e3da; --scrollbar-thumb: rgba(80,72,50,0.20); --scrollbar-thumb-hover: rgba(80,72,50,0.36);
       --success: #16a34a; --warning: #d97706; --danger: #dc2626;
+      --review-badge: #b45309;
+      --review-badge-muted: #d97706;
+      --review-badge-bg: rgba(217, 119, 6, 0.10);
+      --review-badge-ring: rgba(217, 119, 6, 0.32);
+      --review-badge-glow: rgba(217, 119, 6, 0.14);
+      --review-pending: #2563eb;
+      --review-pending-bg: rgba(37,99,235,.08);
+      --review-pending-border: rgba(37,99,235,.28);
+      --review-done: #b91c1c;
+      --review-done-bg: rgba(220,38,38,.08);
+      --review-done-border: rgba(220,38,38,.28);
       --input-bg: #f2f1ec;
       --chat-bg: #e5e3da;
       --agent-bubble-bg: #0f1117; --agent-bubble-color: #ffffff;
@@ -96,6 +131,7 @@
     *, *::before, *::after { box-sizing: border-box; }
     html, body { height: 100%; overflow: hidden; margin: 0; }
     html { color-scheme: dark; }
+    [data-theme="light"] { color-scheme: light; }
     /* Apple-style form controls in light mode */
     [data-theme="light"] input:not([type="radio"]):not([type="checkbox"]):not([type="range"]),
     [data-theme="light"] textarea {
@@ -145,6 +181,64 @@
       font-size: 14px;
       letter-spacing: -0.01em;
       line-height: 1.5;
+    }
+
+    /* Layout zones — override legacy inline backgrounds */
+    header { background: var(--chrome-bg) !important; border-bottom-color: var(--header-border) !important; }
+    #sb-rail, #sb-content { background: var(--sidebar-bg) !important; }
+    main { background: var(--canvas-bg) !important; }
+    #vw-empty, #vw-agent, #vw-trends, #vw-detailed, #vw-chat,
+    #vw-settings-add, #vw-settings-edit, #vw-settings-assign,
+    #vw-settings-add-texter, #vw-settings-tool-access, #vw-settings-labels {
+      background: var(--canvas-bg) !important;
+    }
+    #vw-chat > div:first-child { background: var(--surface-subtle) !important; }
+    #ch-ai { background: var(--surface) !important; }
+    #ch-msgs { background: var(--chat-bg) !important; }
+
+    /* ── App shell — header + layout + fixed footer ── */
+    #app-layout {
+      display: flex;
+      height: calc(100vh - var(--header-height) - var(--footer-height));
+      overflow: hidden;
+    }
+
+    /* ── App footer — spans full width, sidebar pad matches shell ── */
+    #app-footer {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      display: flex;
+      height: var(--footer-height);
+      border-top: 1px solid var(--header-border);
+    }
+    .app-footer__sidebar {
+      width: var(--sidebar-shell-width);
+      flex-shrink: 0;
+      background: var(--sidebar-bg);
+      border-right: 1px solid var(--sidebar-border);
+    }
+    .app-footer__main {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      gap: 16px;
+      background: var(--chrome-bg);
+    }
+    [data-theme="light"] .app-footer__main {
+      background: var(--header-bg);
+    }
+    [data-theme="light"] #vw-agent > div:first-child,
+    [data-theme="light"] #vw-chat > div:first-child {
+      background: var(--surface-elevated) !important;
+    }
+    [data-theme="light"] #ag-convos {
+      background: var(--canvas-bg);
     }
 
     /* ── Scrollbars ── */
@@ -227,17 +321,139 @@
     [data-theme="light"] .tag-red    { background:rgba(220,38,38,.10);  color:#dc2626; border-color:rgba(220,38,38,.25); }
     [data-theme="light"] .tag-gray   { background:var(--surface-subtle); color:var(--text-muted); border-color:var(--surface-border); }
 
-    /* ── Sidebar agent card ── */
+    /* ── Sidebar agent item (flat list style) ── */
     .ac {
-      padding: .7rem 1rem; cursor: pointer;
-      border-bottom: 1px solid var(--surface-border);
+      margin: 0;
+      padding: 10px 14px;
+      cursor: pointer;
+      border-radius: 0;
+      border: none;
       border-left: 3px solid transparent;
-      transition: background .18s ease, border-color .18s ease;
+      border-bottom: 1px solid var(--surface-border);
+      background: transparent;
+      transition: all 0.18s ease;
     }
-    .ac:hover { background: var(--surface-elevated); }
-    .ac.sel   { background: var(--brand-bg); border-left-color: var(--brand); }
-    [data-theme="light"] .ac:hover { background: var(--surface-subtle); }
-    [data-theme="light"] .ac.sel   { background: var(--brand-bg); border-left-color: var(--brand); }
+    .ac:hover {
+      background: var(--surface-elevated);
+      border-left-color: var(--surface-border-strong);
+    }
+    .ac.sel {
+      background: var(--brand-bg);
+      border-left-color: var(--brand);
+    }
+    [data-theme="light"] .ac:hover {
+      background: var(--surface-subtle);
+      border-left-color: var(--surface-border-strong);
+    }
+    [data-theme="light"] .ac.sel {
+      background: var(--brand-bg);
+      border-left-color: var(--brand);
+    }
+
+    /* ── Done notification styling ── */
+    @keyframes donePulse {
+      0% { border-left-color: #22c55e; }
+      50% { border-left-color: #4ade80; }
+      100% { border-left-color: #22c55e; }
+    }
+    @keyframes donePulseLight {
+      0% { border-left-color: #16a34a; }
+      50% { border-left-color: #22c55e; }
+      100% { border-left-color: #16a34a; }
+    }
+
+    .ac.ac-done {
+      border-left-color: #22c55e !important;
+      background: rgba(34, 197, 94, 0.04);
+      animation: donePulse 2.5s infinite ease-in-out;
+    }
+    [data-theme="light"] .ac.ac-done {
+      border-left-color: #16a34a !important;
+      background: rgba(22, 163, 74, 0.03);
+      animation: donePulseLight 2.5s infinite ease-in-out;
+    }
+
+    .ac-done-banner {
+      margin: -10px -14px 8px -14px;
+      padding: 5px 12px;
+      border-radius: 0;
+      background: rgba(34, 197, 94, 0.08);
+      border-bottom: 1px solid rgba(34, 197, 94, 0.15);
+      font-size: .67rem;
+      font-weight: 700;
+      color: #4ade80;
+      letter-spacing: 0.02em;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .ac-done-banner::before {
+      content: '';
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #22c55e;
+      flex-shrink: 0;
+      box-shadow: 0 0 6px #22c55e;
+    }
+    [data-theme="light"] .ac-done-banner {
+      background: rgba(22, 163, 74, 0.06);
+      border-bottom-color: rgba(22, 163, 74, 0.12);
+      color: #15803d;
+    }
+    [data-theme="light"] .ac-done-banner::before {
+      background: #16a34a;
+      box-shadow: 0 0 6px #16a34a;
+    }
+
+    .ac-dismiss-out {
+      transition: border-left-color 0.35s ease, background 0.35s ease !important;
+      border-left-color: transparent !important;
+      background: transparent !important;
+      animation: none !important;
+    }
+
+    /* ── Premium toast notification ── */
+    #toast-container {
+      position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 9999;
+      display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
+      pointer-events: none;
+    }
+    .toast-item {
+      pointer-events: auto;
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 20px 14px 16px;
+      background: rgba(20,20,22,.94); backdrop-filter: blur(16px) saturate(160%);
+      border: 1px solid rgba(74,222,128,.25);
+      border-radius: 14px;
+      box-shadow: 0 8px 40px rgba(0,0,0,.45), 0 0 20px rgba(34,197,94,.12);
+      animation: toast-slide-in .4s cubic-bezier(.34,1.56,.64,1);
+      overflow: hidden; position: relative;
+      min-width: 280px; max-width: 420px;
+    }
+    .toast-item.toast-out { animation: toast-slide-out .32s ease-in forwards; }
+    @keyframes toast-slide-in { from { opacity: 0; transform: translateX(40px) scale(.92); } to { opacity: 1; transform: translateX(0) scale(1); } }
+    @keyframes toast-slide-out { from { opacity: 1; transform: translateX(0) scale(1); } to { opacity: 0; transform: translateX(40px) scale(.92); } }
+    .toast-icon {
+      width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(34,197,94,.12); border: 1px solid rgba(34,197,94,.2);
+      font-size: 1.1rem;
+    }
+    .toast-body { flex: 1; min-width: 0; }
+    .toast-title { font-size: .82rem; font-weight: 700; color: var(--text-primary); letter-spacing: -0.01em; }
+    .toast-sub { font-size: .7rem; color: var(--text-secondary); margin-top: 2px; }
+    .toast-bar {
+      position: absolute; bottom: 0; left: 0; height: 2.5px;
+      background: linear-gradient(90deg, #22c55e, #4ade80);
+      border-radius: 0 0 14px 14px;
+      animation: toast-countdown linear forwards;
+    }
+    @keyframes toast-countdown { from { width: 100%; } to { width: 0%; } }
+    [data-theme="light"] .toast-item { background: rgba(255,255,255,.95); border-color: rgba(22,163,74,.25); box-shadow: 0 8px 40px rgba(0,0,0,.12), 0 0 20px rgba(22,163,74,.08); }
+    [data-theme="light"] .toast-title { color: #0f172a; }
+    [data-theme="light"] .toast-sub { color: #64748b; }
 
     /* ── Conversation list item ── */
     .ci {
@@ -261,6 +477,153 @@
       flex-shrink: 0; display: inline-flex; align-items: center; gap: 3px;
       font-size: .63rem; font-weight: 700; padding: 2px 8px; border-radius: 999px;
       background: rgba(248,113,113,.14); color: var(--danger);
+    }
+    .ci-review {
+      flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px;
+      font-size: .58rem; font-weight: 700; padding: 2px 7px; border-radius: 999px;
+      letter-spacing: .03em; text-transform: uppercase;
+    }
+    .ci-review-pending {
+      background: var(--review-done-bg); color: var(--review-done);
+      border: 1px solid var(--review-done-border);
+    }
+    .ci-review-done {
+      background: var(--review-pending-bg); color: var(--review-pending);
+      border: 1px solid var(--review-pending-border);
+    }
+    .ci-review-dot {
+      width: 5px; height: 5px; border-radius: 50%; background: var(--review-done);
+      animation: review-pulse 1.6s ease-in-out infinite;
+    }
+    .ci-unread-badge {
+      flex-shrink: 0; font-size: .58rem; font-weight: 700; padding: 2px 7px;
+      border-radius: 999px; letter-spacing: .03em; text-transform: uppercase;
+      background: rgba(251,191,36,.14); color: var(--warning);
+      border: 1px solid rgba(251,191,36,.32);
+    }
+    .ci-flagged-unreviewed {
+      border-left: 3px solid #ef4444 !important;
+      background: var(--review-done-bg) !important;
+      padding-left: calc(1.25rem - 3px) !important;
+    }
+    .ci-flagged-reviewed {
+      border-left: 3px solid var(--review-pending) !important;
+      background: var(--review-pending-bg) !important;
+      padding-left: calc(1.25rem - 3px) !important;
+    }
+    .ci-av-wrap { position: relative; flex-shrink: 0; }
+    .ci-av-dot {
+      position: absolute; top: -1px; right: -1px; width: 9px; height: 9px;
+      border-radius: 50%; background: var(--review-done);
+      border: 2px solid var(--canvas-bg, #0c0c0e);
+      animation: review-pulse 1.6s ease-in-out infinite;
+    }
+    /* ── Sidebar review badge (needs-review count) ── */
+    .ac-review-slot {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      min-width: 28px;
+    }
+    .ac-review-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      min-width: 24px;
+      height: 24px;
+      padding: 0 6px;
+      border-radius: 999px;
+      font-size: .68rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.03em;
+      line-height: 1;
+      color: var(--review-badge-muted);
+      background: var(--review-badge-bg);
+      border: 1px solid var(--review-badge-ring);
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.08),
+        0 1px 2px rgba(0,0,0,.35),
+        0 0 12px var(--review-badge-glow);
+    }
+    .ac-review-badge.pending {
+      animation: ac-review-glow 2.6s ease-in-out infinite;
+    }
+    [data-theme="light"] .ac-review-badge {
+      color: var(--review-badge);
+      background: var(--review-badge-bg);
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.55),
+        0 1px 2px rgba(0,0,0,.06),
+        0 0 8px var(--review-badge-glow);
+    }
+    .ac-review-badge.done {
+      min-width: 0;
+      height: auto;
+      padding: 3px 8px 3px 6px;
+      gap: 3px;
+      font-size: .56rem;
+      font-weight: 600;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--success);
+      background: rgba(52, 211, 153, .07);
+      border: 1px solid rgba(52, 211, 153, .18);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+      animation: none;
+    }
+    [data-theme="light"] .ac-review-badge.done {
+      background: rgba(22, 163, 74, .08);
+      border-color: rgba(22, 163, 74, .18);
+      box-shadow: none;
+    }
+    .ac-review-badge.done svg {
+      width: 9px;
+      height: 9px;
+      flex-shrink: 0;
+      opacity: .85;
+    }
+    .ac-review-empty {
+      font-size: .72rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      opacity: .4;
+    }
+    @keyframes ac-review-glow {
+      0%, 100% {
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,.08),
+          0 1px 2px rgba(0,0,0,.35),
+          0 0 8px var(--review-badge-glow);
+      }
+      50% {
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,.10),
+          0 1px 2px rgba(0,0,0,.35),
+          0 0 16px var(--review-badge-glow);
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .ac-review-badge.pending { animation: none; }
+    }
+    .convo-filter-btn {
+      font-size: .58rem; font-weight: 600; padding: 2px 8px; border-radius: 999px;
+      border: 1px solid var(--surface-border); background: transparent;
+      color: var(--text-muted); cursor: pointer; transition: .15s;
+    }
+    .convo-filter-btn.active {
+      background: var(--review-done-bg); border-color: var(--review-done-border);
+      color: var(--review-done);
+    }
+    .convo-filter-btn.active-green {
+      background: rgba(52,211,153,.1); border-color: rgba(52,211,153,.35);
+      color: var(--success);
+    }
+    @keyframes review-pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: .45; transform: scale(.85); }
     }
     .ci-meta { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
     .ci-correct { font-size: .69rem; font-weight: 700; }
@@ -389,14 +752,14 @@
     .snav-item {
       display:flex; align-items:center; gap:10px;
       padding:9px 10px; border-radius:8px; cursor:pointer;
-      color:#ffffff; font-size:.82rem; font-weight:400;
+      color: var(--text-primary); font-size:.82rem; font-weight:400;
       letter-spacing:-0.01em;
       transition:background .18s, color .18s; margin-bottom:2px;
       user-select:none;
     }
-    .snav-item:hover { background:var(--surface-elevated); color:#ffffff; }
-    [data-theme="light"] .snav-item:hover { background:var(--surface-subtle); }
-    .snav-active { background:var(--brand-bg) !important; color:#ffffff !important; font-weight:600; }
+    .snav-item:hover { background:var(--surface-elevated); color:var(--text-primary); }
+    [data-theme="light"] .snav-item:hover { background:var(--surface-subtle); color:var(--text-primary); }
+    .snav-active { background:var(--brand-bg) !important; color:var(--text-primary) !important; font-weight:600; }
     .snav-icon {
       width:26px; height:26px; border-radius:7px; flex-shrink:0;
       display:flex; align-items:center; justify-content:center;
@@ -415,9 +778,18 @@
     .rail-item:hover { background: var(--brand-bg); color: var(--text-secondary); }
     .rail-item:hover .rail-tooltip { opacity:1; pointer-events:none; transform:translateY(-50%) translateX(0); }
     .rail-active { background: var(--brand-bg) !important; color: var(--brand) !important; box-shadow: 0 0 12px rgba(59,130,246,.2); }
-    #sb-rail { border-right: 1px solid var(--sidebar-border) !important; }
+    #sb-rail {
+      border-right: 1px solid var(--sidebar-border) !important;
+      padding-bottom: 12px !important;
+    }
+    #sb-rail .rail-item:last-child { margin-bottom: 2px; }
     [data-theme="light"] .rail-item { color: var(--text-muted); }
     [data-theme="light"] .rail-item:hover { background: var(--brand-bg); color: var(--text-secondary); }
+    [data-theme="light"] .rail-active {
+      background: rgba(15,17,23,0.10) !important;
+      color: #0f1117 !important;
+      box-shadow: none !important;
+    }
 
     /* Tooltip */
     .rail-tooltip {
@@ -429,7 +801,7 @@
       box-shadow:var(--shadow-md);
       opacity:0; pointer-events:none;
       transition:opacity .15s, transform .15s;
-      z-index:100;
+      z-index:120;
     }
     .rail-tooltip::before {
       content:''; position:absolute; right:100%; top:50%; transform:translateY(-50%);
@@ -443,8 +815,8 @@
     /* ── Assignment dropdowns ── */
     .assign-select { appearance: auto; }
     .assign-select option {
-      background: #1a1a1a;
-      color: #ffffff;
+      background: var(--surface-elevated);
+      color: var(--text-primary);
       font-size: .8rem;
       padding: 6px 10px;
     }
@@ -545,20 +917,20 @@
     /* ── Dark mode settings form — rich, not boring ── */
     [data-theme="dark"] .settings-input,
     :root:not([data-theme="light"]) .settings-input {
-      background: #0f1623 !important;
-      border: 1px solid rgba(59,130,246,.22) !important;
-      color: #e2e8f0 !important;
+      background: var(--input-bg) !important;
+      border: 1px solid var(--surface-border-strong) !important;
+      color: var(--text-primary) !important;
       box-shadow: inset 0 1px 3px rgba(0,0,0,.4), 0 0 0 0 transparent;
       transition: border-color .2s, box-shadow .2s;
     }
     [data-theme="dark"] .settings-input:focus,
     :root:not([data-theme="light"]) .settings-input:focus {
-      border-color: #3b82f6 !important;
-      box-shadow: 0 0 0 3px rgba(59,130,246,.20), inset 0 1px 3px rgba(0,0,0,.3) !important;
+      border-color: var(--brand) !important;
+      box-shadow: 0 0 0 3px rgba(59,130,246,.18), inset 0 1px 3px rgba(0,0,0,.3) !important;
     }
     [data-theme="dark"] .settings-input::placeholder,
     :root:not([data-theme="light"]) .settings-input::placeholder {
-      color: #475569 !important;
+      color: var(--text-muted) !important;
     }
     /* Label colors — pure white */
     [data-theme="dark"] .settings-label,
@@ -587,28 +959,15 @@
     [data-theme="dark"] #vw-settings-add > div:last-child > div > div[style*="border-top"],
     [data-theme="dark"] #vw-settings-edit > div:last-child > div > div[style*="border-top"],
     :root:not([data-theme="light"]) #vw-settings-add > div:last-child > div > div[style*="border-top"] {
-      border-top-color: rgba(59,130,246,.18) !important;
-    }
-    /* Settings panel background — slightly elevated */
-    [data-theme="dark"] #vw-settings-add,
-    [data-theme="dark"] #vw-settings-edit,
-    [data-theme="dark"] #vw-settings-assign,
-    [data-theme="dark"] #vw-settings-add-texter,
-    [data-theme="dark"] #vw-settings-tool-access,
-    :root:not([data-theme="light"]) #vw-settings-add,
-    :root:not([data-theme="light"]) #vw-settings-edit,
-    :root:not([data-theme="light"]) #vw-settings-assign,
-    :root:not([data-theme="light"]) #vw-settings-add-texter,
-    :root:not([data-theme="light"]) #vw-settings-tool-access {
-      background: #0b0f19 !important;
+      border-top-color: var(--surface-border) !important;
     }
     /* Header strip inside settings */
     [data-theme="dark"] #vw-settings-add > div:first-child,
     [data-theme="dark"] #vw-settings-edit > div:first-child,
     :root:not([data-theme="light"]) #vw-settings-add > div:first-child,
     :root:not([data-theme="light"]) #vw-settings-edit > div:first-child {
-      background: linear-gradient(135deg, #0f1a2e 0%, #0b1220 100%);
-      border-bottom-color: rgba(59,130,246,.20) !important;
+      background: linear-gradient(135deg, var(--surface-subtle) 0%, var(--canvas-bg) 100%);
+      border-bottom-color: var(--surface-border) !important;
     }
 
     /* JS-injected inline color overrides — always apply (dark is default) */
@@ -650,18 +1009,21 @@
     }
     .btn-not-valid:hover:not(:disabled) { background: var(--danger); color: #fff; border-color: transparent; }
     .btn-not-valid.rf-done { border-color: var(--surface-border); color: var(--text-muted); pointer-events: none; }
-
-    /* ── Valid confirmation ── */
-    .btn-valid {
-      font-size: 11px; padding: 4px 14px; border-radius: 7px;
-      border: 1px solid rgba(5,150,105,.4);
-      color: #059669; background: transparent; cursor: pointer;
-      transition: background .18s, color .18s, border-color .18s;
-      line-height: 1.5; white-space: nowrap; letter-spacing: -0.01em; font-weight: 600;
-    }
-    .btn-valid:hover:not(:disabled) { background: #059669; color: #fff; border-color: transparent; }
-    .btn-valid.v-done { border-color: var(--surface-border); color: var(--text-muted); pointer-events: none; }
     .rf-invalidated .rf-text { text-decoration: line-through; opacity: .4; }
+
+    /* Label-only issue (no red-flag box) */
+    .label-issue-card {
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+      padding: 8px 10px; margin-bottom: 8px;
+      background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.25);
+      border-left: 3px solid var(--danger); border-radius: 0 8px 8px 0;
+    }
+    .label-issue-text {
+      flex: 1; min-width: 0; font-size: .73rem; font-weight: 600;
+      color: #fca5a5; line-height: 1.45;
+    }
+    .label-issue-reason { color: var(--text-muted); font-style: italic; font-weight: 500; }
+    .label-issue-btn { margin-left: 0; flex-shrink: 0; align-self: center; }
 
     /* ── Modal ── */
     .nv-overlay {
@@ -745,9 +1107,71 @@
       border-color: var(--brand);
       box-shadow: 0 0 0 3px rgba(0,113,227,.1);
     }
+    [data-theme="light"] .drp-trigger,
+    [data-theme="light"] .lp-trigger {
+      background: #f2f1ec !important;
+      border: 1px solid rgba(80,72,50,0.22) !important;
+      color: #0f1117 !important;
+      box-shadow: inset 0 1px 3px rgba(0,0,0,.04), 0 1px 2px rgba(0,0,0,.04) !important;
+    }
+    [data-theme="light"] .drp-trigger:hover,
+    [data-theme="light"] .drp-trigger:focus,
+    [data-theme="light"] .lp-trigger:hover,
+    [data-theme="light"] .lp-trigger:focus {
+      border-color: #0f1117 !important;
+      box-shadow: 0 0 0 3px rgba(15,17,23,0.10) !important;
+    }
     .drp-trigger svg { flex-shrink: 0; }
     .drp-chevron { transition: transform .2s; }
     .drp-trigger.open .drp-chevron { transform: rotate(180deg); }
+
+    /* ── Labels Picker ── */
+    .lp-trigger {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: .73rem; font-family: var(--font-text); font-weight: 400;
+      padding: 5px 10px; border-radius: 8px;
+      background: var(--input-bg); color: var(--text-primary);
+      border: 1px solid var(--surface-border); outline: none;
+      cursor: pointer; letter-spacing: -0.01em;
+      transition: border-color .18s, box-shadow .18s;
+      user-select: none; white-space: nowrap;
+    }
+    .lp-trigger:hover, .lp-trigger:focus {
+      border-color: var(--brand);
+      box-shadow: 0 0 0 3px rgba(0,113,227,.1);
+    }
+    .lp-trigger svg { flex-shrink: 0; }
+    .lp-chevron { transition: transform .2s; }
+    .lp-trigger.open .lp-chevron { transform: rotate(180deg); }
+
+    .lp-popover {
+      display: none; position: absolute; top: calc(100% + 6px); left: 0;
+      z-index: 200;
+      background: var(--surface); border: 1px solid var(--surface-border);
+      border-radius: 14px; box-shadow: var(--shadow-md);
+      overflow-y: auto; max-height: 250px; min-width: 180px;
+      animation: modalIn .18s ease;
+      padding: 8px;
+      flex-direction: column; gap: 2px;
+    }
+    .lp-popover.show { display: flex; }
+    [data-theme="dark"] .lp-popover,
+    :root:not([data-theme="light"]) .lp-popover {
+      background: var(--surface-elevated); border-color: var(--surface-border-strong);
+    }
+    .lp-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 10px; border-radius: 8px;
+      cursor: pointer; transition: background .12s;
+      font-size: .75rem; color: var(--text-primary);
+    }
+    .lp-item:hover {
+      background: var(--brand-bg);
+    }
+    .lp-item input[type="checkbox"] {
+      width: 13px; height: 13px; border-radius: 4px; border: 1px solid var(--surface-border);
+      cursor: pointer; accent-color: var(--brand);
+    }
 
     .drp-popover {
       display: none; position: absolute; top: calc(100% + 6px); right: 0;
@@ -760,7 +1184,226 @@
     .drp-popover.show { display: flex; }
     [data-theme="dark"] .drp-popover,
     :root:not([data-theme="light"]) .drp-popover {
-      background: #0f1623; border-color: rgba(59,130,246,.22);
+      background: var(--surface-elevated); border-color: var(--surface-border-strong);
+    }
+    /* Detailed Dashboard picker: anchor left under trigger, avoid parent overflow clip */
+    #dd-drp-popover.drp-popover {
+      position: fixed;
+      top: auto;
+      left: auto;
+      right: auto;
+      max-width: calc(100vw - 24px);
+    }
+
+    /* ── Detailed Dashboard filter bar ── */
+    #vw-detailed .dd-panel-header {
+      padding: 16px 32px 14px;
+      border-bottom: 1px solid var(--surface-border);
+      flex-shrink: 0;
+    }
+    #vw-detailed .dd-panel-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: -.025em;
+    }
+    #vw-detailed .dd-panel-subtitle {
+      font-size: .78rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    #dd-filter-bar {
+      padding: 16px 32px;
+      border-bottom: 1px solid var(--surface-border);
+      flex-shrink: 0;
+      display: grid;
+      grid-template-columns: minmax(180px, 220px) minmax(180px, 1fr) minmax(180px, 1fr) auto auto;
+      gap: 12px 20px;
+      align-items: end;
+      position: relative;
+      z-index: 30;
+      overflow: visible;
+    }
+    .dd-filter-field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 0;
+    }
+    #dd-filter-bar .settings-label {
+      margin-bottom: 0;
+      font-size: .69rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+    [data-theme="light"] #dd-filter-bar .settings-label {
+      color: var(--text-secondary);
+    }
+    #dd-filter-bar #dd-drp-wrapper {
+      position: relative;
+      display: block;
+      width: 100%;
+      z-index: 31;
+    }
+    #dd-filter-bar .drp-trigger,
+    #dd-filter-bar .settings-input {
+      width: 100%;
+      min-height: 40px;
+      padding: 9px 14px;
+      font-size: .84rem;
+      box-sizing: border-box;
+      border-radius: var(--radius-sm);
+    }
+    #dd-filter-bar .drp-trigger {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid var(--surface-border-strong);
+      box-shadow: inset 0 1px 3px rgba(0,0,0,.4);
+    }
+    [data-theme="light"] #dd-filter-bar .drp-trigger {
+      border: 1px solid rgba(80,72,50,0.22);
+      box-shadow: inset 0 1px 3px rgba(0,0,0,.04), 0 1px 2px rgba(0,0,0,.04);
+    }
+    #dd-filter-bar .drp-trigger #dd-drp-label {
+      flex: 1;
+      text-align: left;
+    }
+    #dd-filter-bar .drp-chevron {
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+    #dd-filter-bar .dd-filter-action {
+      display: flex;
+      align-items: end;
+    }
+    #dd-filter-bar .settings-btn {
+      min-height: 40px;
+      padding: 9px 24px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .dd-filter-checkbox {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 40px;
+      padding: 0 2px;
+      cursor: pointer;
+      font-size: .84rem;
+      color: var(--text-secondary);
+      user-select: none;
+      white-space: nowrap;
+    }
+    .dd-filter-checkbox input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      margin: 0;
+      accent-color: var(--brand);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    @media (max-width: 720px) {
+      #dd-filter-bar {
+        grid-template-columns: 1fr;
+        padding: 14px 20px;
+      }
+      #dd-filter-bar .settings-btn {
+        width: 100%;
+        justify-content: center;
+      }
+      #vw-detailed .dd-panel-header {
+        padding: 14px 20px 12px;
+      }
+    }
+
+    /* ── Trends filter bar (same date-range UX as Detailed Dashboard) ── */
+    #trends-filter-bar {
+      padding: 16px 32px;
+      border-bottom: 1px solid var(--surface-border);
+      flex-shrink: 0;
+      display: grid;
+      grid-template-columns: minmax(200px, 240px) minmax(200px, 1fr) auto auto;
+      gap: 12px 20px;
+      align-items: end;
+      position: relative;
+      z-index: 25;
+      overflow: visible;
+    }
+    #trends-filter-bar .settings-label {
+      margin-bottom: 0;
+      font-size: .69rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+    [data-theme="light"] #trends-filter-bar .settings-label {
+      color: var(--text-secondary);
+    }
+    #trends-filter-bar #tr-drp-wrapper {
+      position: relative;
+      display: block;
+      width: 100%;
+      z-index: 26;
+    }
+    #trends-filter-bar .drp-trigger,
+    #trends-filter-bar .settings-input {
+      width: 100%;
+      min-height: 40px;
+      padding: 9px 14px;
+      font-size: .84rem;
+      box-sizing: border-box;
+      border-radius: var(--radius-sm);
+    }
+    #trends-filter-bar .drp-trigger {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid var(--surface-border-strong);
+      box-shadow: inset 0 1px 3px rgba(0,0,0,.4);
+    }
+    [data-theme="light"] #trends-filter-bar .drp-trigger {
+      border: 1px solid rgba(80,72,50,0.22);
+      box-shadow: inset 0 1px 3px rgba(0,0,0,.04), 0 1px 2px rgba(0,0,0,.04);
+    }
+    #trends-filter-bar .drp-trigger #tr-drp-label {
+      flex: 1;
+      text-align: left;
+    }
+    #trends-filter-bar .drp-chevron {
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+    #trends-filter-bar .trends-filter-action {
+      display: flex;
+      align-items: end;
+    }
+    #trends-filter-bar .settings-btn {
+      min-height: 40px;
+      padding: 9px 24px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    #tr-drp-popover.drp-popover {
+      position: fixed;
+      top: auto;
+      left: auto;
+      right: auto;
+      max-width: calc(100vw - 24px);
+    }
+    @media (max-width: 720px) {
+      #trends-filter-bar {
+        grid-template-columns: 1fr;
+        padding: 14px 20px;
+      }
+      #trends-filter-bar .settings-btn,
+      #trends-filter-bar #btn-reset-trends {
+        width: 100%;
+        justify-content: center;
+      }
     }
 
     /* Left presets panel */
@@ -957,6 +1600,18 @@
       </div>
     </div>
 
+    <!-- Labels Checkbox Dropdown Picker -->
+    <div id="lp-wrapper" style="position:relative; display:inline-block; margin-right:4px;">
+      <button class="lp-trigger" id="lp-trigger" onclick="toggleLabelsPicker(event)">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+        <span id="lp-label">All Labels</span>
+        <svg class="lp-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="lp-popover" id="lp-popover">
+        <!-- populated dynamically -->
+      </div>
+    </div>
+
     <!-- Sample size -->
     <div style="display:flex; align-items:center; gap:4px;">
       <label for="sample-size" style="font-size:.6rem; color:var(--text-muted); white-space:nowrap; letter-spacing:-0.01em;">Samples:</label>
@@ -975,7 +1630,7 @@
 
 
 <!-- ══ LAYOUT ═══════════════════════════════════════════════════════════════ -->
-<div style="display:flex; height:calc(100vh - 53px); overflow:hidden;">
+<div id="app-layout">
 
   <!-- ── SIDEBAR: icon rail + content panel ───────────────────────────── -->
   <aside id="sb-shell" style="display:flex; flex-shrink:0; height:100%;">
@@ -1021,11 +1676,11 @@
 
     </div>
 
-    <!-- ── Content Panel (220px, slides in/out) ── -->
-    <div id="sb-content" style="width:220px; display:flex; flex-direction:column; height:100%; background:var(--sidebar-bg); border-right:1px solid var(--sidebar-border); overflow:hidden; transition:width .22s cubic-bezier(.4,0,.2,1);">
+    <!-- ── Content Panel (290px, slides in/out) ── -->
+    <div id="sb-content" style="width:290px; display:flex; flex-direction:column; height:100%; background:var(--sidebar-bg); border-right:1px solid var(--sidebar-border); overflow:hidden; transition:width .22s cubic-bezier(.4,0,.2,1);">
 
       <!-- Section label -->
-      <div id="sb-section-label" style="padding:14px 14px 10px; font-size:.62rem; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:#ffffff; flex-shrink:0; border-bottom:1px solid var(--surface-border);">Agents</div>
+      <div id="sb-section-label" style="padding:14px 14px 10px; font-size:.62rem; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--text-primary); flex-shrink:0; border-bottom:1px solid var(--surface-border);">Agents</div>
 
       <!-- Agent list sub-panel -->
       <div id="sb-agents" style="display:flex; flex-direction:column; flex:1; overflow:hidden;">
@@ -1103,6 +1758,12 @@
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
           </div>
           <span class="snav-label">Tool Access</span>
+        </div>
+        <div class="snav-item" id="snav-labels" onclick="showSettingsSection('labels')">
+          <div class="snav-icon">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+          </div>
+          <span class="snav-label">Labels</span>
         </div>
       </div>
 
@@ -1457,6 +2118,258 @@
       </div>
     </div>
 
+    <!-- ── View: Settings — Labels ── -->
+    <div id="vw-settings-labels" style="display:none; flex:1; flex-direction:column; overflow:hidden; background:var(--surface);">
+      <!-- Header -->
+      <div style="padding:20px 40px 16px; border-bottom:1px solid var(--surface-border); flex-shrink:0; display:flex; align-items:center; gap:10px;">
+        <div style="width:32px; height:32px; border-radius:9px; background:var(--brand-bg); border:1px solid var(--brand-border); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+        </div>
+        <div>
+          <div style="font-size:1.05rem; font-weight:600; color:var(--text-primary); letter-spacing:-0.02em; font-family:var(--font-display);">Custom Labels</div>
+          <div style="font-size:.76rem; color:var(--text-muted); margin-top:1px; letter-spacing:-0.01em;">Define labels to filter and extract specific conversation categories during audits</div>
+        </div>
+      </div>
+
+      <div style="flex:1; overflow-y:auto; padding:24px 40px;">
+
+        <!-- Add label -->
+        <div style="background:var(--surface); border:1px solid var(--surface-border); border-radius:var(--radius-md,10px); padding:20px; margin-bottom:20px;">
+          <div style="font-size:.85rem; font-weight:600; color:var(--text-primary); margin-bottom:4px; letter-spacing:-0.01em;">Add Custom Label</div>
+          <div style="font-size:.75rem; color:var(--text-muted); margin-bottom:12px;">Enter a SmarterContact label name exactly or fuzzy (e.g. 'Warm', 'Hot', 'Follow up'). Casing won't matter when executing audits.</div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <input id="label-input" type="text" placeholder="e.g. Warm"
+              style="flex:1; padding:9px 12px; border:1px solid var(--surface-border); border-radius:8px; background:var(--input-bg); color:var(--text-primary); font-size:.84rem; font-family:var(--font-text); outline:none; transition:.15s;"
+              onfocus="this.style.borderColor='var(--brand)'" onblur="this.style.borderColor='var(--surface-border)'"
+              onkeydown="if(event.key==='Enter') addCustomLabel()" />
+            <button onclick="addCustomLabel()"
+              style="padding:9px 18px; background:var(--brand); color:#fff; border:none; border-radius:8px; font-size:.84rem; font-weight:600; cursor:pointer; white-space:nowrap; transition:.15s;"
+              onmouseover="this.style.background='var(--brand-hover)'" onmouseout="this.style.background='var(--brand)'">
+              + Add
+            </button>
+          </div>
+          <div id="label-msg" style="margin-top:8px; font-size:.78rem; display:none; letter-spacing:-0.01em;"></div>
+        </div>
+
+        <!-- Custom labels list (collapsible) -->
+        <div style="background:var(--surface); border:1px solid var(--surface-border); border-radius:var(--radius-md,10px); overflow:hidden;">
+          <!-- Header (click to toggle) -->
+          <div id="defined-labels-header"
+            onclick="toggleDefinedLabels()"
+            style="display:flex; align-items:center; gap:8px; padding:14px 20px; cursor:pointer; user-select:none;
+                   transition:background .15s;"
+            onmouseover="this.style.background='var(--surface-subtle,rgba(255,255,255,.04))'"
+            onmouseout="this.style.background='transparent'">
+            <div style="font-size:.85rem; font-weight:600; color:var(--text-primary); letter-spacing:-0.01em; flex:1;">Defined Labels</div>
+            <span id="labels-count" style="font-size:.72rem; font-weight:500; color:var(--text-muted); background:var(--surface-subtle,rgba(255,255,255,.04)); border:1px solid var(--surface-border); border-radius:980px; padding:1px 9px;">0</span>
+            <!-- Chevron -->
+            <svg id="defined-labels-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none"
+              stroke="var(--text-muted)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+              style="transition:transform .25s; flex-shrink:0;">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </div>
+          <!-- Collapsible body -->
+          <div id="defined-labels-body"
+            style="max-height:0; overflow:hidden; transition:max-height .3s ease, padding .3s ease; padding:0 20px;">
+            <div id="labels-list" style="padding-bottom:16px;">
+              <div style="font-size:.78rem; color:var(--text-muted); padding:4px 0;">Loading...</div>
+            </div>
+          </div>
+        </div>
+
+        <script>
+          function toggleDefinedLabels() {
+            const body    = document.getElementById('defined-labels-body');
+            const chevron = document.getElementById('defined-labels-chevron');
+            const isOpen  = body.dataset.open === '1';
+            if (isOpen) {
+              body.style.maxHeight = '0';
+              body.style.paddingTop = '0';
+              body.style.paddingBottom = '0';
+              chevron.style.transform = 'rotate(0deg)';
+              body.dataset.open = '0';
+            } else {
+              body.style.maxHeight = body.scrollHeight + 'px';
+              body.style.paddingTop = '0';
+              body.style.paddingBottom = '0';
+              chevron.style.transform = 'rotate(180deg)';
+              body.dataset.open = '1';
+            }
+          }
+          // After labels load, refresh the max-height so the open state fits new content
+          const _origRenderLabels = window.renderCustomLabels;
+          document.addEventListener('DOMContentLoaded', () => {
+            const observer = new MutationObserver(() => {
+              const body = document.getElementById('defined-labels-body');
+              if (body && body.dataset.open === '1') {
+                body.style.maxHeight = body.scrollHeight + 500 + 'px';
+              }
+            });
+            const list = document.getElementById('labels-list');
+            if (list) observer.observe(list, { childList: true, subtree: true });
+          });
+        </script>
+
+        <!-- ── Blacklist Labels Section ── -->
+        <div style="background:var(--surface); border:1px solid var(--surface-border); border-radius:var(--radius-md,10px); padding:20px; margin-top:20px; margin-bottom:20px;">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+            <div style="font-size:.85rem; font-weight:600; color:var(--text-primary); letter-spacing:-0.01em;">Blacklist Label</div>
+          </div>
+          <div style="font-size:.75rem; color:var(--text-muted); margin-bottom:12px;">Exclude conversations during scraper runs. Mode 'any' skips if label is present; 'only' skips only if it is the sole label.</div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <input id="bl-input" type="text" placeholder="e.g. Extra"
+              style="flex:1; padding:9px 12px; border:1px solid var(--surface-border); border-radius:8px; background:var(--input-bg); color:var(--text-primary); font-size:.84rem; font-family:var(--font-text); outline:none; transition:.15s;"
+              onfocus="this.style.borderColor='var(--danger)'" onblur="this.style.borderColor='var(--surface-border)'"
+              onkeydown="if(event.key==='Enter') addBlacklistLabel()" />
+            <select id="bl-mode"
+              style="padding:9px 12px; border:1px solid var(--surface-border); border-radius:8px; background:var(--input-bg); color:var(--text-primary); font-size:.84rem; font-family:var(--font-text); outline:none; cursor:pointer; transition:.15s;"
+              onfocus="this.style.borderColor='var(--danger)'" onblur="this.style.borderColor='var(--surface-border)'">
+              <option value="any">Skip if any</option>
+              <option value="only">Skip if only</option>
+            </select>
+            <button onclick="addBlacklistLabel()"
+              style="padding:9px 18px; background:var(--danger); color:#fff; border:none; border-radius:8px; font-size:.84rem; font-weight:600; cursor:pointer; white-space:nowrap; transition:.15s;"
+              onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
+              + Exclude
+            </button>
+          </div>
+          <div id="bl-msg" style="margin-top:8px; font-size:.78rem; display:none; letter-spacing:-0.01em;"></div>
+        </div>
+
+        <!-- Blacklist Labels Accordion List -->
+        <div style="background:var(--surface); border:1px solid var(--surface-border); border-radius:var(--radius-md,10px); overflow:hidden; margin-bottom:20px;">
+          <div id="blacklist-labels-header" onclick="toggleBlacklistLabels()"
+            style="display:flex; align-items:center; gap:8px; padding:14px 20px; cursor:pointer; user-select:none; transition:background .15s;"
+            onmouseover="this.style.background='var(--surface-subtle,rgba(255,255,255,.04))'"
+            onmouseout="this.style.background='transparent'">
+            <div style="font-size:.85rem; font-weight:600; color:var(--text-primary); letter-spacing:-0.01em; flex:1;">Blacklisted Labels</div>
+            <span id="bl-count" style="font-size:.72rem; font-weight:500; color:var(--text-muted); background:var(--surface-subtle,rgba(255,255,255,.04)); border:1px solid var(--surface-border); border-radius:980px; padding:1px 9px;">0</span>
+            <svg id="blacklist-labels-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none"
+              stroke="var(--text-muted)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+              style="transition:transform .25s; flex-shrink:0;">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </div>
+          <div id="blacklist-labels-body" style="max-height:0; overflow:hidden; transition:max-height .3s ease, padding .3s ease; padding:0 20px;">
+            <div id="bl-list" style="padding-bottom:16px;">
+              <div style="font-size:.78rem; color:var(--text-muted); padding:4px 0;">Loading...</div>
+            </div>
+          </div>
+        </div>
+
+        <script>
+          function toggleBlacklistLabels() {
+            const body = document.getElementById('blacklist-labels-body');
+            const chevron = document.getElementById('blacklist-labels-chevron');
+            const isOpen = body.dataset.open === '1';
+            if (isOpen) {
+              body.style.maxHeight = '0';
+              body.style.paddingTop = '0';
+              body.style.paddingBottom = '0';
+              chevron.style.transform = 'rotate(0deg)';
+              body.dataset.open = '0';
+            } else {
+              body.style.maxHeight = body.scrollHeight + 'px';
+              body.style.paddingTop = '0';
+              body.style.paddingBottom = '0';
+              chevron.style.transform = 'rotate(180deg)';
+              body.dataset.open = '1';
+            }
+          }
+
+          async function loadBlacklistLabels() {
+            try {
+              const res = await fetch('/api/blacklist-labels');
+              const payload = await res.json();
+              const data = payload.success ? payload.data : [];
+              const list = document.getElementById('bl-list');
+              const count = document.getElementById('bl-count');
+              count.textContent = data.length;
+              if (!data.length) {
+                list.innerHTML = '<div style="font-size:.78rem; color:var(--text-muted); padding:4px 0;">No exclusions added yet.</div>';
+                return;
+              }
+              list.innerHTML = data.map(item => `
+                <div style="display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--surface-border);">
+                  <div style="flex:1; font-size:.84rem; color:var(--text-primary); font-weight:500;">${escHtml(item.name)}</div>
+                  <span style="font-size:.7rem; font-weight:600; padding:2px 8px; border-radius:980px;
+                    background:${item.skip_mode==='any' ? 'rgba(239,68,68,.12)' : 'rgba(251,146,60,.12)'};
+                    color:${item.skip_mode==='any' ? 'var(--danger)' : '#f97316'};
+                    border:1px solid ${item.skip_mode==='any' ? 'rgba(239,68,68,.25)' : 'rgba(249,115,22,.25)'};">
+                    ${item.skip_mode === 'any' ? 'any' : 'only'}
+                  </span>
+                  <button onclick="deleteBlacklistLabel(${item.id})"
+                    style="width:26px; height:26px; display:flex; align-items:center; justify-content:center; background:transparent; border:1px solid var(--surface-border); border-radius:6px; cursor:pointer; color:var(--danger); flex-shrink:0; transition:.15s;"
+                    onmouseover="this.style.background='rgba(239,68,68,.1)'" onmouseout="this.style.background='transparent'">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>`).join('');
+
+              const body = document.getElementById('blacklist-labels-body');
+              if (body.dataset.open === '1') {
+                body.style.maxHeight = body.scrollHeight + 'px';
+              }
+            } catch(e) {
+              document.getElementById('bl-list').innerHTML = '<div style="font-size:.78rem; color:var(--danger);">Error loading blacklist.</div>';
+            }
+          }
+
+          async function addBlacklistLabel() {
+            const input = document.getElementById('bl-input');
+            const mode = document.getElementById('bl-mode').value;
+            const name = input.value.trim();
+            if (!name) return;
+            try {
+              const res = await fetch('/api/blacklist-labels', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ name, skip_mode: mode })
+              });
+              if (res.ok) {
+                input.value = '';
+                const body = document.getElementById('blacklist-labels-body');
+                if (body.dataset.open !== '1') toggleBlacklistLabels();
+                loadBlacklistLabels();
+              } else {
+                const err = await res.json();
+                const msg = document.getElementById('bl-msg');
+                msg.textContent = err.detail || 'Failed to add';
+                msg.style.color = 'var(--danger)';
+                msg.style.display = 'block';
+                setTimeout(() => { msg.style.display = 'none'; }, 3000);
+              }
+            } catch(e) {}
+          }
+
+          async function deleteBlacklistLabel(id) {
+            try {
+              const res = await fetch('/api/blacklist-labels/' + id, { method: 'DELETE' });
+              if (res.ok) loadBlacklistLabels();
+            } catch(e) {}
+          }
+
+          function escHtml(s) {
+            return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+          }
+
+          document.addEventListener('DOMContentLoaded', () => {
+            loadBlacklistLabels();
+            const observer = new MutationObserver(() => {
+              const body = document.getElementById('blacklist-labels-body');
+              if (body && body.dataset.open === '1') {
+                body.style.maxHeight = body.scrollHeight + 'px';
+              }
+            });
+            const list = document.getElementById('bl-list');
+            if (list) observer.observe(list, { childList: true, subtree: true });
+          });
+        </script>
+
+      </div>
+    </div>
+
     <!-- ── View: Trends ── -->
     <div id="vw-trends" style="display:none; flex:1; flex-direction:column; overflow:hidden; background:var(--surface);">
       <!-- Top bar -->
@@ -1466,35 +2379,77 @@
       </div>
 
       <!-- Filter bar -->
-      <div style="padding:14px 32px; border-bottom:1px solid var(--surface-border); flex-shrink:0; display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap;">
-        <div>
-          <label class="settings-label">Start Date</label>
-          <input id="trends-start" type="date" class="settings-input" style="margin-top:5px; width:150px;" />
+      <div id="trends-filter-bar">
+        <div class="dd-filter-field">
+          <label class="settings-label" for="tr-drp-trigger">Date Range</label>
+          <div id="tr-drp-wrapper">
+            <button class="drp-trigger" id="tr-drp-trigger" type="button" onclick="toggleTrDatePicker()">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              <span id="tr-drp-label">This Month</span>
+              <svg class="drp-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <select id="tr-date-filter" style="display:none;">
+              <option value="today">Today</option>
+              <option value="yesterday">Yesterday</option>
+              <option value="this_week">This Week</option>
+              <option value="this_month" selected>This Month</option>
+              <option value="custom">Custom</option>
+            </select>
+            <div class="drp-popover" id="tr-drp-popover">
+              <div class="drp-presets">
+                <button class="drp-preset tr-drp-preset" data-preset="today" type="button" onclick="applyTrDatePreset('today')">Today</button>
+                <button class="drp-preset tr-drp-preset" data-preset="yesterday" type="button" onclick="applyTrDatePreset('yesterday')">Yesterday</button>
+                <button class="drp-preset tr-drp-preset" data-preset="this_week" type="button" onclick="applyTrDatePreset('this_week')">This Week</button>
+                <button class="drp-preset tr-drp-preset active" data-preset="this_month" type="button" onclick="applyTrDatePreset('this_month')">This Month</button>
+              </div>
+              <div class="drp-calendar">
+                <div class="drp-cal-header">
+                  <div style="display:flex; gap:4px;">
+                    <button class="drp-cal-nav" type="button" onclick="trDrpNavMonth(-12)" title="Previous year">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
+                    </button>
+                    <button class="drp-cal-nav" type="button" onclick="trDrpNavMonth(-1)" title="Previous month">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+                    </button>
+                  </div>
+                  <span class="drp-cal-title" id="tr-drp-cal-title"></span>
+                  <div style="display:flex; gap:4px;">
+                    <button class="drp-cal-nav" type="button" onclick="trDrpNavMonth(1)" title="Next month">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+                    </button>
+                    <button class="drp-cal-nav" type="button" onclick="trDrpNavMonth(12)" title="Next year">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="drp-months" id="tr-drp-months"></div>
+              </div>
+            </div>
+          </div>
         </div>
-        <div>
-          <label class="settings-label">End Date</label>
-          <input id="trends-end" type="date" class="settings-input" style="margin-top:5px; width:150px;" />
-        </div>
-        <div>
-          <label class="settings-label">Agent</label>
-          <select id="trends-agent" class="settings-input" style="margin-top:5px; width:240px;">
+        <div class="dd-filter-field">
+          <label class="settings-label" for="trends-agent">Agent</label>
+          <select id="trends-agent" class="settings-input">
             <option value="all">All Agents</option>
-            <!-- Populated dynamically from DB accounts -->
           </select>
         </div>
-        <button onclick="loadTrends()" class="settings-btn" style="padding:10px 22px; margin-bottom:0;">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          Load
-        </button>
-        <button onclick="resetTrendData()"
-          id="btn-reset-trends"
-          title="Permanently delete all trend snapshots — cannot be undone"
-          style="padding:9px 18px; margin-bottom:0; font-size:.8rem; font-weight:400; border-radius:980px; background:transparent; color:var(--danger); border:1px solid var(--danger); cursor:pointer; display:inline-flex; align-items:center; gap:6px; transition:.15s; letter-spacing:-0.01em;"
-          onmouseover="this.style.background='var(--danger)';this.style.color='#fff'"
-          onmouseout="this.style.background='transparent';this.style.color='var(--danger)'">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-          Reset Data
-        </button>
+        <div class="trends-filter-action">
+          <button onclick="loadTrends()" class="settings-btn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            Load
+          </button>
+        </div>
+        <div class="trends-filter-action">
+          <button onclick="resetTrendData()"
+            id="btn-reset-trends"
+            title="Permanently delete all trend snapshots — cannot be undone"
+            style="min-height:40px; padding:9px 18px; font-size:.8rem; font-weight:400; border-radius:980px; background:transparent; color:var(--danger); border:1px solid var(--danger); cursor:pointer; display:inline-flex; align-items:center; gap:6px; transition:.15s; letter-spacing:-0.01em; white-space:nowrap;"
+            onmouseover="this.style.background='var(--danger)';this.style.color='#fff'"
+            onmouseout="this.style.background='transparent';this.style.color='var(--danger)'">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+            Reset Data
+          </button>
+        </div>
       </div>
 
       <!-- Scrollable content -->
@@ -1513,7 +2468,6 @@
           <div style="background:var(--surface-elevated); border:1px solid var(--surface-border); border-radius:12px; padding:16px 20px;">
             <div style="font-size:.72rem; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px;">Convos Audited</div>
             <div id="ts-convos-audited" style="font-size:1.7rem; font-weight:600; color:var(--text-primary); letter-spacing:-.03em;">—</div>
-            <div id="ts-issues-ratio" style="font-size:.72rem; color:var(--text-muted); margin-top:3px;"></div>
           </div>
           <div style="background:var(--surface-elevated); border:1px solid var(--surface-border); border-radius:12px; padding:16px 20px;">
             <div style="font-size:.72rem; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px;">Agents Tracked</div>
@@ -1611,9 +2565,12 @@
       </div>
 
       <!-- Convo list subheader -->
-      <div style="flex-shrink:0; padding:5px 1.25rem; background:var(--surface-subtle); border-bottom:1px solid var(--surface-border); display:flex; justify-content:space-between; align-items:center;">
-        <span id="ag-ccount" style="font-size:.65rem; color:var(--text-muted); font-weight:500;"></span>
-        <span style="font-size:.62rem; color:var(--text-muted);">tap to open chat ›</span>
+      <div style="flex-shrink:0; padding:5px 1.25rem; background:var(--surface-subtle); border-bottom:1px solid var(--surface-border); display:flex; justify-content:space-between; align-items:center; gap:10px;">
+        <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+          <span id="ag-ccount" style="font-size:.65rem; color:var(--text-muted); font-weight:500;"></span>
+          <span id="ag-convo-filters" style="display:flex; gap:4px; flex-shrink:0;"></span>
+        </div>
+        <span style="font-size:.62rem; color:var(--text-muted); flex-shrink:0;">tap to open chat ›</span>
       </div>
 
       <!-- Conversation items -->
@@ -1624,31 +2581,83 @@
     <!-- ── View: Detailed Dashboard ── -->
     <div id="vw-detailed" style="display:none; flex:1; flex-direction:column; overflow:hidden; background:var(--surface);">
       <!-- Top bar -->
-      <div style="padding:16px 32px 14px; border-bottom:1px solid var(--surface-border); flex-shrink:0;">
-        <div style="font-size:1.1rem; font-weight:700; color:var(--text-primary); letter-spacing:-.025em;">Detailed Dashboard</div>
-        <div style="font-size:.78rem; color:var(--text-muted); margin-top:2px;">Historical flagged conversations — filter by texter and date range</div>
+      <div class="dd-panel-header">
+        <div class="dd-panel-title">Detailed Dashboard</div>
+        <div class="dd-panel-subtitle">Historical conversations — filter by texter and date range</div>
       </div>
 
       <!-- Filter bar -->
-      <div style="padding:14px 32px; border-bottom:1px solid var(--surface-border); flex-shrink:0; display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap;">
-        <div>
-          <label class="settings-label">Start Date</label>
-          <input id="dd-start" type="date" class="settings-input" style="margin-top:5px; width:150px;" />
+      <div id="dd-filter-bar">
+        <div class="dd-filter-field">
+          <label class="settings-label" for="dd-drp-trigger">Date Range</label>
+          <div id="dd-drp-wrapper">
+          <button class="drp-trigger" id="dd-drp-trigger" type="button" onclick="toggleDdDatePicker()">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <span id="dd-drp-label">This Month</span>
+            <svg class="drp-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <select id="dd-date-filter" style="display:none;">
+            <option value="today">Today</option>
+            <option value="yesterday">Yesterday</option>
+            <option value="this_week">This Week</option>
+            <option value="this_month" selected>This Month</option>
+            <option value="custom">Custom</option>
+          </select>
+          <div class="drp-popover" id="dd-drp-popover">
+            <div class="drp-presets">
+              <button class="drp-preset dd-drp-preset" data-preset="today" onclick="applyDdDatePreset('today')">Today</button>
+              <button class="drp-preset dd-drp-preset" data-preset="yesterday" onclick="applyDdDatePreset('yesterday')">Yesterday</button>
+              <button class="drp-preset dd-drp-preset" data-preset="this_week" onclick="applyDdDatePreset('this_week')">This Week</button>
+              <button class="drp-preset dd-drp-preset active" data-preset="this_month" onclick="applyDdDatePreset('this_month')">This Month</button>
+            </div>
+            <div class="drp-calendar">
+              <div class="drp-cal-header">
+                <div style="display:flex; gap:4px;">
+                  <button class="drp-cal-nav" type="button" onclick="ddDrpNavMonth(-12)" title="Previous year">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
+                  </button>
+                  <button class="drp-cal-nav" type="button" onclick="ddDrpNavMonth(-1)" title="Previous month">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+                  </button>
+                </div>
+                <span class="drp-cal-title" id="dd-drp-cal-title"></span>
+                <div style="display:flex; gap:4px;">
+                  <button class="drp-cal-nav" type="button" onclick="ddDrpNavMonth(1)" title="Next month">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+                  </button>
+                  <button class="drp-cal-nav" type="button" onclick="ddDrpNavMonth(12)" title="Next year">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="drp-months" id="dd-drp-months"></div>
+            </div>
+          </div>
+          </div>
         </div>
-        <div>
-          <label class="settings-label">End Date</label>
-          <input id="dd-end" type="date" class="settings-input" style="margin-top:5px; width:150px;" />
-        </div>
-        <div>
-          <label class="settings-label">Agent (Texter)</label>
-          <select id="dd-agent" class="settings-input" style="margin-top:5px; width:240px;">
-            <!-- Populated from AGENT_ROSTER -->
+        <div class="dd-filter-field">
+          <label class="settings-label" for="dd-agent">Agent (Texter)</label>
+          <select id="dd-agent" class="settings-input">
+            <option value="all">All Texters</option>
           </select>
         </div>
-        <button onclick="loadDetailedDashboard()" class="settings-btn" style="padding:10px 22px; margin-bottom:0;">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          Search
-        </button>
+        <div class="dd-filter-field">
+          <label class="settings-label" for="dd-owner-search">Owner Name</label>
+          <input id="dd-owner-search" type="search" class="settings-input" placeholder="e.g. Barbara Newell" autocomplete="off" />
+        </div>
+        <div class="dd-filter-field">
+          <label class="settings-label">Filter</label>
+          <label class="dd-filter-checkbox" for="dd-flagged-only">
+            <input type="checkbox" id="dd-flagged-only" onchange="loadDetailedDashboard()" />
+            <span>Flagged only</span>
+          </label>
+        </div>
+        <div class="dd-filter-action">
+          <button onclick="loadDetailedDashboard()" class="settings-btn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            Search
+          </button>
+        </div>
       </div>
 
       <!-- Results area -->
@@ -1682,8 +2691,8 @@
 
       <!-- Body: AI info LEFT, chat RIGHT -->
       <div style="flex:1; display:flex; overflow:hidden;">
-        <div id="ch-ai" style="width:340px; flex-shrink:0; overflow-y:auto; background:var(--surface); border-right:1px solid var(--surface-border);"></div>
-        <div id="ch-msgs" style="flex:1; overflow-y:auto; padding:1rem; background:var(--chat-bg); display:flex; flex-direction:column; gap:4px;"></div>
+        <div id="ch-ai" style="width:340px; flex-shrink:0; overflow-y:auto; border-right:1px solid var(--surface-border);"></div>
+        <div id="ch-msgs" style="flex:1; overflow-y:auto; padding:1rem; display:flex; flex-direction:column; gap:4px;"></div>
       </div>
     </div>
 
@@ -1693,10 +2702,11 @@
 
 <!-- ══ TOAST ════════════════════════════════════════════════════════════════ -->
 <div id="toast" style="position:fixed; bottom:1.25rem; right:1.25rem; z-index:100; display:none;">
-  <div style="padding:.6rem 1rem; font-size:.8rem; color:#fff; background:#1E293B; border-radius:10px; border:1px solid rgba(255,255,255,.1); box-shadow:0 8px 32px rgba(0,0,0,.4);">
+  <div style="padding:.6rem 1rem; font-size:.8rem; color:var(--text-primary); background:var(--surface-elevated); border-radius:10px; border:1px solid var(--surface-border); box-shadow:var(--shadow-md);">
     <span id="toast-msg"></span>
   </div>
 </div>
+<div id="toast-container"></div>
 
 
 <!-- ══ TREND RESET MODAL ═════════════════════════════════════════════════════ -->
@@ -1819,10 +2829,13 @@ let processStatusDetails = {};
 let keyAssignments = {};
 let selectedAgent  = null;
 let agentConvos    = [];
+let convoListFilter = "all"; // "all" | "needs_review"
 let selectMode     = false;
 let selectedIds    = new Set();
 // email → agent_name for today's assignments (null = unassigned)
 let todayAssignments = {};  // { "account@email.com": "Texter Name" | null }
+// Agents that just finished — show notification badge until clicked
+let doneNotifications = new Set();
 
 function _normEmail(email) {
   return String(email || "").trim().toLowerCase();
@@ -1895,6 +2908,36 @@ function toast(msg, ms = 3000) {
   el._t = setTimeout(() => el.style.display = "none", ms);
 }
 
+function toastDone(agentLabel, convos, ms = 7000, agentId = null) {
+  const container = document.getElementById("toast-container");
+  if (!container) return;
+  const item = document.createElement("div");
+  item.className = "toast-item";
+  if (agentId != null) {
+    item.style.cursor = "pointer";
+    item.onclick = () => {
+      selectAgent(agentId);
+      item.classList.add("toast-out");
+      setTimeout(() => item.remove(), 350);
+    };
+  }
+  item.innerHTML = `
+    <div class="toast-icon" style="font-size:.85rem;font-weight:700;color:#4ade80;">+</div>
+    <div class="toast-body">
+      <div class="toast-title">${esc(agentLabel)} — Complete</div>
+      <div class="toast-sub">${convos ? convos + " conversations extracted" : "Extraction finished"}${agentId ? "<span style='font-size:.65rem;color:var(--brand);font-weight:600;display:block;margin-top:2px;'>Click to review</span>" : ""}</div>
+    </div>
+    <div class="toast-bar" style="animation-duration:${ms}ms;"></div>
+  `;
+  container.appendChild(item);
+  setTimeout(() => {
+    if (item.parentNode) {
+      item.classList.add("toast-out");
+      setTimeout(() => item.remove(), 350);
+    }
+  }, ms);
+}
+
 
 // ── View control ──────────────────────────────────────────────────────────────
 // ── View enter configs for Anime.js ──────────────────────────────────────────
@@ -1906,6 +2949,7 @@ const _VIEW_ENTER = {
   "vw-settings-assign":     { translateX: [0, 0],   translateY: [16, 0], scale: [0.984, 1] },
   "vw-settings-add-texter":    { translateX: [0, 0],   translateY: [16, 0], scale: [0.984, 1] },
   "vw-settings-tool-access":   { translateX: [0, 0],   translateY: [16, 0], scale: [0.984, 1] },
+  "vw-settings-labels":        { translateX: [0, 0],   translateY: [16, 0], scale: [0.984, 1] },
   "vw-empty":          { translateX: [0, 0],   translateY: [10, 0], scale: [0.99,  1] },
   "vw-trends":         { translateX: [0, 0],   translateY: [16, 0], scale: [0.984, 1] },
   "vw-detailed":       { translateX: [0, 0],   translateY: [16, 0], scale: [0.984, 1] },
@@ -1914,7 +2958,7 @@ let _currentView = null;
 let _viewAnim    = null; // running anime instance
 
 function showView(id) {
-  const allViews = ["vw-empty","vw-agent","vw-chat","vw-settings-add","vw-settings-edit","vw-settings-assign","vw-settings-add-texter","vw-settings-tool-access","vw-trends","vw-detailed"];
+  const allViews = ["vw-empty","vw-agent","vw-chat","vw-settings-add","vw-settings-edit","vw-settings-assign","vw-settings-add-texter","vw-settings-tool-access","vw-settings-labels","vw-trends","vw-detailed"];
   const prev     = _currentView;
   _currentView   = id;
 
@@ -2150,6 +3194,59 @@ async function runSelectedAgents() {
 }
 
 
+// ── Sidebar review pill (replaces score pill on agent cards) ─────────────────
+function agentNeedReviewCount(a) {
+  if (!a) return 0;
+  if (a.id === selectedAgent?.id && agentConvos.length) {
+    return agentConvos.filter(c => issueCountForConvo(c) > 0 && !isFlaggedConvoReviewed(c)).length;
+  }
+  return a.needs_review_count ?? 0;
+}
+
+function agentFlaggedCount(a) {
+  if (!a) return 0;
+  if (a.id === selectedAgent?.id && agentConvos.length) {
+    return agentConvos.filter(c => issueCountForConvo(c) > 0).length;
+  }
+  return a.flagged_count ?? 0;
+}
+
+function syncSelectedAgentReviewCounts() {
+  if (!selectedAgent?.id) return;
+  const need = agentNeedReviewCount(selectedAgent);
+  const flagged = agentFlaggedCount(selectedAgent);
+  selectedAgent.needs_review_count = need;
+  selectedAgent.flagged_count = flagged;
+  const agent = allAgents.find(a => a.id === selectedAgent.id);
+  if (agent) {
+    agent.needs_review_count = need;
+    agent.flagged_count = flagged;
+  }
+}
+
+const REVIEW_DONE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>`;
+
+function agentReviewPillHtml(a) {
+  const need = agentNeedReviewCount(a);
+  const flagged = agentFlaggedCount(a);
+  if (need > 0) {
+    const label = need === 1 ? "conversation needs review" : "conversations need review";
+    return `<span class="ac-review-badge pending" title="${need} flagged ${label}">${need}</span>`;
+  }
+  if (flagged > 0) {
+    return `<span class="ac-review-badge done" title="All flagged conversations reviewed">${REVIEW_DONE_ICON}<span>Reviewed</span></span>`;
+  }
+  return `<span class="ac-review-empty" aria-hidden="true">—</span>`;
+}
+
+function refreshAgentReviewPills() {
+  syncSelectedAgentReviewCounts();
+  for (const a of filteredAgents) {
+    const slot = document.querySelector(`#ac-card-${a.id} .ac-review-slot`);
+    if (slot) slot.innerHTML = agentReviewPillHtml(a);
+  }
+}
+
 // ── Sidebar rendering ─────────────────────────────────────────────────────────
 function filterAgents(q) {
   const lq = q.toLowerCase().trim();
@@ -2177,31 +3274,39 @@ function renderSidebar() {
     const status = processStatus[a.name] || "idle";
     const convos = a.conversations_analyzed || 0;
 
-    let statusHtml = "";
+    // ── Status text (no emojis, no pill tags) ──
+    let statusText = "";
+    let statusColor = "var(--text-muted)";
     if (status === "running") {
-      const msg = statusMessage(a.name, "Auditing...");
-      statusHtml = `<span class="pls" style="width:6px;height:6px;border-radius:50%;background:#2563EB;display:inline-block;margin-right:3px;vertical-align:middle;"></span><span title="${esc(msg)}" style="color:#2563EB;font-weight:600;font-size:.65rem;">${esc(msg)}</span>`;
+      statusText = statusMessage(a.name, "Auditing");
+      statusColor = "var(--brand)";
     } else if (status === "done") {
-      statusHtml = `<span style="color:#059669;font-weight:600;font-size:.65rem;">✓ Done</span>`;
+      statusText = convos > 0 ? "Done" : "Done — 0 convos";
+      statusColor = convos > 0 ? "var(--success)" : "var(--warning)";
     } else if (status === "failed") {
-      const msg = statusMessage(a.name, "Audit failed");
-      statusHtml = `<span title="${esc(msg)}" style="color:#ef4444;font-weight:700;font-size:.65rem;">Failed: ${esc(msg)}</span>`;
+      statusText = statusMessage(a.name, "Failed");
+      statusColor = "var(--danger)";
     }
 
     const avClass = agentAv(a.name);
 
-    const metaItems = [];
-    if (statusHtml) metaItems.push(statusHtml);
-    if (convos > 0) metaItems.push(`<span style="font-size:.65rem;color:var(--text-secondary);">${convos} convos</span>`);
-    if (flags > 0)  metaItems.push(`<span style="font-size:.65rem;color:var(--danger);font-weight:600;"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:text-top;margin-right:2px;"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15" stroke="currentColor" stroke-width="3"/></svg>${flags}</span>`);
-    if (unread > 0) metaItems.push(`<span style="font-size:.65rem;color:var(--warning);font-weight:600;">⚠️ ${unread}</span>`);
+    // Colored, bold meta tags instead of bulky chips
+    const metaSpans = [];
+    if (convos > 0) {
+      metaSpans.push(`<span style="font-size:.67rem;font-weight:700;color:var(--brand);">${convos} convo${convos !== 1 ? 's' : ''}</span>`);
+    }
+    if (score != null) {
+      const flagColor = flags > 0 ? 'var(--danger)' : 'var(--text-muted)';
+      metaSpans.push(`<span style="font-size:.67rem;font-weight:700;color:${flagColor};">${flags} flag${flags !== 1 ? 's' : ''}</span>`);
+    }
+    if (unread > 0) {
+      metaSpans.push(`<span style="font-size:.67rem;font-weight:700;color:var(--warning);">${unread} unread</span>`);
+    }
 
-    const scoreDisplay = score != null
-      ? `<span style="font-size:.82rem;font-weight:700;" class="${scoreClass(score)}">${fmtScore(score)}</span>`
-      : `<span style="font-size:.72rem;color:var(--text-muted);">—</span>`;
+    const scoreDisplay = `<span class="ac-review-slot">${agentReviewPillHtml(a)}</span>`;
 
     const bar = score != null
-      ? `<div style="margin-top:6px;"><div class="sbar"><div class="sbar-fill" style="width:${Math.min(score,100)}%;background:${barGradient(score)};"></div></div></div>`
+      ? `<div style="margin-top:5px;"><div class="sbar"><div class="sbar-fill" style="width:${Math.min(score,100)}%;background:${barGradient(score)};"></div></div></div>`
       : "";
 
     const checked  = selectedIds.has(a.id);
@@ -2213,9 +3318,14 @@ function renderSidebar() {
         ${checked ? `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>` : ""}
       </div>` : "";
 
+    const hasNotif = doneNotifications.has(a.name);
+    const doneBanner = hasNotif ? `<div class="ac-done-banner">Extraction complete — click to review</div>` : '';
+
     return `
-      <div class="ac${sel && !selectMode ? " sel" : ""}${checked ? " sel" : ""}" onclick="${cardClick}" data-aid="${a.id}"
-        style="opacity:0;${checked ? "background:rgba(37,99,235,.06);border-left-color:#2563EB;" : ""}">
+      <div class="ac${sel && !selectMode ? " sel" : ""}${checked ? " sel" : ""}${hasNotif ? " ac-done" : ""}" onclick="${cardClick}" data-aid="${a.id}"
+        style="opacity:0;${checked ? "background:rgba(37,99,235,.06);border-color:var(--brand);" : ""}"
+        id="ac-card-${a.id}">
+        ${doneBanner}
         <div style="display:flex; align-items:center; gap:10px;">
           ${checkboxHtml}
           <div class="av ${avClass}" style="flex-shrink:0;">${fmtInit(a.name)}</div>
@@ -2225,22 +3335,24 @@ function renderSidebar() {
               ${scoreDisplay}
             </div>
             ${bar}
-            ${metaItems.length ? `<div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap;align-items:center;">${metaItems.join("")}</div>` : ""}
+            <div style="margin-top:5px; display:flex; align-items:center; gap:6px; flex-wrap:nowrap; white-space:nowrap; overflow:hidden;">
+              ${statusText ? `<span style="font-size:.67rem;color:${statusColor};font-weight:700;">${statusText}</span>` : ''}
+              ${(statusText && metaSpans.length) ? `<span style="font-size:.67rem;color:var(--surface-border-strong);margin:0 2px;">·</span>` : ''}
+              ${metaSpans.join(`<span style="font-size:.67rem;color:var(--surface-border-strong);margin:0 2px;">·</span>`)}
+            </div>
           </div>
         </div>
       </div>`;
   }).join("");
 
-  // Stagger-animate cards only on initial load, not when re-rendering after selection changes
+  // Stagger-animate items on initial load
   if (!selectedAgent && !selectMode) {
     anime({
       targets:     "#ag-list .ac",
       opacity:     [0, 1],
-      translateY:  [12, 0],
-      scale:       [0.97, 1],
-      duration:    420,
-      delay:       anime.stagger(38, { start: 0 }),
-      easing:      "spring(1, 88, 14, 0)",
+      duration:    300,
+      delay:       anime.stagger(30, { start: 0 }),
+      easing:      "easeOutQuad",
     });
   } else {
     document.querySelectorAll("#ag-list .ac").forEach(el => { el.style.opacity = "1"; });
@@ -2249,39 +3361,60 @@ function renderSidebar() {
 
 
 // ── Select Agent ──────────────────────────────────────────────────────────────
-async function selectAgent(id) {
+async function selectAgent(id, { forceReload = false } = {}) {
   // Always reload agent list so scores reflect latest audit result
   await loadAgents();
   const agent = allAgents.find(a => a.id === id);
   if (!agent) return;
 
-  selectedAgent = agent;
-  agentConvos   = [];
+  // Clear done notification
+  if (doneNotifications.has(agent.name)) {
+    const card = document.getElementById(`ac-card-${id}`);
+    if (card) {
+      card.classList.add("ac-dismiss-out");
+      setTimeout(() => {
+        doneNotifications.delete(agent.name);
+        renderSidebar();
+      }, 350);
+    } else {
+      doneNotifications.delete(agent.name);
+    }
+  }
 
-  renderSidebar();
+  const keepConvos = !forceReload && selectedAgent?.id === id && agentConvos.length > 0;
+  selectedAgent = agent;
+
+  if (!document.getElementById(`ac-card-${id}`)?.classList.contains("ac-dismiss-out")) {
+    renderSidebar();
+  }
   showView("vw-agent");
 
   document.getElementById("ag-name").textContent  = _getAssignedTexter(agent.email) || agent.name || "—";
   document.getElementById("ag-email").textContent = agent.email || "";
   document.getElementById("ag-date").textContent  = agent.audit_date ? `· ${agent.audit_date.slice(0, 10)}` : "";
-  document.getElementById("ag-ccount").textContent = "Loading…";
-  document.getElementById("ag-convos").innerHTML  = `<div style="padding:2.5rem;text-align:center;"><span class="spin"></span></div>`;
-
   renderAgentScores(agent);
   updateRunButton();
+
+  if (keepConvos) {
+    applyPersistedReviews(agentConvos, id);
+    sortAgentConvos();
+    renderConvoList();
+    renderFunnelPill();
+    return;
+  }
+
+  agentConvos   = [];
+  convoListFilter = "all";
+  document.getElementById("ag-ccount").textContent = "Loading…";
+  document.getElementById("ag-convos").innerHTML  = `<div style="padding:2.5rem;text-align:center;"><span class="spin"></span></div>`;
 
   try {
     const res  = await fetch(`/api/agent/${id}/conversations`);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
 
-    agentConvos = data.conversations || [];
-    agentConvos.sort((a, b) => {
-      const af = issueCount(a.analysis);
-      const bf = issueCount(b.analysis);
-      if (af !== bf) return bf - af;
-      return convoDateValue(b) - convoDateValue(a);
-    });
+    agentConvos = applyPersistedReviews(data.conversations || [], id);
+    sortAgentConvos();
     renderConvoList();
     renderFunnelPill();
   } catch (e) {
@@ -2319,7 +3452,7 @@ function renderAgentScores(agent) {
   // Unread
   const unread = agent.unread_messages_left || 0;
   if (unread > 0) {
-    pills.push(`<span class="pill pill-y">⚠️ ${unread} unread</span>`);
+    pills.push(`<span class="pill pill-y">${unread} unread</span>`);
   }
 
   // Funnel placeholder — filled by renderFunnelPill() once convos load
@@ -2365,18 +3498,185 @@ function convoDateValue(convo) {
   return Number.isNaN(value) ? 0 : value;
 }
 
+function sortAgentConvos() {
+  agentConvos.sort((a, b) => {
+    const af = issueCountForConvo(a);
+    const bf = issueCountForConvo(b);
+    const aFlagged = af > 0;
+    const bFlagged = bf > 0;
+
+    if (aFlagged !== bFlagged) return aFlagged ? -1 : 1;
+
+    if (aFlagged && bFlagged) {
+      const aRev = isFlaggedConvoReviewed(a);
+      const bRev = isFlaggedConvoReviewed(b);
+      if (aRev !== bRev) return aRev ? 1 : -1;
+      if (af !== bf) return bf - af;
+    }
+
+    return convoDateValue(b) - convoDateValue(a);
+  });
+}
+
 function auditMethod(source) {
   const normalized = String(source || "").toLowerCase();
   if (normalized.startsWith("prefilter")) return "ML";
   return "AI";
 }
 
-// Total issue count: red_flags array + label wrong (label_correct===false)
-function issueCount(a) {
-  const flagCount = (a?.red_flags || []).length;
-  const labelWrong = (a?.label_correct === false &&
-                      a?.label_assigned !== a?.label_should_be) ? 1 : 0;
-  return flagCount + labelWrong;
+// Total issue count: active red_flags + label wrong (not dismissed)
+function isWrongLabelFlag(f) {
+  return String(f || "").trim().toLowerCase().startsWith("wrong label:");
+}
+
+function wrongLabelFlagText(a) {
+  if (!a || a.label_correct !== false) return null;
+  const wrong = (a.label_assigned || "").trim();
+  const should = (a.label_should_be || "").trim();
+  if (!wrong || !should || wrong === should) return null;
+  return `Wrong label: assigned '${wrong}' but should be '${should}'`;
+}
+
+function isLabelWrongDismissed(a, invalidatedFlags) {
+  const inv = new Set((invalidatedFlags || []).map(f => String(f).trim().toLowerCase()));
+  for (const f of inv) {
+    if (isWrongLabelFlag(f)) return true;
+  }
+  const expected = wrongLabelFlagText(a);
+  return expected ? inv.has(expected.toLowerCase()) : false;
+}
+
+function labelWrongActive(a, invalidatedFlags) {
+  if (!a || a.label_correct !== false) return false;
+  if ((a.label_assigned || "") === (a.label_should_be || "")) return false;
+  return !isLabelWrongDismissed(a, invalidatedFlags);
+}
+
+function issueCount(a, invalidatedFlags) {
+  const inv = new Set((invalidatedFlags || []).map(f => String(f).trim().toLowerCase()));
+  const activeFlags = (a?.red_flags || []).filter(f => {
+    const key = String(f).trim().toLowerCase();
+    return !inv.has(key) && !isWrongLabelFlag(f);
+  });
+  const labelWrong = labelWrongActive(a, invalidatedFlags) ? 1 : 0;
+  return activeFlags.length + labelWrong;
+}
+
+function issueCountForConvo(c) {
+  return issueCount(c?.analysis || {}, c?.invalidated_flags || []);
+}
+
+/** Persist reviewed flagged convos locally + in DB (survives list reloads). */
+const FLAG_REVIEW_CACHE_KEY = "vos_flag_reviews";
+
+function contactReviewKey(name) {
+  return (name || "").toLowerCase().trim();
+}
+
+function getReviewCache(agentId) {
+  try {
+    const all = JSON.parse(localStorage.getItem(FLAG_REVIEW_CACHE_KEY) || "{}");
+    return new Set(all[String(agentId)] || []);
+  } catch {
+    return new Set();
+  }
+}
+
+function addToReviewCache(agentId, contactName) {
+  if (!agentId || !contactName) return;
+  try {
+    const all = JSON.parse(localStorage.getItem(FLAG_REVIEW_CACHE_KEY) || "{}");
+    const id = String(agentId);
+    const set = new Set(all[id] || []);
+    set.add(contactReviewKey(contactName));
+    all[id] = [...set];
+    localStorage.setItem(FLAG_REVIEW_CACHE_KEY, JSON.stringify(all));
+  } catch { /* ignore quota errors */ }
+}
+
+function applyPersistedReviews(convos, agentId) {
+  const cached = getReviewCache(agentId);
+  for (const c of convos) {
+    const key = contactReviewKey(c.contact_name);
+    if (c.is_flag_reviewed || cached.has(key)) {
+      c.is_flag_reviewed = true;
+    }
+  }
+  return convos;
+}
+
+/** Flagged convos only: reviewed vs still needs manager attention. */
+function isFlaggedConvoReviewed(c) {
+  const issues = issueCountForConvo(c);
+  if (issues === 0) return null;
+
+  if (c.is_flag_reviewed) return true;
+
+  const inv = (c.invalidated_flags || []).map(f => String(f).trim());
+  const invalidated = new Set(inv);
+  const redFlags = (c.analysis?.red_flags || []).map(f => String(f).trim())
+    .filter(f => !isWrongLabelFlag(f));
+
+  if (redFlags.length > 0 && redFlags.every(f => invalidated.has(f)) &&
+      !labelWrongActive(c.analysis, inv)) {
+    return true;
+  }
+
+  return false;
+}
+
+function hasUnreadIssue(c) {
+  const contact = (c.contact_name || "").toLowerCase().trim();
+  if (!contact) return false;
+  return (c.analysis?.red_flags || []).some(f => {
+    const text = String(f).toLowerCase();
+    return text.includes("unread message from") && text.includes(contact);
+  });
+}
+
+function flaggedReviewBadgeHtml(c) {
+  const issues = issueCountForConvo(c);
+  if (issues === 0) return "";
+  if (isFlaggedConvoReviewed(c)) {
+    return `<span class="ci-review ci-review-done" title="You reviewed this flagged conversation">✓ Reviewed</span>`;
+  }
+  return `<span class="ci-review ci-review-pending" title="Not reviewed yet — open to review"><span class="ci-review-dot"></span>Needs review</span>`;
+}
+
+async function markFlagReviewed(convo) {
+  if (!selectedAgent?.id || !convo?.contact_name) return;
+  if (issueCountForConvo(convo) === 0) return;
+  if (isFlaggedConvoReviewed(convo)) return;
+
+  convo.is_flag_reviewed = true;
+  addToReviewCache(selectedAgent.id, convo.contact_name);
+  sortAgentConvos();
+  renderConvoList();
+
+  try {
+    const res = await fetch("/api/conversation/flag-reviewed", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        agent_id:        selectedAgent.id,
+        contact_name:    convo.contact_name,
+        conversation_id: convo.conversation_id || null,
+      }),
+    });
+    if (!res.ok) console.warn("flag-reviewed save failed:", res.status);
+  } catch (e) { console.warn("flag-reviewed save failed:", e); }
+}
+
+async function reloadAgentConvos() {
+  if (!selectedAgent?.id) return;
+  try {
+    const res  = await fetch(`/api/agent/${selectedAgent.id}/conversations`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    agentConvos = applyPersistedReviews(data.conversations || [], selectedAgent.id);
+    sortAgentConvos();
+    renderConvoList();
+  } catch (_) { /* ignore */ }
 }
 
 function auditMethodPill(source, small = false) {
@@ -2387,27 +3687,55 @@ function auditMethodPill(source, small = false) {
   return `<span class="pill ${cls}" title="${title}" style="${sizeStyle}">${method}</span>`;
 }
 
-function labelValidityHtml(a, compact = false) {
+function labelValidityHtml(a, compact = false, invalidatedFlags) {
   if (!a || a.label_correct == null) return "";
   const assigned = a.label_assigned || "";
   const shouldBe = a.label_should_be || "?";
   const sameLabel = assigned === shouldBe;
   const size = compact ? ".66rem" : ".73rem";
 
-  if (a.label_correct === true || (a.label_correct === false && sameLabel)) {
-    return `<span style="font-size:${size};color:#059669;font-weight:700;">✓ Correct ${assigned ? `<em>${esc(assigned)}</em>` : ""}</span>`;
+  if (!labelWrongActive(a, invalidatedFlags)) {
+    if (a.label_correct === true || sameLabel) {
+      return `<span style="font-size:${size};color:#059669;font-weight:700;">✓ Correct ${assigned ? `<em>${esc(assigned)}</em>` : ""}</span>`;
+    }
+    return "";
   }
 
   return `<span style="font-size:${size};color:#DC2626;font-weight:700;">✗ ${esc(assigned || "Label")} → should be <strong>${esc(shouldBe)}</strong>${!compact && a.label_reason ? ` <span style="color:#64748B;font-style:italic;">· ${esc(a.label_reason)}</span>` : ""}</span>`;
 }
 
-function mlLabelStatusHtml(a, compact = false) {
-  const checked = labelValidityHtml(a, compact);
+function mlLabelStatusHtml(a, compact = false, invalidatedFlags) {
+  if (labelWrongActive(a, invalidatedFlags)) return "";
+  const checked = labelValidityHtml(a, compact, invalidatedFlags);
   if (checked) return checked;
   if (auditMethod(a?.source) !== "ML" || !a?.label_assigned) return "";
 
   const size = compact ? ".66rem" : ".73rem";
   return `<span style="font-size:${size};color:var(--text-muted);font-weight:700;">ML label only <em>${esc(a.label_assigned)}</em></span>`;
+}
+
+/** Wrong-label panel in chat view — always includes Not Valid when actionable. */
+function labelIssueBlockHtml(a, invalidatedFlags, withButton = false) {
+  if (!labelWrongActive(a, invalidatedFlags)) return "";
+  const wlDismissed = isLabelWrongDismissed(a, invalidatedFlags);
+  if (wlDismissed) return "";
+
+  const wrong = (a.label_assigned || "").trim();
+  const should = (a.label_should_be || "?").trim();
+  const wlFlag = wrongLabelFlagText(a) ||
+    `Wrong label: assigned '${wrong}' but should be '${should}'`;
+  const reason = a.label_reason
+    ? `<span class="label-issue-reason"> · ${esc(a.label_reason)}</span>`
+    : "";
+  const text = `✗ ${esc(wrong || "Label")} → should be <strong>${esc(should)}</strong>${reason}`;
+
+  if (withButton) {
+    return `<div class="label-issue-card">
+      <div class="label-issue-text">${text}</div>
+      <button type="button" class="btn-not-valid label-issue-btn" data-flag="${esc(wlFlag)}" onclick="openNotValidModal(this)">Not Valid</button>
+    </div>`;
+  }
+  return `<div class="label-issue-card"><div class="label-issue-text">${text}</div></div>`;
 }
 
 
@@ -2416,26 +3744,77 @@ function mlLabelStatusHtml(a, compact = false) {
 const ICON_CAL  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>`;
 const ICON_CHAT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8 8 0 0 1-11.9 7L4 20l1.5-5A8 8 0 1 1 21 11.5Z"/></svg>`;
 
-function renderConvoList() {
-  const el = document.getElementById("ag-convos");
-  document.getElementById("ag-ccount").textContent =
-    `${agentConvos.length} conversation${agentConvos.length !== 1 ? "s" : ""}`;
+function setConvoFilter(mode) {
+  convoListFilter = mode;
+  renderConvoList();
+}
 
-  if (!agentConvos.length) {
-    el.innerHTML = `
+function renderConvoFilters(flaggedCount, needReview) {
+  const el = document.getElementById("ag-convo-filters");
+  if (!el) return;
+  if (flaggedCount === 0) {
+    el.innerHTML = "";
+    return;
+  }
+  el.innerHTML = `
+    <button type="button" class="convo-filter-btn ${convoListFilter === "all" ? "active-green" : ""}"
+      onclick="setConvoFilter('all')">All</button>
+    <button type="button" class="convo-filter-btn ${convoListFilter === "needs_review" ? "active" : ""}"
+      onclick="setConvoFilter('needs_review')">Needs review (${needReview})</button>`;
+}
+
+function renderConvoList() {
+  sortAgentConvos();
+  const el = document.getElementById("ag-convos");
+  const flagged      = agentConvos.filter(c => issueCountForConvo(c) > 0);
+  const needReview   = flagged.filter(c => !isFlaggedConvoReviewed(c)).length;
+  const countBase    = `${agentConvos.length} conversation${agentConvos.length !== 1 ? "s" : ""}`;
+  const reviewHint   = flagged.length
+    ? (needReview > 0
+        ? ` · <span style="color:var(--review-done);font-weight:600;">${needReview} flagged need review</span>`
+        : ` · <span style="color:var(--success);font-weight:600;">all flagged reviewed</span>`)
+    : "";
+  document.getElementById("ag-ccount").innerHTML = countBase + reviewHint;
+  renderConvoFilters(flagged.length, needReview);
+
+  const visibleConvos = convoListFilter === "needs_review"
+    ? agentConvos.filter(c => issueCountForConvo(c) > 0 && !isFlaggedConvoReviewed(c))
+    : agentConvos;
+
+  if (!visibleConvos.length) {
+    el.innerHTML = convoListFilter === "needs_review" && agentConvos.length
+      ? `<div style="padding:2rem 1.5rem;text-align:center;">
+           <p style="font-size:.82rem;color:var(--success);font-weight:600;">All flagged conversations reviewed ✓</p>
+           <p style="font-size:.72rem;color:var(--text-muted);margin-top:.35rem;">Switch to <button type="button" class="convo-filter-btn active-green" onclick="setConvoFilter('all')">All</button> to see every conversation</p>
+         </div>`
+      : (() => {
+        const st = selectedAgent ? (processStatus[selectedAgent.name] || "idle") : "idle";
+        const detail = selectedAgent ? statusMessage(selectedAgent.name, "") : "";
+        const failedHint = st === "failed" && detail
+          ? `<p style="font-size:.75rem;color:var(--danger);margin-top:.5rem;font-weight:600;">${esc(detail)}</p>`
+          : "";
+        const zeroHint = st === "done" && (selectedAgent?.conversations_analyzed || 0) === 0
+          ? `<p style="font-size:.72rem;color:var(--warning);margin-top:.45rem;">Audit finished but nothing was saved — check Groq key assignment, date filter, and sample size, then re-run.</p>`
+          : "";
+        return `
       <div style="padding:3rem 1.5rem; text-align:center;">
         <img src="/static/sms.png" width="40" height="40" style="display:inline-block; margin-bottom:.5rem; opacity:.7;" />
-        <p style="font-size:.82rem; color:var(--text-secondary); font-weight:500;">No conversations yet</p>
+        <p style="font-size:.82rem; color:var(--text-secondary); font-weight:500;">No conversations to show</p>
         <p style="font-size:.72rem; color:var(--text-muted); margin-top:.3rem;">Run an audit to extract and analyze conversations</p>
+        ${failedHint}${zeroHint}
       </div>`;
+      })();
     return;
   }
 
-  el.innerHTML = agentConvos.map((c, i) => {
+  refreshAgentReviewPills();
+
+  el.innerHTML = visibleConvos.map((c) => {
+    const i = agentConvos.indexOf(c);
     const a     = c.analysis || {};
     const svs   = [a.compliance, a.sentiment, a.professionalism, a.script_adherence].filter(x => x != null);
     const score = svs.length ? svs.reduce((s, v) => s + v, 0) / svs.length : null;
-    const flags = issueCount(a);
+    const flags = issueCountForConvo(c);
     const msgs  = c.parsed_messages || [];
     const method = auditMethod(a.source);
 
@@ -2449,9 +3828,12 @@ function renderConvoList() {
     let correctHtml = "";
     if (a.label_correct != null) {
       const sameLabel = (a.label_assigned || "") === (a.label_should_be || "");
-      correctHtml = (a.label_correct === true || sameLabel)
+      const labelActive = labelWrongActive(a, c.invalidated_flags);
+      correctHtml = (!labelActive && (a.label_correct === true || sameLabel))
         ? `<span class="ci-correct ok">✓ label correct</span>`
-        : `<span class="ci-correct bad">✗ should be ${esc(a.label_should_be || "?")}</span>`;
+        : (labelActive
+          ? `<span class="ci-correct bad">✗ should be ${esc(a.label_should_be || "?")}</span>`
+          : "");
     } else if (method === "ML" && a.label_assigned) {
       correctHtml = `<span class="ci-funnel">ML label</span>`;
     }
@@ -2463,9 +3845,15 @@ function renderConvoList() {
     // Contact avatar with color based on name hash
     const contactAvCls = agentAv(c.contact_name || "Contact");
 
-    const rowStyle = flags > 0
-      ? `border-left:3px solid var(--danger); background:var(--flagged-row-bg); padding-left:calc(1.25rem - 3px);`
-      : ``;
+    const rowClass = flags > 0
+      ? (isFlaggedConvoReviewed(c) ? "ci-flagged-reviewed" : "ci-flagged-unreviewed")
+      : "";
+    const unreadBadge = hasUnreadIssue(c)
+      ? `<span class="ci-unread-badge" title="Overdue unread — 30 min rule">Unread</span>`
+      : "";
+    const avDot = flags > 0 && !isFlaggedConvoReviewed(c)
+      ? `<span class="ci-av-dot" title="Needs review"></span>`
+      : "";
 
     const datesHtml = c.audit_date ? `
           <div class="ci-dates">
@@ -2473,12 +3861,17 @@ function renderConvoList() {
           </div>` : "";
 
     return `
-      <div class="ci" onclick="selectConversation(${i})" style="opacity:0;${rowStyle}">
-        <div class="av av-sm ${contactAvCls}">${fmtInit(c.contact_name)}</div>
+      <div class="ci ${rowClass}" onclick="selectConversation(${i})" style="opacity:0;">
+        <div class="ci-av-wrap">
+          <div class="av av-sm ${contactAvCls}">${fmtInit(c.contact_name)}</div>
+          ${avDot}
+        </div>
         <div class="ci-body">
           <div class="ci-head">
             <span class="ci-name">${esc(c.contact_name)}</span>
             ${flags > 0 ? `<span class="ci-flag">&#9873; ${flags} issue${flags > 1 ? "s" : ""}</span>` : ""}
+            ${unreadBadge}
+            ${flaggedReviewBadgeHtml(c)}
           </div>
           <div class="ci-meta">
             ${labelHtml}
@@ -2541,7 +3934,11 @@ function selectConversation(index) {
     : "";
 
   renderChatMessages(msgs, convo);
-  renderAiAnalysis(a, convo.invalidated_flags || [], convo.is_validated || false);
+  renderAiAnalysis(a, convo.invalidated_flags || []);
+
+  if (issueCountForConvo(convo) > 0) {
+    markFlagReviewed(convo);
+  }
 }
 
 function renderChatMessages(msgs, convo) {
@@ -2644,12 +4041,12 @@ function renderChatMessages(msgs, convo) {
   setTimeout(() => { el.scrollTop = el.scrollHeight; }, 60);
 }
 
-function renderAiAnalysis(a, invalidatedFlags, isValidated) {
+function renderAiAnalysis(a, invalidatedFlags) {
   const el = document.getElementById("ch-ai");
   const invalidatedSet = new Set((invalidatedFlags || []).map(f => f.trim()));
 
   if (!a || !Object.keys(a).length) {
-    el.innerHTML = `<div style="padding:.75rem 1.25rem;font-size:.72rem;color:#94A3B8;">No AI analysis for this conversation.</div>`;
+    el.innerHTML = `<div style="padding:.75rem 1.25rem;font-size:.72rem;color:var(--text-muted);">No AI analysis for this conversation.</div>`;
     return;
   }
 
@@ -2680,13 +4077,17 @@ function renderAiAnalysis(a, invalidatedFlags, isValidated) {
       <div class="metric-tip">${scoreDescriptions[lbl] || ''}</div>
     </div>`).join("");
 
-  let labelBadge = mlLabelStatusHtml(a);
-  const _labelWrong = a.label_correct === false && a.label_assigned !== a.label_should_be;
-  if      (!labelBadge && (a.label_correct === true || (a.label_correct === false && !_labelWrong)))  labelBadge = `<span style="font-size:.73rem;color:#059669;font-weight:600;">✓ Correct — <em>${esc(a.label_assigned || "")}</em></span>`;
-  else if (!labelBadge && _labelWrong) labelBadge = `<span style="font-size:.73rem;color:#DC2626;font-weight:600;">✗ ${esc(a.label_assigned || "")} → should be <strong>${esc(a.label_should_be || "?")}</strong>${a.label_reason ? ` <span style="color:#64748B;font-style:italic;">· ${esc(a.label_reason)}</span>` : ""}</span>`;
-  else if (!labelBadge && a.label_assigned)          labelBadge = `<span style="font-size:.73rem;color:var(--text-secondary);">${esc(a.label_assigned)}</span>`;
+  let labelBadge = labelIssueBlockHtml(a, invalidatedFlags, true);
+  if (!labelBadge) {
+    labelBadge = mlLabelStatusHtml(a, false, invalidatedFlags);
+    if (!labelBadge && (a.label_correct === true || !labelWrongActive(a, invalidatedFlags))) {
+      labelBadge = `<span style="font-size:.73rem;color:#059669;font-weight:600;">✓ Correct — <em>${esc(a.label_assigned || "")}</em></span>`;
+    } else if (!labelBadge && a.label_assigned) {
+      labelBadge = `<span style="font-size:.73rem;color:var(--text-secondary);">${esc(a.label_assigned)}</span>`;
+    }
+  }
 
-  const flags   = a.red_flags || [];
+  const flags   = (a.red_flags || []).filter(f => !isWrongLabelFlag(f));
   const pillars = a.pillars_gathered || [];
 
   el.innerHTML = `
@@ -2712,10 +4113,10 @@ function renderAiAnalysis(a, invalidatedFlags, isValidated) {
       ${pillars.length ? `
         <div style="margin-bottom:8px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;">
           <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);margin-right:2px;">Pillars</span>
-          ${pillars.map(p => `<span style="padding:1px 8px;border-radius:99px;background:rgba(8,145,178,.12);border:1px solid rgba(8,145,178,.25);color:#38BDF8;font-size:.65rem;font-weight:600;">${esc(p)}</span>`).join("")}
+          ${pillars.map(p => `<span style="padding:1px 8px;border-radius:99px;background:var(--brand-bg);border:1px solid var(--brand-border);color:var(--link-color);font-size:.65rem;font-weight:600;">${esc(p)}</span>`).join("")}
         </div>` : ""}
 
-      ${labelBadge ? `<div style="margin-bottom:8px;">${labelBadge}</div>` : ""}
+      ${labelBadge ? (labelBadge.startsWith("<div class=\"label-issue-card\"") ? labelBadge : `<div style="margin-bottom:8px;">${labelBadge}</div>`) : ""}
 
       ${flags.length ? `
         <div style="padding:8px 10px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);border-left:3px solid var(--danger);border-radius:0 8px 8px 0;margin-bottom:9px;">
@@ -2741,14 +4142,6 @@ function renderAiAnalysis(a, invalidatedFlags, isValidated) {
             </div>`).join("")}
         </div>` : ""}
 
-      <div style="display:flex;justify-content:flex-end;padding-top:4px;">
-        <button id="btn-valid-convo" class="btn-valid${isValidated ? " v-done" : ""}"
-          onclick="markConversationValid(this)"
-          ${isValidated ? "disabled" : ""}>
-          ${isValidated ? "✓ Validated" : "✓ Mark as Valid"}
-        </button>
-      </div>
-
     </div>`;
 }
 
@@ -2759,6 +4152,7 @@ function backToAgent() {
     backToDetailedDashboard();
   } else {
     showView("vw-agent");
+    renderConvoList();
   }
 }
 
@@ -2822,6 +4216,7 @@ function getRunParams() {
   const params = {
     date_filter: filter,
     sample_size: parseInt(document.getElementById("sample-size").value, 10) || 50,
+    labels: _selectedLabels.join(","),
   };
   // Include custom date range if set
   if (filter === "custom" && window._drpDateStart && window._drpDateEnd) {
@@ -3036,7 +4431,7 @@ function showTrendsSection(tab) {
 
 function populateDetailedAgentDropdown() {
   const sel = document.getElementById("dd-agent");
-  if (!sel || sel.options.length > 0) return; // already populated
+  if (!sel || sel.options.length > 1) return; // already populated (All Texters + roster)
   (window.AGENT_ROSTER || []).forEach(name => {
     const opt = document.createElement("option");
     opt.value = name;
@@ -3045,13 +4440,31 @@ function populateDetailedAgentDropdown() {
   });
 }
 
+function getDdDateRange() {
+  const filter = document.getElementById("dd-date-filter")?.value || "this_month";
+  if (filter === "custom") {
+    if (window._ddDrpDateStart && window._ddDrpDateEnd) {
+      return { start: window._ddDrpDateStart, end: window._ddDrpDateEnd };
+    }
+    return null;
+  }
+  const computed = _drpPresetToRange(filter);
+  if (computed) return computed;
+  const today = _drpToISO(new Date());
+  return { start: "2000-01-01", end: today };
+}
+
 async function loadDetailedDashboard() {
   const texterName = document.getElementById("dd-agent").value;
-  const startDate  = document.getElementById("dd-start").value;
-  const endDate    = document.getElementById("dd-end").value;
+  const { start: startDate, end: endDate } = getDdDateRange();
+  const ownerSearch = document.getElementById("dd-owner-search")?.value.trim() || "";
 
-  if (!texterName || !startDate || !endDate) {
-    alert("Please select a texter and both dates.");
+  if (!texterName) {
+    alert("Please select a texter.");
+    return;
+  }
+  if (!startDate || !endDate) {
+    alert("Please select a complete date range.");
     return;
   }
 
@@ -3061,43 +4474,91 @@ async function loadDetailedDashboard() {
   document.getElementById("dd-results").innerHTML = "";
 
   try {
-    const params = new URLSearchParams({ texter_name: texterName, start_date: startDate, end_date: endDate });
+    const flaggedOnly = document.getElementById("dd-flagged-only")?.checked || false;
+    const params = new URLSearchParams({
+      texter_name: texterName,
+      start_date: startDate,
+      end_date: endDate,
+      flagged_only: flaggedOnly ? "true" : "false",
+    });
+    if (ownerSearch) params.set("contact_name", ownerSearch);
     const resp = await fetch("/api/detailed-dashboard?" + params);
     const data = await resp.json();
-    if (!data.success) throw new Error(data.detail || "Unknown error");
-    renderDetailedResults(data.data);
+    if (!resp.ok) throw new Error(data.detail || data.error || `HTTP ${resp.status}`);
+    if (!data.success) throw new Error(data.detail || data.error || "Unknown error");
+    window._ddHasSearched = true;
+    renderDetailedResults(data.data, { texterName, startDate, endDate, flaggedOnly, ownerSearch });
   } catch (e) {
     document.getElementById("dd-empty").textContent = "Error: " + e.message;
   }
 }
 
-function renderDetailedResults(rows) {
+let _ddOwnerSearchTimer = null;
+function onDdOwnerSearchInput() {
+  if (!window._ddHasSearched) return;
+  clearTimeout(_ddOwnerSearchTimer);
+  _ddOwnerSearchTimer = setTimeout(() => loadDetailedDashboard(), 350);
+}
+
+function initDetailedDashboardFilters() {
+  const ownerInput = document.getElementById("dd-owner-search");
+  if (!ownerInput || ownerInput.dataset.bound === "1") return;
+  ownerInput.dataset.bound = "1";
+  ownerInput.addEventListener("input", onDdOwnerSearchInput);
+  ownerInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      clearTimeout(_ddOwnerSearchTimer);
+      loadDetailedDashboard();
+    }
+  });
+}
+
+function renderDetailedResults(rows, filters = {}) {
   const emptyEl   = document.getElementById("dd-empty");
   const resultsEl = document.getElementById("dd-results");
 
   if (!rows || rows.length === 0) {
     emptyEl.style.display = "block";
-    emptyEl.textContent   = "No flagged conversations found for this texter and date range.";
+    const texterLabel = filters.texterName === "all" ? "All Texters" : (filters.texterName || "selected texter");
+    const rangeLabel = filters.startDate && filters.endDate
+      ? `${filters.startDate} → ${filters.endDate}`
+      : "selected date range";
+    const ownerNote = filters.ownerSearch ? ` matching "${filters.ownerSearch}"` : "";
+    emptyEl.textContent   = filters.flaggedOnly
+      ? `No flagged conversations found for ${texterLabel}${ownerNote} (${rangeLabel}).`
+      : `No conversations found for ${texterLabel}${ownerNote} (${rangeLabel}).`;
     resultsEl.style.display = "none";
     return;
   }
 
   emptyEl.style.display   = "none";
   resultsEl.style.display = "flex";
+  const filterNote = [
+    filters.flaggedOnly ? "flagged only" : "",
+    filters.ownerSearch ? `owner: ${esc(filters.ownerSearch)}` : "",
+  ].filter(Boolean).join(" · ");
+  const filterSuffix = filterNote ? ` · ${filterNote}` : "";
   resultsEl.innerHTML = `
     <div style="padding:8px 4px 10px; font-size:.78rem; color:var(--text-muted); font-weight:500; flex-shrink:0; border-bottom:1px solid var(--surface-border); margin-bottom:4px;">
-      ${rows.length} conversation${rows.length !== 1 ? "s" : ""} found
+      ${rows.length} conversation${rows.length !== 1 ? "s" : ""} found${filterSuffix}
     </div>
   `;
+
+  const showTexter = document.getElementById("dd-agent")?.value === "all";
 
   rows.forEach(row => {
     const contact  = row.contact_name || "Contact";
     const initials = contact.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
     const labels   = (row.assigned_labels || []).join(", ") || "";
+    const texter   = row.texter_name || "";
     const preview  = row.preview_snippet ? row.preview_snippet.slice(0, 90) + (row.preview_snippet.length > 90 ? "…" : "") : "No messages";
     const date     = row.audit_date || "";
     const issues   = row.issue_count || 0;
     const score    = row.compliance_score != null ? row.compliance_score.toFixed(1) : "—";
+    const issueBadge = issues > 0
+      ? `<span style="font-size:.72rem; padding:2px 7px; border-radius:5px; background:rgba(239,68,68,.1); color:#ef4444; font-weight:600;">${issues} issue${issues !== 1 ? "s" : ""}</span>`
+      : `<span style="font-size:.72rem; padding:2px 7px; border-radius:5px; background:rgba(52,211,153,.1); color:var(--success); font-weight:600;">Clean</span>`;
 
     const card = document.createElement("div");
     card.style.cssText = "display:flex; align-items:center; gap:12px; padding:12px 16px; border-radius:10px; border:1px solid var(--surface-border); background:var(--surface); cursor:pointer;";
@@ -3110,6 +4571,7 @@ function renderDetailedResults(rows) {
       <div style="flex:1; min-width:0;">
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:2px;">
           <span style="font-size:.85rem; font-weight:600; color:var(--text-primary);">${contact}</span>
+          ${showTexter && texter ? `<span style="font-size:.68rem; color:var(--text-muted);">${texter}</span>` : ""}
           ${labels ? `<span style="font-size:.68rem; padding:1px 6px; border-radius:4px; background:rgba(37,99,235,.1); color:var(--brand);">${labels}</span>` : ""}
         </div>
         <div style="font-size:.75rem; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${preview}</div>
@@ -3117,7 +4579,7 @@ function renderDetailedResults(rows) {
       <div style="flex-shrink:0; text-align:right;">
         <div style="font-size:.7rem; color:var(--text-muted); margin-bottom:4px;">${date}</div>
         <div style="display:flex; align-items:center; gap:6px; justify-content:flex-end;">
-          <span style="font-size:.72rem; padding:2px 7px; border-radius:5px; background:rgba(239,68,68,.1); color:#ef4444; font-weight:600;">${issues} issue${issues !== 1 ? "s" : ""}</span>
+          ${issueBadge}
           <span style="font-size:.72rem; color:var(--text-muted);">adherence ${score}</span>
         </div>
       </div>
@@ -3142,7 +4604,6 @@ async function openDetailedConversation(conversationId) {
       assigned_labels:   d.assigned_labels || [],
       parsed_messages:   d.parsed_messages || [],
       invalidated_flags: d.invalidated_flags || [],
-      is_validated:      d.is_validated || false,
       analysis: {
         compliance:        a.compliance_score,
         sentiment:         a.sentiment_score,
@@ -3186,11 +4647,12 @@ function showSettingsSection(tab) {
     assign: "vw-settings-assign",
     "add-texter": "vw-settings-add-texter",
     "tool-access": "vw-settings-tool-access",
+    labels: "vw-settings-labels",
   };
   const viewId  = viewMap[tab] || viewMap.add;
 
   // Sub-nav active state
-  ["add","edit","assign","add-texter","tool-access"].forEach(k => {
+  ["add","edit","assign","add-texter","tool-access","labels"].forEach(k => {
     const el = document.getElementById("snav-" + k);
     if (el) el.classList.toggle("snav-active", k === tab);
   });
@@ -3202,6 +4664,7 @@ function showSettingsSection(tab) {
   if (tab === "assign") loadAssignments();
   if (tab === "add-texter") loadTexterList();
   if (tab === "tool-access") loadToolAccessList();
+  if (tab === "labels") loadLabelsList();
 }
 
 
@@ -3438,7 +4901,19 @@ async function pollStatus() {
 
     let changed = false;
     for (const [name, state] of Object.entries(data)) {
-      if (processStatus[name] !== state) { processStatus[name] = state; changed = true; }
+      const prev = processStatus[name];
+      if (prev !== state) {
+        // Detect transition into "done" — fire notification
+        if (state === "done" && prev === "running") {
+          doneNotifications.add(name);
+          const agent = allAgents.find(a => a.name === name);
+          const convos = agent?.conversations_analyzed || 0;
+          const label = _getAssignedTexter(agent?.email || "") || name;
+          toastDone(label, convos, 7000, agent?.id);
+        }
+        processStatus[name] = state;
+        changed = true;
+      }
       const detail = details[name];
       if (detail) {
         const before = JSON.stringify(processStatusDetails[name] || {});
@@ -3461,7 +4936,7 @@ async function pollStatus() {
           if (refreshed) {
             selectedAgent = refreshed;
             renderAgentScores(refreshed);
-            await selectAgent(refreshed.id);
+            await selectAgent(refreshed.id, { forceReload: true });
           }
         }
         renderSidebar();
@@ -3517,7 +4992,7 @@ async function loadAgents() {
     const ddAgentSelect = document.getElementById("dd-agent");
     if (ddAgentSelect && typeof AGENT_ROSTER !== "undefined") {
       const prev = ddAgentSelect.value;
-      ddAgentSelect.innerHTML = '<option value="">— select texter —</option>'
+      ddAgentSelect.innerHTML = '<option value="all">All Texters</option>'
         + AGENT_ROSTER.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join("");
       if (prev) ddAgentSelect.value = prev;
     }
@@ -3544,6 +5019,81 @@ function toggleTheme() {
   applyTheme(current === "dark" ? "light" : "dark");
 }
 
+// ── Labels Dropdown Picker ───────────────────────────────────────────────────
+let _selectedLabels = [];
+
+function toggleLabelsPicker(event) {
+  if (event) event.stopPropagation();
+  const popover = document.getElementById("lp-popover");
+  const trigger = document.getElementById("lp-trigger");
+  if (!popover) return;
+  const isShow = popover.classList.toggle("show");
+  if (trigger) trigger.classList.toggle("open", isShow);
+
+  // Close date picker if open
+  closeDatePicker();
+}
+
+async function loadLabelsDropdown() {
+  const popover = document.getElementById("lp-popover");
+  if (!popover) return;
+  try {
+    const res = await fetch("/api/custom-labels");
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || "Failed");
+    const labels = data.data || [];
+    if (!labels.length) {
+      popover.innerHTML = `<div style="font-size:.7rem; color:var(--text-muted); padding:8px; text-align:center;">No custom labels defined. Go to Settings → Labels to add some.</div>`;
+      updateLabelsButtonLabel();
+      return;
+    }
+    
+    const labelNames = labels.map(l => l.name);
+    _selectedLabels = _selectedLabels.filter(name => labelNames.includes(name));
+
+    popover.innerHTML = labels.map(l => {
+      const checked = _selectedLabels.includes(l.name) ? "checked" : "";
+      return `
+        <div class="lp-item" onclick="toggleLabelItem(event, '${esc(l.name)}')">
+          <input type="checkbox" id="lp-chk-${esc(l.name)}" ${checked} onclick="event.stopPropagation(); toggleLabelItem(event, '${esc(l.name)}')">
+          <span style="user-select:none;">${esc(l.name)}</span>
+        </div>
+      `;
+    }).join("");
+    updateLabelsButtonLabel();
+  } catch (err) {
+    popover.innerHTML = `<div style="font-size:.7rem; color:var(--danger); padding:8px;">Error: ${esc(String(err))}</div>`;
+  }
+}
+
+function toggleLabelItem(event, name) {
+  if (event) event.stopPropagation();
+  const chk = document.getElementById(`lp-chk-${name}`);
+  const idx = _selectedLabels.indexOf(name);
+  if (idx > -1) {
+    _selectedLabels.splice(idx, 1);
+    if (chk) chk.checked = false;
+  } else {
+    _selectedLabels.push(name);
+    if (chk) chk.checked = true;
+  }
+  updateLabelsButtonLabel();
+}
+
+function updateLabelsButtonLabel() {
+  const label = document.getElementById("lp-label");
+  if (!label) return;
+  if (_selectedLabels.length === 0) {
+    label.textContent = "All Labels";
+  } else if (_selectedLabels.length === 1) {
+    label.textContent = _selectedLabels[0];
+  } else if (_selectedLabels.length === 2) {
+    label.textContent = `${_selectedLabels[0]}, ${_selectedLabels[1]}`;
+  } else {
+    label.textContent = `${_selectedLabels.length} Labels`;
+  }
+}
+
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", async () => {
@@ -3557,6 +5107,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   showView("vw-empty");
+  await loadLabelsDropdown();
   await loadRoster();
   await loadGroqKeys();
   await refreshTodayAssignments();
@@ -3671,6 +5222,16 @@ function closeNotValidModal() {
   });
 }
 
+function refreshOpenChatAnalysis() {
+  if (!currentContactName || !selectedAgent?.id) return;
+  const convo = agentConvos.find(c =>
+    contactReviewKey(c.contact_name) === contactReviewKey(currentContactName)
+  );
+  if (!convo) return;
+  const a = convo.analysis || {};
+  renderAiAnalysis(a, convo.invalidated_flags || []);
+}
+
 async function submitNotValid() {
   const { btn, flag } = _nvmCtx;
   const body = {
@@ -3704,42 +5265,13 @@ async function submitNotValid() {
     // Then reload agent data to sync the sidebar card and scores panel
     closeNotValidModal();
     await loadAgents();
-
-    // If no flags remain, also hide the red-flags block in the currently open panel
-    if (data.remaining_flags === 0) {
-      const rfContainer = btn.closest(".rf-row")?.parentElement;
-      if (rfContainer) rfContainer.style.display = "none";
-    }
+    await reloadAgentConvos();
+    refreshOpenChatAnalysis();
   } catch (err) {
     alert("Error saving: " + err.message);
   }
 }
 
-
-// ── Conversation Validation ───────────────────────────────────────────────────
-async function markConversationValid(btn) {
-  if (!selectedAgent?.id || !currentContactName) return;
-  btn.disabled = true;
-  btn.textContent = "Saving…";
-  try {
-    const res = await fetch("/api/conversation/valid", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        agent_id:     selectedAgent.id,
-        agent_name:   selectedAgent.name || "",
-        contact_name: currentContactName,
-      }),
-    });
-    if (!res.ok) throw new Error(await res.text());
-    btn.textContent = "✓ Validated";
-    btn.classList.add("v-done");
-  } catch (err) {
-    btn.disabled = false;
-    btn.textContent = "✓ Mark as Valid";
-    alert("Error saving: " + err.message);
-  }
-}
 
 // ── Texter Roster ─────────────────────────────────────────────────────────────
 let AGENT_ROSTER = [];
@@ -3757,7 +5289,7 @@ async function loadRoster() {
       + AGENT_ROSTER.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join("");
   }
   if (ddAgentSelect) {
-    ddAgentSelect.innerHTML = '<option value="">— select texter —</option>'
+    ddAgentSelect.innerHTML = '<option value="all">All Texters</option>'
       + AGENT_ROSTER.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join("");
   }
 }
@@ -3931,6 +5463,82 @@ async function removeToolAccessEmail(email) {
     await loadToolAccessList();
   } catch (err) {
     alert(`Error removing access: ${err}`);
+  }
+}
+
+async function loadLabelsList() {
+  const list  = document.getElementById("labels-list");
+  const count = document.getElementById("labels-count");
+  if (!list) return;
+  list.innerHTML = `<div style="font-size:.78rem; color:var(--text-muted); padding:4px 0;">Loading...</div>`;
+  try {
+    const res  = await fetch("/api/custom-labels");
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || "Failed");
+    const labels = data.data || [];
+    if (count) count.textContent = labels.length;
+    if (!labels.length) {
+      list.innerHTML = `<div style="font-size:.78rem; color:var(--text-muted); padding:4px 0;">No custom labels defined yet.</div>`;
+      return;
+    }
+    list.innerHTML = labels.map(e => `
+      <div style="display:flex; align-items:center; justify-content:space-between; padding:9px 12px; border-radius:8px; border:1px solid var(--surface-border); margin-bottom:4px; background:var(--surface);">
+        <div>
+          <div style="font-size:.84rem; font-weight:500; color:var(--text-primary); letter-spacing:-0.01em;">${esc(e.name)}</div>
+          <div style="font-size:.72rem; color:var(--text-muted); margin-top:2px;">
+            Added ${e.created_at ? new Date(e.created_at).toLocaleDateString() : "—"}
+          </div>
+        </div>
+        <button onclick="deleteCustomLabel('${esc(e.name)}')"
+          style="padding:4px 12px; background:transparent; border:1px solid var(--danger,#ef4444); color:var(--danger,#ef4444); border-radius:6px; font-size:.73rem; font-weight:500; cursor:pointer; white-space:nowrap; transition:.15s;"
+          onmouseover="this.style.background='var(--danger,#ef4444)';this.style.color='#fff'"
+          onmouseout="this.style.background='transparent';this.style.color='var(--danger,#ef4444)'">
+          Delete
+        </button>
+      </div>
+    `).join("");
+  } catch (err) {
+    list.innerHTML = `<div style="font-size:.78rem; color:var(--danger,#ef4444); padding:4px 0;">Error loading: ${esc(String(err))}</div>`;
+  }
+}
+
+async function addCustomLabel() {
+  const input = document.getElementById("label-input");
+  const msg   = document.getElementById("label-msg");
+  const name  = input.value.trim();
+  msg.style.display = "none";
+  if (!name) return;
+  try {
+    const res  = await fetch("/api/custom-labels", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || data.detail || `HTTP ${res.status}`);
+    input.value = "";
+    msg.style.color = "var(--success,#22c55e)";
+    msg.textContent = `✓ Added ${name}`;
+    msg.style.display = "block";
+    await loadLabelsList();
+    await loadLabelsDropdown();
+  } catch (err) {
+    msg.style.color = "var(--danger,#ef4444)";
+    msg.textContent = String(err);
+    msg.style.display = "block";
+  }
+}
+
+async function deleteCustomLabel(name) {
+  if (!confirm(`Delete custom label "${name}"?`)) return;
+  try {
+    const res  = await fetch(`/api/custom-labels/${encodeURIComponent(name)}`, { method: "DELETE" });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || data.detail || `HTTP ${res.status}`);
+    await loadLabelsList();
+    await loadLabelsDropdown();
+  } catch (err) {
+    alert(`Error deleting label: ${err}`);
   }
 }
 
@@ -4395,9 +6003,28 @@ function _scoreClass(v) {
   return "sc-r";
 }
 
+function getTrDateRange() {
+  const filter = document.getElementById("tr-date-filter")?.value || "this_month";
+  if (filter === "custom") {
+    if (window._trDrpDateStart && window._trDrpDateEnd) {
+      return { start: window._trDrpDateStart, end: window._trDrpDateEnd };
+    }
+    return null;
+  }
+  const computed = _drpPresetToRange(filter);
+  if (computed) return computed;
+  const today = _drpToISO(new Date());
+  return { start: "2000-01-01", end: today };
+}
+
 async function loadTrends() {
-  const start = document.getElementById("trends-start")?.value || "";
-  const end   = document.getElementById("trends-end")?.value   || "";
+  const range = getTrDateRange();
+  if (!range) {
+    alert("Please select a complete date range.");
+    return;
+  }
+  const start = range.start;
+  const end   = range.end;
   const agent = document.getElementById("trends-agent")?.value || "all";
 
   const emptyEl      = document.getElementById("trends-empty");
@@ -4433,13 +6060,14 @@ async function loadTrends() {
     const scores        = rows.map(r => r.overall_score).filter(v => v != null);
     const avgScore      = scores.length ? (scores.reduce((a,b)=>a+b,0)/scores.length).toFixed(1) : "—";
     const totalIssues   = rows.reduce((a,r)=>a+(r.total_issues||0),0);
-    const totalConvos   = rows.reduce((a,r)=>a+(r.conversations_analyzed||0),0);
+    const totalConvos   = data.summary?.unique_conversations != null
+      ? data.summary.unique_conversations
+      : rows.reduce((a,r)=>a+(r.conversations_analyzed||0),0);
     const agentSet      = new Set(rows.map(r=>r.agent_name));
 
     document.getElementById("ts-avg-score").textContent      = avgScore !== "—" ? avgScore : "—";
     document.getElementById("ts-total-issues").textContent   = totalIssues;
-    document.getElementById("ts-convos-audited").textContent = totalConvos || "—";
-    document.getElementById("ts-issues-ratio").textContent   = totalConvos ? `${totalIssues} issue${totalIssues!==1?"s":""} out of ${totalConvos}` : "";
+    document.getElementById("ts-convos-audited").textContent = totalConvos != null ? totalConvos : "—";
     document.getElementById("ts-agents-tracked").textContent = agentSet.size;
     document.getElementById("ts-audit-count").textContent    = rows.length;
     statsEl.style.display = "grid";
@@ -4652,20 +6280,16 @@ function _renderTrendsChart(rows) {
   });
 }
 
-// Set default date range for trends (last 30 days) on load
+// Set default date range pickers on load
 document.addEventListener("DOMContentLoaded", () => {
   const today = _todayISO();
-  const dStart = new Date(); dStart.setDate(dStart.getDate() - 30);
-  const startISO = `${dStart.getFullYear()}-${String(dStart.getMonth()+1).padStart(2,'0')}-${String(dStart.getDate()).padStart(2,'0')}`;
-  const sEl = document.getElementById("trends-start");
-  const eEl = document.getElementById("trends-end");
   const dEl = document.getElementById("assign-date");
-  if (sEl) sEl.value = startISO;
-  if (eEl) eEl.value = today;
   if (dEl) dEl.value = today;
 
-  // Initialize date picker calendar
   drpRenderCalendar();
+  applyDdDatePreset("this_month");
+  applyTrDatePreset("this_month");
+  initDetailedDashboardFilters();
 });
 
 /* ═══════════════════════════════════════════════════════════
@@ -4710,6 +6334,20 @@ function closeDatePicker() {
 document.addEventListener("mousedown", (e) => {
   const wrapper = document.getElementById("drp-wrapper");
   if (wrapper && !wrapper.contains(e.target)) closeDatePicker();
+
+  const ddWrapper = document.getElementById("dd-drp-wrapper");
+  if (ddWrapper && !ddWrapper.contains(e.target)) closeDdDatePicker();
+
+  const trWrapper = document.getElementById("tr-drp-wrapper");
+  if (trWrapper && !trWrapper.contains(e.target)) closeTrDatePicker();
+
+  const lpWrapper = document.getElementById("lp-wrapper");
+  if (lpWrapper && !lpWrapper.contains(e.target)) {
+    const popover = document.getElementById("lp-popover");
+    const trigger = document.getElementById("lp-trigger");
+    if (popover) popover.classList.remove("show");
+    if (trigger) trigger.classList.remove("open");
+  }
 });
 
 function drpNavMonth(delta) {
@@ -4719,35 +6357,19 @@ function drpNavMonth(delta) {
   drpRenderCalendar();
 }
 
-function applyDatePreset(preset) {
+function _drpPresetToRange(preset) {
   const today = new Date();
-  const labelMap = {
-    today: "Today", last_week: "Last Week", this_month: "This Month",
-    last_month: "Last Month", last_30_days: "Last 30 days",
-    last_year: "Last Year", all_time: "All Time"
-  };
-
-  // Set the hidden select
-  const sel = document.getElementById("date-filter");
-  sel.value = preset;
-
-  // Clear custom dates
-  window._drpDateStart = "";
-  window._drpDateEnd = "";
-  _drpPickStep = 0;
-
-  // Update label
-  document.getElementById("drp-label").textContent = labelMap[preset] || preset;
-
-  // Highlight active preset
-  document.querySelectorAll(".drp-preset").forEach(b => {
-    b.classList.toggle("active", b.dataset.preset === preset);
-  });
-
-  // Calculate date range for calendar highlighting
   let startD = null, endD = null;
   if (preset === "today") {
     startD = endD = new Date(today);
+  } else if (preset === "yesterday") {
+    startD = endD = new Date(today);
+    startD.setDate(today.getDate() - 1);
+    endD.setDate(today.getDate() - 1);
+  } else if (preset === "this_week") {
+    const dow = today.getDay();
+    startD = new Date(today); startD.setDate(today.getDate() - dow);
+    endD = new Date(today);
   } else if (preset === "last_week") {
     const dow = today.getDay();
     startD = new Date(today); startD.setDate(today.getDate() - dow - 7);
@@ -4764,13 +6386,40 @@ function applyDatePreset(preset) {
   } else if (preset === "last_year") {
     startD = new Date(today.getFullYear() - 1, 0, 1);
     endD = new Date(today.getFullYear() - 1, 11, 31);
+  } else if (preset === "all_time") {
+    return { start: "2000-01-01", end: _drpToISO(today) };
   }
-
-  // Store computed dates for calendar display (but NOT as custom)
   if (startD && endD) {
-    window._drpPreviewStart = _drpToISO(startD);
-    window._drpPreviewEnd = _drpToISO(endD);
-    // Navigate calendar to show the start month
+    return { start: _drpToISO(startD), end: _drpToISO(endD) };
+  }
+  return null;
+}
+
+function applyDatePreset(preset) {
+  const labelMap = {
+    today: "Today", last_week: "Last Week", this_month: "This Month",
+    last_month: "Last Month", last_30_days: "Last 30 days",
+    last_year: "Last Year", all_time: "All Time"
+  };
+
+  const sel = document.getElementById("date-filter");
+  sel.value = preset;
+
+  window._drpDateStart = "";
+  window._drpDateEnd = "";
+  _drpPickStep = 0;
+
+  document.getElementById("drp-label").textContent = labelMap[preset] || preset;
+
+  document.querySelectorAll("#drp-popover .drp-preset").forEach(b => {
+    b.classList.toggle("active", b.dataset.preset === preset);
+  });
+
+  const computed = _drpPresetToRange(preset);
+  if (computed) {
+    window._drpPreviewStart = computed.start;
+    window._drpPreviewEnd = computed.end;
+    const startD = new Date(computed.start + "T12:00:00");
     _drpViewYear = startD.getFullYear();
     _drpViewMonth = startD.getMonth();
   } else {
@@ -4889,6 +6538,377 @@ function _drpBuildMonth(year, month) {
   html += `</div></div>`;
   return html;
 }
+
+/* ── Detailed Dashboard date range picker (same UX as header) ── */
+let _ddDrpViewYear, _ddDrpViewMonth;
+{
+  const n = new Date(); _ddDrpViewYear = n.getFullYear(); _ddDrpViewMonth = n.getMonth();
+}
+window._ddDrpDateStart = "";
+window._ddDrpDateEnd = "";
+window._ddDrpPreviewStart = "";
+window._ddDrpPreviewEnd = "";
+let _ddDrpPickStep = 0;
+
+function _positionDdDatePicker() {
+  const pop = document.getElementById("dd-drp-popover");
+  const trig = document.getElementById("dd-drp-trigger");
+  if (!pop || !trig) return;
+  const rect = trig.getBoundingClientRect();
+  const width = Math.min(520, window.innerWidth - 24);
+  let left = rect.left;
+  if (left + width > window.innerWidth - 12) {
+    left = Math.max(12, window.innerWidth - width - 12);
+  }
+  pop.style.width = width + "px";
+  pop.style.top = (rect.bottom + 6) + "px";
+  pop.style.left = left + "px";
+}
+
+function toggleDdDatePicker() {
+  const pop = document.getElementById("dd-drp-popover");
+  const trig = document.getElementById("dd-drp-trigger");
+  const open = pop.classList.contains("show");
+  if (!open) {
+    _positionDdDatePicker();
+    ddDrpRenderCalendar();
+  }
+  pop.classList.toggle("show", !open);
+  trig.classList.toggle("open", !open);
+}
+
+window.addEventListener("resize", () => {
+  const pop = document.getElementById("dd-drp-popover");
+  if (pop && pop.classList.contains("show")) _positionDdDatePicker();
+});
+window.addEventListener("scroll", () => {
+  const pop = document.getElementById("dd-drp-popover");
+  if (pop && pop.classList.contains("show")) _positionDdDatePicker();
+}, true);
+
+function closeDdDatePicker() {
+  const pop = document.getElementById("dd-drp-popover");
+  const trig = document.getElementById("dd-drp-trigger");
+  if (pop) pop.classList.remove("show");
+  if (trig) trig.classList.remove("open");
+}
+
+function ddDrpNavMonth(delta) {
+  _ddDrpViewMonth += delta;
+  while (_ddDrpViewMonth < 0)  { _ddDrpViewMonth += 12; _ddDrpViewYear--; }
+  while (_ddDrpViewMonth > 11) { _ddDrpViewMonth -= 12; _ddDrpViewYear++; }
+  ddDrpRenderCalendar();
+}
+
+const DRP_PANEL_PRESET_LABELS = {
+  today: "Today",
+  yesterday: "Yesterday",
+  this_week: "This Week",
+  this_month: "This Month",
+};
+
+function applyDdDatePreset(preset) {
+  const labelMap = DRP_PANEL_PRESET_LABELS;
+
+  const sel = document.getElementById("dd-date-filter");
+  if (sel) sel.value = preset;
+
+  window._ddDrpDateStart = "";
+  window._ddDrpDateEnd = "";
+  _ddDrpPickStep = 0;
+
+  const labelEl = document.getElementById("dd-drp-label");
+  if (labelEl) labelEl.textContent = labelMap[preset] || preset;
+
+  document.querySelectorAll("#dd-drp-popover .dd-drp-preset").forEach(b => {
+    b.classList.toggle("active", b.dataset.preset === preset);
+  });
+
+  const computed = _drpPresetToRange(preset);
+  if (computed) {
+    window._ddDrpPreviewStart = computed.start;
+    window._ddDrpPreviewEnd = computed.end;
+    const startD = new Date(computed.start + "T12:00:00");
+    _ddDrpViewYear = startD.getFullYear();
+    _ddDrpViewMonth = startD.getMonth();
+  } else {
+    window._ddDrpPreviewStart = "";
+    window._ddDrpPreviewEnd = "";
+  }
+
+  ddDrpRenderCalendar();
+  closeDdDatePicker();
+}
+
+function ddDrpClickDay(iso) {
+  if (_ddDrpPickStep === 0) {
+    window._ddDrpDateStart = iso;
+    window._ddDrpDateEnd = "";
+    _ddDrpPickStep = 1;
+  } else {
+    if (iso < window._ddDrpDateStart) {
+      window._ddDrpDateEnd = window._ddDrpDateStart;
+      window._ddDrpDateStart = iso;
+    } else {
+      window._ddDrpDateEnd = iso;
+    }
+    _ddDrpPickStep = 0;
+  }
+
+  const labelEl = document.getElementById("dd-drp-label");
+  if (window._ddDrpDateStart && window._ddDrpDateEnd) {
+    const s = _drpFormatDisplay(window._ddDrpDateStart);
+    const e = _drpFormatDisplay(window._ddDrpDateEnd);
+    if (labelEl) labelEl.textContent = `${s} – ${e}`;
+    const sel = document.getElementById("dd-date-filter");
+    if (sel) sel.value = "custom";
+    window._ddDrpPreviewStart = window._ddDrpDateStart;
+    window._ddDrpPreviewEnd = window._ddDrpDateEnd;
+    document.querySelectorAll("#dd-drp-popover .dd-drp-preset").forEach(b => b.classList.remove("active"));
+    closeDdDatePicker();
+  } else if (labelEl) {
+    labelEl.textContent = _drpFormatDisplay(window._ddDrpDateStart) + " – …";
+  }
+
+  ddDrpRenderCalendar();
+}
+
+function ddDrpRenderCalendar() {
+  const monthsEl = document.getElementById("dd-drp-months");
+  const titleEl = document.getElementById("dd-drp-cal-title");
+  if (!monthsEl || !titleEl) return;
+
+  const m1 = _ddDrpViewMonth;
+  const y1 = _ddDrpViewYear;
+  const m2 = m1 === 11 ? 0 : m1 + 1;
+  const y2 = m1 === 11 ? y1 + 1 : y1;
+
+  titleEl.textContent = `${DRP_MONTHS[m1]} ${y1} — ${DRP_MONTHS[m2]} ${y2}`;
+  monthsEl.innerHTML = _ddDrpBuildMonth(y1, m1) + _ddDrpBuildMonth(y2, m2);
+}
+
+function _ddDrpBuildMonth(year, month) {
+  const today = _drpToISO(new Date());
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  const pStart = window._ddDrpPreviewStart || window._ddDrpDateStart || "";
+  const pEnd = window._ddDrpPreviewEnd || window._ddDrpDateEnd || "";
+
+  let html = `<div class="drp-month-grid">
+    <div class="drp-month-label">${DRP_MONTHS[month]} ${year}</div>
+    <div class="drp-weekdays"><span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span></div>
+    <div class="drp-days">`;
+
+  for (let i = 0; i < firstDay; i++) {
+    html += `<button class="drp-day drp-day-empty" disabled></button>`;
+  }
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const iso = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const classes = ["drp-day"];
+    if (iso === today) classes.push("drp-day-today");
+    if (pStart && pEnd) {
+      if (iso === pStart && iso === pEnd) {
+        classes.push("drp-day-selected", "drp-day-range-start", "drp-day-range-end");
+      } else if (iso === pStart) {
+        classes.push("drp-day-selected", "drp-day-range-start");
+      } else if (iso === pEnd) {
+        classes.push("drp-day-selected", "drp-day-range-end");
+      } else if (iso > pStart && iso < pEnd) {
+        classes.push("drp-day-in-range");
+      }
+    } else if (pStart && iso === pStart) {
+      classes.push("drp-day-selected");
+    }
+    html += `<button class="${classes.join(" ")}" onclick="ddDrpClickDay('${iso}')">${d}</button>`;
+  }
+
+  html += `</div></div>`;
+  return html;
+}
+
+/* ── Trends date range picker (same UX as Detailed Dashboard) ── */
+let _trDrpViewYear, _trDrpViewMonth;
+{
+  const n = new Date(); _trDrpViewYear = n.getFullYear(); _trDrpViewMonth = n.getMonth();
+}
+window._trDrpDateStart = "";
+window._trDrpDateEnd = "";
+window._trDrpPreviewStart = "";
+window._trDrpPreviewEnd = "";
+let _trDrpPickStep = 0;
+
+function _positionTrDatePicker() {
+  const pop = document.getElementById("tr-drp-popover");
+  const trig = document.getElementById("tr-drp-trigger");
+  if (!pop || !trig) return;
+  const rect = trig.getBoundingClientRect();
+  const width = Math.min(520, window.innerWidth - 24);
+  let left = rect.left;
+  if (left + width > window.innerWidth - 12) {
+    left = Math.max(12, window.innerWidth - width - 12);
+  }
+  pop.style.width = width + "px";
+  pop.style.top = (rect.bottom + 6) + "px";
+  pop.style.left = left + "px";
+}
+
+function toggleTrDatePicker() {
+  const pop = document.getElementById("tr-drp-popover");
+  const trig = document.getElementById("tr-drp-trigger");
+  const open = pop.classList.contains("show");
+  if (!open) {
+    _positionTrDatePicker();
+    trDrpRenderCalendar();
+  }
+  pop.classList.toggle("show", !open);
+  trig.classList.toggle("open", !open);
+}
+
+window.addEventListener("resize", () => {
+  const trPop = document.getElementById("tr-drp-popover");
+  if (trPop && trPop.classList.contains("show")) _positionTrDatePicker();
+});
+window.addEventListener("scroll", () => {
+  const trPop = document.getElementById("tr-drp-popover");
+  if (trPop && trPop.classList.contains("show")) _positionTrDatePicker();
+}, true);
+
+function closeTrDatePicker() {
+  const pop = document.getElementById("tr-drp-popover");
+  const trig = document.getElementById("tr-drp-trigger");
+  if (pop) pop.classList.remove("show");
+  if (trig) trig.classList.remove("open");
+}
+
+function trDrpNavMonth(delta) {
+  _trDrpViewMonth += delta;
+  while (_trDrpViewMonth < 0)  { _trDrpViewMonth += 12; _trDrpViewYear--; }
+  while (_trDrpViewMonth > 11) { _trDrpViewMonth -= 12; _trDrpViewYear++; }
+  trDrpRenderCalendar();
+}
+
+function applyTrDatePreset(preset) {
+  const labelMap = DRP_PANEL_PRESET_LABELS;
+
+  const sel = document.getElementById("tr-date-filter");
+  if (sel) sel.value = preset;
+
+  window._trDrpDateStart = "";
+  window._trDrpDateEnd = "";
+  _trDrpPickStep = 0;
+
+  const labelEl = document.getElementById("tr-drp-label");
+  if (labelEl) labelEl.textContent = labelMap[preset] || preset;
+
+  document.querySelectorAll("#tr-drp-popover .tr-drp-preset").forEach(b => {
+    b.classList.toggle("active", b.dataset.preset === preset);
+  });
+
+  const computed = _drpPresetToRange(preset);
+  if (computed) {
+    window._trDrpPreviewStart = computed.start;
+    window._trDrpPreviewEnd = computed.end;
+    const startD = new Date(computed.start + "T12:00:00");
+    _trDrpViewYear = startD.getFullYear();
+    _trDrpViewMonth = startD.getMonth();
+  } else {
+    window._trDrpPreviewStart = "";
+    window._trDrpPreviewEnd = "";
+  }
+
+  trDrpRenderCalendar();
+  closeTrDatePicker();
+}
+
+function trDrpClickDay(iso) {
+  if (_trDrpPickStep === 0) {
+    window._trDrpDateStart = iso;
+    window._trDrpDateEnd = "";
+    _trDrpPickStep = 1;
+  } else {
+    if (iso < window._trDrpDateStart) {
+      window._trDrpDateEnd = window._trDrpDateStart;
+      window._trDrpDateStart = iso;
+    } else {
+      window._trDrpDateEnd = iso;
+    }
+    _trDrpPickStep = 0;
+  }
+
+  const labelEl = document.getElementById("tr-drp-label");
+  if (window._trDrpDateStart && window._trDrpDateEnd) {
+    const s = _drpFormatDisplay(window._trDrpDateStart);
+    const e = _drpFormatDisplay(window._trDrpDateEnd);
+    if (labelEl) labelEl.textContent = `${s} – ${e}`;
+    const sel = document.getElementById("tr-date-filter");
+    if (sel) sel.value = "custom";
+    window._trDrpPreviewStart = window._trDrpDateStart;
+    window._trDrpPreviewEnd = window._trDrpDateEnd;
+    document.querySelectorAll("#tr-drp-popover .tr-drp-preset").forEach(b => b.classList.remove("active"));
+    closeTrDatePicker();
+  } else if (labelEl) {
+    labelEl.textContent = _drpFormatDisplay(window._trDrpDateStart) + " – …";
+  }
+
+  trDrpRenderCalendar();
+}
+
+function trDrpRenderCalendar() {
+  const monthsEl = document.getElementById("tr-drp-months");
+  const titleEl = document.getElementById("tr-drp-cal-title");
+  if (!monthsEl || !titleEl) return;
+
+  const m1 = _trDrpViewMonth;
+  const y1 = _trDrpViewYear;
+  const m2 = m1 === 11 ? 0 : m1 + 1;
+  const y2 = m1 === 11 ? y1 + 1 : y1;
+
+  titleEl.textContent = `${DRP_MONTHS[m1]} ${y1} — ${DRP_MONTHS[m2]} ${y2}`;
+  monthsEl.innerHTML = _trDrpBuildMonth(y1, m1) + _trDrpBuildMonth(y2, m2);
+}
+
+function _trDrpBuildMonth(year, month) {
+  const today = _drpToISO(new Date());
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  const pStart = window._trDrpPreviewStart || window._trDrpDateStart || "";
+  const pEnd = window._trDrpPreviewEnd || window._trDrpDateEnd || "";
+
+  let html = `<div class="drp-month-grid">
+    <div class="drp-month-label">${DRP_MONTHS[month]} ${year}</div>
+    <div class="drp-weekdays"><span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span></div>
+    <div class="drp-days">`;
+
+  for (let i = 0; i < firstDay; i++) {
+    html += `<button class="drp-day drp-day-empty" disabled></button>`;
+  }
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const iso = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const classes = ["drp-day"];
+    if (iso === today) classes.push("drp-day-today");
+    if (pStart && pEnd) {
+      if (iso === pStart && iso === pEnd) {
+        classes.push("drp-day-selected", "drp-day-range-start", "drp-day-range-end");
+      } else if (iso === pStart) {
+        classes.push("drp-day-selected", "drp-day-range-start");
+      } else if (iso === pEnd) {
+        classes.push("drp-day-selected", "drp-day-range-end");
+      } else if (iso > pStart && iso < pEnd) {
+        classes.push("drp-day-in-range");
+      }
+    } else if (pStart && iso === pStart) {
+      classes.push("drp-day-selected");
+    }
+    html += `<button class="${classes.join(" ")}" onclick="trDrpClickDay('${iso}')">${d}</button>`;
+  }
+
+  html += `</div></div>`;
+  return html;
+}
 </script>
 
 <!-- Not Valid Modal -->
@@ -4904,37 +6924,37 @@ function _drpBuildMonth(year, month) {
   </div>
 </div>
 
-<footer style="position:fixed; bottom:0; left:272px; right:0; z-index:100; background:var(--header-bg, #111827); border-top:1px solid var(--header-border, #1F2937);">
-  <div style="display:flex; align-items:center; justify-content:space-between; padding:0 24px; height:28px; gap:16px;">
-
-    <!-- Left: branding badge -->
+<footer id="app-footer">
+  <div class="app-footer__sidebar" aria-hidden="true"></div>
+  <div class="app-footer__main">
     <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
-      <div style="width:6px; height:6px; border-radius:50%; background:var(--brand,#3B82F6); box-shadow:0 0 6px rgba(59,130,246,.7); animation:footer-pulse 2.4s ease-in-out infinite;"></div>
-      <span style="font-size:0.58rem; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:var(--text-secondary,#94A3B8);">AI-Powered Audit Platform</span>
+      <div class="footer-pulse-dot"></div>
+      <span style="font-size:0.58rem; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:var(--text-secondary);">AI-Powered Audit Platform</span>
     </div>
-
-    <!-- Center: copyright -->
-    <div style="font-size:0.58rem; color:var(--text-muted,#64748B); white-space:nowrap;">
+    <div style="font-size:0.58rem; color:var(--text-muted); white-space:nowrap;">
       &copy; <span id="footer-year"></span> TEXTING Audit &nbsp;&mdash;&nbsp; All rights reserved
     </div>
-
-    <!-- Right: developer credit -->
     <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
-      <span style="font-size:0.55rem; color:var(--text-muted,#64748B); letter-spacing:0.04em;">Developed by</span>
+      <span style="font-size:0.55rem; color:var(--text-muted); letter-spacing:0.04em;">Developed by</span>
       <a href="https://t.me/Mohmed_abdo" target="_blank" rel="noopener noreferrer"
-         style="display:inline-flex; align-items:center; gap:4px; font-size:0.58rem; font-weight:600; color:var(--brand,#3B82F6); text-decoration:none; letter-spacing:0.03em; transition:color .15s, opacity .15s;"
-         onmouseover="this.style.color='var(--brand-hover,#2563EB)'"
-         onmouseout="this.style.color='var(--brand,#3B82F6)'">
+         style="display:inline-flex; align-items:center; gap:4px; font-size:0.58rem; font-weight:600; color:var(--brand); text-decoration:none; letter-spacing:0.03em; transition:color .15s, opacity .15s;"
+         onmouseover="this.style.color='var(--brand-hover)'"
+         onmouseout="this.style.color='var(--brand)'">
         <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0;"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L8.32 13.617l-2.96-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.828.942z"/></svg>
         Mohamed Abdo
       </a>
     </div>
   </div>
-
   <style>
+    .footer-pulse-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--brand);
+      box-shadow: 0 0 6px color-mix(in srgb, var(--brand) 70%, transparent);
+      animation: footer-pulse 2.4s ease-in-out infinite;
+    }
     @keyframes footer-pulse {
-      0%, 100% { opacity: 1; box-shadow: 0 0 6px rgba(59,130,246,.7); }
-      50%       { opacity: .4; box-shadow: 0 0 3px rgba(59,130,246,.3); }
+      0%, 100% { opacity: 1; }
+      50%       { opacity: .4; }
     }
   </style>
   <script>document.getElementById("footer-year").textContent = new Date().getFullYear();</script>

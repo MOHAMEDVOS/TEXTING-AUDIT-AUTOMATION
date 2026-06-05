@@ -160,7 +160,7 @@ _HARASSMENT_DNC_PATTERNS = [
 ]
 
 _PROFANITY_DNC_PATTERNS = [
-    re.compile(r"\b(fuck|shit|bitch|asshole|bastard|piss\s+off|go\s+to\s+hell)\b", re.I),
+    re.compile(r"\b(fuck|shit|bitch|asshole|asshat|dumbass|dipshit|bastard|piss\s+off|go\s+to\s+hell)\b", re.I),
     re.compile(r"\b(f\*\*\*|b\*\*\*\*|s\*\*\*|a\*\*hole)\b", re.I),
     re.compile(r"\bson\s+of\s+a\s+(bitch|b\*\*\*\*|b|whore)\b", re.I),
     re.compile(r"\byou\s+suck\b", re.I),
@@ -357,6 +357,23 @@ def _msg_date(m: dict) -> str:
     return date_field      # e.g. "Thursday, March 26, 2026"
 
 
+# Vague / non-answers — must NOT count as "contact answered the pillar".
+# "No specific time frame" contains "no" but is uncertainty, not a timeline answer.
+_CONTACT_NON_ANSWER_PATTERNS = [
+    re.compile(
+        r"\bno\s+(specific|particular|set|defined|exact|real)\s+"
+        r"(time\s*frame|timeline|date|time)\b",
+        re.I,
+    ),
+    re.compile(r"\bnot\s+sure\b", re.I),
+    re.compile(r"\b(don'?t|do\s+not)\s+know\b", re.I),
+    re.compile(r"\bno\s+idea\b", re.I),
+    re.compile(r"\b(can'?t|cannot)\s+say\b", re.I),
+    re.compile(r"\bhaven'?t\s+thought\b", re.I),
+    re.compile(r"\bunclear\b", re.I),
+    re.compile(r"\bhard\s+to\s+say\b", re.I),
+]
+
 # Contact responses that count as "answered" for pillar duplicate detection.
 # Covers: rejections (no/never/not interested), openness (yes/maybe/sure/ok),
 # soft acceptance ("that would be fine"), and brief number/timeframe answers.
@@ -383,9 +400,12 @@ _CONTACT_ANSWERED_PATTERNS = [
 
 def _contact_answered_pillar(body: str) -> bool:
     """True if contact's message reads as a real answer (yes/no/maybe/number/etc)."""
-    if len(body.strip()) < 2:
+    text = body.strip()
+    if len(text) < 2:
         return False
-    return any(p.search(body) for p in _CONTACT_ANSWERED_PATTERNS)
+    if any(p.search(text) for p in _CONTACT_NON_ANSWER_PATTERNS):
+        return False
+    return any(p.search(text) for p in _CONTACT_ANSWERED_PATTERNS)
 
 
 def _classify_pillar_question(body: str) -> str | None:

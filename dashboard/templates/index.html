@@ -48,8 +48,8 @@
       --surface-overlay: #273450;
       --surface-border: rgba(148,163,184,0.12);
       --surface-border-strong: rgba(148,163,184,0.22);
-      --header-bg: #0f1623; --header-border: rgba(148,163,184,0.12);
-      --sidebar-bg: #0b0f19; --sidebar-border: rgba(148,163,184,0.10);
+      --header-bg: #000000; --header-border: rgba(148,163,184,0.12);
+      --sidebar-bg: #000000; --sidebar-border: rgba(148,163,184,0.10);
       --scrollbar-track: #0b0f19; --scrollbar-thumb: rgba(148,163,184,0.18); --scrollbar-thumb-hover: rgba(148,163,184,0.35);
       --success: #34d399; --warning: #fbbf24; --danger: #f87171;
       --input-bg: #151d2e;
@@ -77,7 +77,7 @@
       --surface-border: rgba(0,0,0,0.10);
       --surface-border-strong: rgba(0,0,0,0.18);
       --header-bg: rgba(255,255,255,0.82); --header-border: rgba(0,0,0,0.08);
-      --sidebar-bg: #f5f5f7; --sidebar-border: rgba(0,0,0,0.08);
+      --sidebar-bg: #ddd9cc; --sidebar-border: rgba(80,72,50,0.12);
       --scrollbar-track: #f5f5f7; --scrollbar-thumb: rgba(0,0,0,0.18); --scrollbar-thumb-hover: rgba(0,0,0,0.30);
       --success: #1d8348; --warning: #d97706; --danger: #cc0000;
       --input-bg: #ffffff;
@@ -227,17 +227,139 @@
     [data-theme="light"] .tag-red    { background:rgba(220,38,38,.10);  color:#dc2626; border-color:rgba(220,38,38,.25); }
     [data-theme="light"] .tag-gray   { background:var(--surface-subtle); color:var(--text-muted); border-color:var(--surface-border); }
 
-    /* ── Sidebar agent card ── */
+    /* ── Sidebar agent item (flat list style) ── */
     .ac {
-      padding: .7rem 1rem; cursor: pointer;
-      border-bottom: 1px solid var(--surface-border);
+      margin: 0;
+      padding: 10px 14px;
+      cursor: pointer;
+      border-radius: 0;
+      border: none;
       border-left: 3px solid transparent;
-      transition: background .18s ease, border-color .18s ease;
+      border-bottom: 1px solid rgba(148,163,184,0.25);
+      background: transparent;
+      transition: all 0.18s ease;
     }
-    .ac:hover { background: var(--surface-elevated); }
-    .ac.sel   { background: var(--brand-bg); border-left-color: var(--brand); }
-    [data-theme="light"] .ac:hover { background: var(--surface-subtle); }
-    [data-theme="light"] .ac.sel   { background: var(--brand-bg); border-left-color: var(--brand); }
+    .ac:hover {
+      background: var(--surface-elevated);
+      border-left-color: var(--surface-border-strong);
+    }
+    .ac.sel {
+      background: var(--brand-bg);
+      border-left-color: var(--brand);
+    }
+    [data-theme="light"] .ac:hover {
+      background: var(--surface-subtle);
+      border-left-color: var(--surface-border-strong);
+    }
+    [data-theme="light"] .ac.sel {
+      background: var(--brand-bg);
+      border-left-color: var(--brand);
+    }
+
+    /* ── Done notification styling ── */
+    @keyframes donePulse {
+      0% { border-left-color: #22c55e; }
+      50% { border-left-color: #4ade80; }
+      100% { border-left-color: #22c55e; }
+    }
+    @keyframes donePulseLight {
+      0% { border-left-color: #16a34a; }
+      50% { border-left-color: #22c55e; }
+      100% { border-left-color: #16a34a; }
+    }
+
+    .ac.ac-done {
+      border-left-color: #22c55e !important;
+      background: rgba(34, 197, 94, 0.04);
+      animation: donePulse 2.5s infinite ease-in-out;
+    }
+    [data-theme="light"] .ac.ac-done {
+      border-left-color: #16a34a !important;
+      background: rgba(22, 163, 74, 0.03);
+      animation: donePulseLight 2.5s infinite ease-in-out;
+    }
+
+    .ac-done-banner {
+      margin: -10px -14px 8px -14px;
+      padding: 5px 12px;
+      border-radius: 0;
+      background: rgba(34, 197, 94, 0.08);
+      border-bottom: 1px solid rgba(34, 197, 94, 0.15);
+      font-size: .67rem;
+      font-weight: 700;
+      color: #4ade80;
+      letter-spacing: 0.02em;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .ac-done-banner::before {
+      content: '';
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #22c55e;
+      flex-shrink: 0;
+      box-shadow: 0 0 6px #22c55e;
+    }
+    [data-theme="light"] .ac-done-banner {
+      background: rgba(22, 163, 74, 0.06);
+      border-bottom-color: rgba(22, 163, 74, 0.12);
+      color: #15803d;
+    }
+    [data-theme="light"] .ac-done-banner::before {
+      background: #16a34a;
+      box-shadow: 0 0 6px #16a34a;
+    }
+
+    .ac-dismiss-out {
+      transition: border-left-color 0.35s ease, background 0.35s ease !important;
+      border-left-color: transparent !important;
+      background: transparent !important;
+      animation: none !important;
+    }
+
+    /* ── Premium toast notification ── */
+    #toast-container {
+      position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 9999;
+      display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
+      pointer-events: none;
+    }
+    .toast-item {
+      pointer-events: auto;
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 20px 14px 16px;
+      background: rgba(15,23,42,.92); backdrop-filter: blur(16px) saturate(160%);
+      border: 1px solid rgba(74,222,128,.25);
+      border-radius: 14px;
+      box-shadow: 0 8px 40px rgba(0,0,0,.45), 0 0 20px rgba(34,197,94,.12);
+      animation: toast-slide-in .4s cubic-bezier(.34,1.56,.64,1);
+      overflow: hidden; position: relative;
+      min-width: 280px; max-width: 420px;
+    }
+    .toast-item.toast-out { animation: toast-slide-out .32s ease-in forwards; }
+    @keyframes toast-slide-in { from { opacity: 0; transform: translateX(40px) scale(.92); } to { opacity: 1; transform: translateX(0) scale(1); } }
+    @keyframes toast-slide-out { from { opacity: 1; transform: translateX(0) scale(1); } to { opacity: 0; transform: translateX(40px) scale(.92); } }
+    .toast-icon {
+      width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(34,197,94,.12); border: 1px solid rgba(34,197,94,.2);
+      font-size: 1.1rem;
+    }
+    .toast-body { flex: 1; min-width: 0; }
+    .toast-title { font-size: .82rem; font-weight: 700; color: #f1f5f9; letter-spacing: -0.01em; }
+    .toast-sub { font-size: .7rem; color: #94a3b8; margin-top: 2px; }
+    .toast-bar {
+      position: absolute; bottom: 0; left: 0; height: 2.5px;
+      background: linear-gradient(90deg, #22c55e, #4ade80);
+      border-radius: 0 0 14px 14px;
+      animation: toast-countdown linear forwards;
+    }
+    @keyframes toast-countdown { from { width: 100%; } to { width: 0%; } }
+    [data-theme="light"] .toast-item { background: rgba(255,255,255,.95); border-color: rgba(22,163,74,.25); box-shadow: 0 8px 40px rgba(0,0,0,.12), 0 0 20px rgba(22,163,74,.08); }
+    [data-theme="light"] .toast-title { color: #0f172a; }
+    [data-theme="light"] .toast-sub { color: #64748b; }
 
     /* ── Conversation list item ── */
     .ci {
@@ -587,17 +709,6 @@
     }
     .btn-not-valid:hover:not(:disabled) { background: var(--danger); color: #fff; border-color: transparent; }
     .btn-not-valid.rf-done { border-color: var(--surface-border); color: var(--text-muted); pointer-events: none; }
-
-    /* ── Valid confirmation ── */
-    .btn-valid {
-      font-size: 11px; padding: 4px 14px; border-radius: 7px;
-      border: 1px solid rgba(5,150,105,.4);
-      color: #059669; background: transparent; cursor: pointer;
-      transition: background .18s, color .18s, border-color .18s;
-      line-height: 1.5; white-space: nowrap; letter-spacing: -0.01em; font-weight: 600;
-    }
-    .btn-valid:hover:not(:disabled) { background: #059669; color: #fff; border-color: transparent; }
-    .btn-valid.v-done { border-color: var(--surface-border); color: var(--text-muted); pointer-events: none; }
     .rf-invalidated .rf-text { text-decoration: line-through; opacity: .4; }
 
     /* ── Modal ── */
@@ -943,8 +1054,8 @@
 
     </div>
 
-    <!-- ── Content Panel (220px, slides in/out) ── -->
-    <div id="sb-content" style="width:220px; display:flex; flex-direction:column; height:100%; background:var(--sidebar-bg); border-right:1px solid var(--sidebar-border); overflow:hidden; transition:width .22s cubic-bezier(.4,0,.2,1);">
+    <!-- ── Content Panel (290px, slides in/out) ── -->
+    <div id="sb-content" style="width:290px; display:flex; flex-direction:column; height:100%; background:var(--sidebar-bg); border-right:1px solid var(--sidebar-border); overflow:hidden; transition:width .22s cubic-bezier(.4,0,.2,1);">
 
       <!-- Section label -->
       <div id="sb-section-label" style="padding:14px 14px 10px; font-size:.62rem; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--text-muted); flex-shrink:0; border-bottom:1px solid var(--surface-border);">Agents</div>
@@ -1566,6 +1677,7 @@
     <span id="toast-msg"></span>
   </div>
 </div>
+<div id="toast-container"></div>
 
 
 <!-- ══ TREND RESET MODAL ═════════════════════════════════════════════════════ -->
@@ -1692,6 +1804,8 @@ let selectMode     = false;
 let selectedIds    = new Set();
 // email → agent_name for today's assignments (null = unassigned)
 let todayAssignments = {};  // { "account@email.com": "Texter Name" | null }
+// Agents that just finished — show notification badge until clicked
+let doneNotifications = new Set();
 
 function _normEmail(email) {
   return String(email || "").trim().toLowerCase();
@@ -1762,6 +1876,36 @@ function toast(msg, ms = 3000) {
   el.style.display = "block";
   clearTimeout(el._t);
   el._t = setTimeout(() => el.style.display = "none", ms);
+}
+
+function toastDone(agentLabel, convos, ms = 7000, agentId = null) {
+  const container = document.getElementById("toast-container");
+  if (!container) return;
+  const item = document.createElement("div");
+  item.className = "toast-item";
+  if (agentId != null) {
+    item.style.cursor = "pointer";
+    item.onclick = () => {
+      selectAgent(agentId);
+      item.classList.add("toast-out");
+      setTimeout(() => item.remove(), 350);
+    };
+  }
+  item.innerHTML = `
+    <div class="toast-icon" style="font-size:.85rem;font-weight:700;color:#4ade80;">+</div>
+    <div class="toast-body">
+      <div class="toast-title">${esc(agentLabel)} — Complete</div>
+      <div class="toast-sub">${convos ? convos + " conversations extracted" : "Extraction finished"}${agentId ? "<span style='font-size:.65rem;color:var(--brand);font-weight:600;display:block;margin-top:2px;'>Click to review</span>" : ""}</div>
+    </div>
+    <div class="toast-bar" style="animation-duration:${ms}ms;"></div>
+  `;
+  container.appendChild(item);
+  setTimeout(() => {
+    if (item.parentNode) {
+      item.classList.add("toast-out");
+      setTimeout(() => item.remove(), 350);
+    }
+  }, ms);
 }
 
 
@@ -2045,28 +2189,38 @@ function renderSidebar() {
     const status = processStatus[a.name] || "idle";
     const convos = a.conversations_analyzed || 0;
 
-    let statusHtml = "";
+    // -- Status text (no emojis, no pill tags) --
+    let statusText = "";
+    let statusColor = "var(--text-muted)";
     if (status === "running") {
-      const msg = statusMessage(a.name, "Auditing...");
-      statusHtml = `<span class="pls" style="width:6px;height:6px;border-radius:50%;background:#2563EB;display:inline-block;margin-right:3px;vertical-align:middle;"></span><span title="${esc(msg)}" style="color:#2563EB;font-weight:600;font-size:.65rem;">${esc(msg)}</span>`;
+      statusText = statusMessage(a.name, "Auditing");
+      statusColor = "var(--brand)";
     } else if (status === "done") {
-      statusHtml = `<span style="color:#059669;font-weight:600;font-size:.65rem;">✓ Done</span>`;
+      statusText = "Done";
+      statusColor = "var(--success)";
     } else if (status === "failed") {
-      const msg = statusMessage(a.name, "Audit failed");
-      statusHtml = `<span title="${esc(msg)}" style="color:#ef4444;font-weight:700;font-size:.65rem;">Failed: ${esc(msg)}</span>`;
+      statusText = "Failed";
+      statusColor = "var(--danger)";
     }
 
     const avClass = agentAv(a.name);
 
-    const metaItems = [];
-    if (statusHtml) metaItems.push(statusHtml);
-    if (convos > 0) metaItems.push(`<span style="font-size:.65rem;color:var(--text-secondary);">${convos} convos</span>`);
-    if (flags > 0)  metaItems.push(`<span style="font-size:.65rem;color:var(--danger);font-weight:600;"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:text-top;margin-right:2px;"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15" stroke="currentColor" stroke-width="3"/></svg>${flags}</span>`);
-    if (unread > 0) metaItems.push(`<span style="font-size:.65rem;color:var(--warning);font-weight:600;">⚠️ ${unread}</span>`);
+    // Colored, bold meta tags instead of bulky chips
+    const metaSpans = [];
+    if (convos > 0) {
+      metaSpans.push(`<span style="font-size:.67rem;font-weight:700;color:var(--brand);">${convos} convo${convos !== 1 ? 's' : ''}</span>`);
+    }
+    if (score != null) {
+      const flagColor = flags > 0 ? 'var(--danger)' : 'var(--text-muted)';
+      metaSpans.push(`<span style="font-size:.67rem;font-weight:700;color:${flagColor};">${flags} flag${flags !== 1 ? 's' : ''}</span>`);
+    }
+    if (unread > 0) {
+      metaSpans.push(`<span style="font-size:.67rem;font-weight:700;color:var(--warning);">${unread} unread</span>`);
+    }
 
     const scoreDisplay = score != null
-      ? `<span style="font-size:.82rem;font-weight:700;" class="${scoreClass(score)}">${fmtScore(score)}</span>`
-      : `<span style="font-size:.72rem;color:var(--text-muted);">—</span>`;
+      ? `<span style="font-size:.8rem;font-weight:700;" class="${scoreClass(score)}">${fmtScore(score)}</span>`
+      : `<span style="font-size:.75rem;color:var(--text-muted);">\u2014</span>`;
 
     const bar = score != null
       ? `<div style="margin-top:6px;"><div class="sbar"><div class="sbar-fill" style="width:${Math.min(score,100)}%;background:${barGradient(score)};"></div></div></div>`
@@ -2081,9 +2235,14 @@ function renderSidebar() {
         ${checked ? `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>` : ""}
       </div>` : "";
 
+    const hasNotif = doneNotifications.has(a.name);
+    const doneBanner = hasNotif ? `<div class="ac-done-banner">Extraction complete — click to review</div>` : '';
+
     return `
-      <div class="ac${sel && !selectMode ? " sel" : ""}${checked ? " sel" : ""}" onclick="${cardClick}" data-aid="${a.id}"
-        style="opacity:0;${checked ? "background:rgba(37,99,235,.06);border-left-color:#2563EB;" : ""}">
+      <div class="ac${sel && !selectMode ? " sel" : ""}${checked ? " sel" : ""}${hasNotif ? " ac-done" : ""}" onclick="${cardClick}" data-aid="${a.id}"
+        style="opacity:0;${checked ? "background:rgba(37,99,235,.06);border-color:var(--brand);" : ""}"
+        id="ac-card-${a.id}">
+        ${doneBanner}
         <div style="display:flex; align-items:center; gap:10px;">
           ${checkboxHtml}
           <div class="av ${avClass}" style="flex-shrink:0;">${fmtInit(a.name)}</div>
@@ -2093,22 +2252,24 @@ function renderSidebar() {
               ${scoreDisplay}
             </div>
             ${bar}
-            ${metaItems.length ? `<div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap;align-items:center;">${metaItems.join("")}</div>` : ""}
+            <div style="margin-top:5px; display:flex; align-items:center; gap:6px; flex-wrap:nowrap; white-space:nowrap; overflow:hidden;">
+              ${statusText ? `<span style="font-size:.67rem;color:${statusColor};font-weight:700;">${statusText}</span>` : ''}
+              ${(statusText && metaSpans.length) ? `<span style="font-size:.67rem;color:var(--surface-border-strong);margin:0 2px;">·</span>` : ''}
+              ${metaSpans.join(`<span style="font-size:.67rem;color:var(--surface-border-strong);margin:0 2px;">·</span>`)}
+            </div>
           </div>
         </div>
       </div>`;
   }).join("");
 
-  // Stagger-animate cards only on initial load, not when re-rendering after selection changes
+  // Stagger-animate items on initial load
   if (!selectedAgent && !selectMode) {
     anime({
       targets:     "#ag-list .ac",
       opacity:     [0, 1],
-      translateY:  [12, 0],
-      scale:       [0.97, 1],
-      duration:    420,
-      delay:       anime.stagger(38, { start: 0 }),
-      easing:      "spring(1, 88, 14, 0)",
+      duration:    300,
+      delay:       anime.stagger(30, { start: 0 }),
+      easing:      "easeOutQuad",
     });
   } else {
     document.querySelectorAll("#ag-list .ac").forEach(el => { el.style.opacity = "1"; });
@@ -2123,10 +2284,26 @@ async function selectAgent(id) {
   const agent = allAgents.find(a => a.id === id);
   if (!agent) return;
 
+  // Clear done notification
+  if (doneNotifications.has(agent.name)) {
+    const card = document.getElementById(`ac-card-${id}`);
+    if (card) {
+      card.classList.add("ac-dismiss-out");
+      setTimeout(() => {
+        doneNotifications.delete(agent.name);
+        renderSidebar();
+      }, 350);
+    } else {
+      doneNotifications.delete(agent.name);
+    }
+  }
+
   selectedAgent = agent;
   agentConvos   = [];
 
-  renderSidebar();
+  if (!document.getElementById(`ac-card-${id}`)?.classList.contains("ac-dismiss-out")) {
+    renderSidebar();
+  }
   showView("vw-agent");
 
   document.getElementById("ag-name").textContent  = _getAssignedTexter(agent.email) || agent.name || "—";
@@ -2384,7 +2561,7 @@ function selectConversation(index) {
     : "";
 
   renderChatMessages(msgs, convo);
-  renderAiAnalysis(a, convo.invalidated_flags || [], convo.is_validated || false);
+  renderAiAnalysis(a, convo.invalidated_flags || []);
 }
 
 function renderChatMessages(msgs, convo) {
@@ -2500,7 +2677,7 @@ function renderChatMessages(msgs, convo) {
   setTimeout(() => { el.scrollTop = el.scrollHeight; }, 60);
 }
 
-function renderAiAnalysis(a, invalidatedFlags, isValidated) {
+function renderAiAnalysis(a, invalidatedFlags) {
   const el = document.getElementById("ch-ai");
   const invalidatedSet = new Set((invalidatedFlags || []).map(f => f.trim()));
 
@@ -2596,14 +2773,6 @@ function renderAiAnalysis(a, invalidatedFlags, isValidated) {
               <span>${esc(s.trim())}</span>
             </div>`).join("")}
         </div>` : ""}
-
-      <div style="display:flex;justify-content:flex-end;padding-top:4px;">
-        <button id="btn-valid-convo" class="btn-valid${isValidated ? " v-done" : ""}"
-          onclick="markConversationValid(this)"
-          ${isValidated ? "disabled" : ""}>
-          ${isValidated ? "✓ Validated" : "✓ Mark as Valid"}
-        </button>
-      </div>
 
     </div>`;
 }
@@ -2998,7 +3167,6 @@ async function openDetailedConversation(conversationId) {
       assigned_labels:   d.assigned_labels || [],
       parsed_messages:   d.parsed_messages || [],
       invalidated_flags: d.invalidated_flags || [],
-      is_validated:      d.is_validated || false,
       analysis: {
         compliance:        a.compliance_score,
         sentiment:         a.sentiment_score,
@@ -3292,7 +3460,20 @@ async function pollStatus() {
 
     let changed = false;
     for (const [name, state] of Object.entries(data)) {
-      if (processStatus[name] !== state) { processStatus[name] = state; changed = true; }
+      const prev = processStatus[name];
+      if (prev !== state) {
+        // Detect transition into "done" — fire notification
+        if (state === "done" && prev === "running") {
+          doneNotifications.add(name);
+          // Find the agent to get sample count
+          const agent = allAgents.find(a => a.name === name);
+          const convos = agent?.conversations_analyzed || 0;
+          const label = _getAssignedTexter(agent?.email || "") || name;
+          toastDone(label, convos, 7000, agent?.id);
+        }
+        processStatus[name] = state;
+        changed = true;
+      }
       const detail = details[name];
       if (detail) {
         const before = JSON.stringify(processStatusDetails[name] || {});
@@ -3569,31 +3750,6 @@ async function submitNotValid() {
   }
 }
 
-
-// ── Conversation Validation ───────────────────────────────────────────────────
-async function markConversationValid(btn) {
-  if (!selectedAgent?.id || !currentContactName) return;
-  btn.disabled = true;
-  btn.textContent = "Saving…";
-  try {
-    const res = await fetch("/api/conversation/valid", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        agent_id:     selectedAgent.id,
-        agent_name:   selectedAgent.name || "",
-        contact_name: currentContactName,
-      }),
-    });
-    if (!res.ok) throw new Error(await res.text());
-    btn.textContent = "✓ Validated";
-    btn.classList.add("v-done");
-  } catch (err) {
-    btn.disabled = false;
-    btn.textContent = "✓ Mark as Valid";
-    alert("Error saving: " + err.message);
-  }
-}
 
 // ── Texter Roster ─────────────────────────────────────────────────────────────
 let AGENT_ROSTER = [];

@@ -123,7 +123,8 @@ class SmarterContactBot:
 
     def __init__(self, agent_name: str, email: str, password: str, worker_id: int = 0,
                  date_filter: str = None, limit: int = None,
-                 date_start: str = None, date_end: str = None):
+                 date_start: str = None, date_end: str = None, labels: str = None,
+                 blacklist_any: set = None, blacklist_only: set = None):
         self.agent_name = agent_name
         self.email = email
         self.password = password
@@ -131,7 +132,11 @@ class SmarterContactBot:
         self.date_filter = date_filter or DATE_FILTER
         self.date_start = date_start  # "YYYY-MM-DD" for custom range
         self.date_end = date_end      # "YYYY-MM-DD" for custom range
+        self.labels = labels          # Comma-separated labels to filter
         self.limit = limit or DEFAULT_SAMPLE_SIZE
+        # Blacklist: skip if label appears at all (any) or only if it's sole label (only)
+        self.blacklist_any  = blacklist_any  if blacklist_any  is not None else {"extra"}
+        self.blacklist_only = blacklist_only if blacklist_only is not None else {"new lead"}
         self.browser = None
         self.context: BrowserContext = None
         self.page: Page = None
@@ -379,6 +384,164 @@ class SmarterContactBot:
             f"proceeding without filter (all conversations visible)"
         )
         return False
+
+    async def _apply_label_filter(self) -> None:
+        """
+        Apply the custom label filters in the SmarterContact inbox using the checkbox dropdown.
+        If self.labels is empty or not provided, we don't apply any label filter.
+        """
+        if not self.labels:
+            logger.info(f"[Worker-{self.worker_id}] No custom labels filter requested.")
+            return
+
+        # Settle delay: wait for the inbox to finish updating after date filtering
+        await asyncio.sleep(2.0)
+
+        # Close any leftover date popover or other dropdowns
+        try:
+            await self.page.keyboard.press("Escape")
+            await asyncio.sleep(0.5)
+        except Exception:
+            pass
+
+        target_labels = [l.strip().lower() for l in self.labels.split(",") if l.strip()]
+        logger.info(f"[Worker-{self.worker_id}] Applying label filter for targets: {target_labels}")
+
+        try:
+            # 1. Locate the sort-by-labels filter container
+            labels_container = self.page.locator('[data-test-id="messenger_nav_inbox_all_sort-by-labels"]').first
+            if not await labels_container.count():
+                labels_container = self.page.locator('.css-24toey, #filter-box').first
+
+            if not await labels_container.count():
+                logger.warning(f"[Worker-{self.worker_id}] Sort-by-labels container not found.")
+                return
+
+            trigger = labels_container.locator('[data-part="trigger"]').first
+            if not await trigger.count():
+                trigger = labels_container.locator('p, div, button').first
+
+            # Detect open state by checking if label items have appeared in the DOM.
+            # We do NOT rely on [data-part="positioner"] because that selector
+            # also matches the date-filter's positioner — making .is_visible()
+            # unreliable. The label items have a unique, unambiguous test-class.
+            ITEM_SEL = '[data-test-class="messenger_nav_inbox_all_sort-by-labels_label-item"]'
+
+            popover_opened = False
+            for attempt in range(1, 4):
+                logger.info(f"[Worker-{self.worker_id}] Opening labels popover (attempt {attempt}/3)...")
+
+                # Re-resolve container and trigger dynamically each attempt
+                # to stay fresh after React re-renders.
+                current_container = self.page.locator(
+                    '[data-test-id="messenger_nav_inbox_all_sort-by-labels"]'
+                ).first
+                if not await current_container.count():
+                    current_container = self.page.locator('.css-24toey, #filter-box').first
+
+                current_trigger = current_container.locator('[data-part="trigger"]').first
+                if not await current_trigger.count():
+                    current_trigger = current_container.locator('p, div, button').first
+
+                try:
+                    if attempt == 1:
+                        await current_trigger.click(timeout=5000)
+                    elif attempt == 2:
+                        await current_trigger.hover(timeout=5000)
+                    else:
+                        await current_trigger.evaluate("el => el.click()")
+                except Exception as click_err:
+                    logger.warning(
+                        f"[Worker-{self.worker_id}] Popover open attempt {attempt} input failed: {click_err}"
+                    )
+
+                # Wait up to 4 seconds for at least one label item to appear
+                try:
+                    await self.page.wait_for_selector(ITEM_SEL, timeout=4000)
+                    popover_opened = True
+                    logger.info(f"[Worker-{self.worker_id}] ✓ Labels popover opened on attempt {attempt}")
+                    break
+                except Exception:
+                    await asyncio.sleep(1.0)
+
+            if not popover_opened:
+                logger.warning(f"[Worker-{self.worker_id}] Labels popover did not appear after 3 attempts.")
+                if SCREENSHOT_ON_ERROR:
+                    await self._take_screenshot("labels_popover_timeout")
+                return
+
+            # Handle "Load more" if it's there
+            # Click "Load more" if present (use page-level selector, no popover variable)
+            load_more_btn = self.page.locator(
+                'button:has-text("Load more"), button:has-text("load more")'
+            ).first
+            load_more_attempts = 0
+            while (
+                await load_more_btn.count()
+                and await load_more_btn.is_visible()
+                and load_more_attempts < 10
+            ):
+                logger.info(f"[Worker-{self.worker_id}] Clicking 'Load more' inside labels popover...")
+                await load_more_btn.click()
+                await human_delay(0.4, 0.7)
+                load_more_attempts += 1
+
+            # Items are identified by their unique test-class (ITEM_SEL defined above)
+            items = self.page.locator(ITEM_SEL)
+            cnt = await items.count()
+            if cnt == 0:
+                logger.warning(f"[Worker-{self.worker_id}] No label checkboxes found inside popover.")
+                return
+
+            logger.info(f"[Worker-{self.worker_id}] Found {cnt} labels available in dropdown.")
+
+            # Step 1: Read all label texts first
+            available_labels = []
+            for i in range(cnt):
+                text = (await items.nth(i).inner_text()).strip()
+                if text:
+                    available_labels.append(text)
+
+            # Step 2: Click matching labels dynamically (re-resolve each time)
+            for label_text in available_labels:
+                opt = self.page.locator(ITEM_SEL).filter(has_text=label_text).first
+                if not await opt.count():
+                    continue
+
+                label_lower = label_text.lower()
+                is_target = any(target in label_lower for target in target_labels)
+
+                input_el = opt.locator('input[type="checkbox"]').first
+                is_checked = False
+                if await input_el.count():
+                    is_checked = await input_el.is_checked()
+                else:
+                    state = await opt.get_attribute("data-state")
+                    is_checked = (state == "checked")
+
+                if is_target and not is_checked:
+                    logger.info(f"[Worker-{self.worker_id}] Checking label: '{label_text}'")
+                    await opt.click()
+                    await human_delay(0.3, 0.5)
+                elif not is_target and is_checked:
+                    logger.info(f"[Worker-{self.worker_id}] Unchecking label: '{label_text}'")
+                    await opt.click()
+                    await human_delay(0.3, 0.5)
+
+            # Close the popover by moving mouse away then pressing Escape
+            try:
+                await self.page.mouse.move(0, 0)
+                await human_delay(0.3, 0.5)
+                await self.page.keyboard.press("Escape")
+                await human_delay(0.8, 1.5)
+            except Exception as _e:
+                logger.debug("swallowed: %r", _e)
+
+            logger.info(f"[Worker-{self.worker_id}] ✓ Applied custom labels filter successfully.")
+        except Exception as e:
+            logger.error(f"[Worker-{self.worker_id}] Error applying custom label filter: {e}", exc_info=True)
+            if SCREENSHOT_ON_ERROR:
+                await self._take_screenshot("label_filter_error")
 
     async def _apply_date_filter(self, date_filter: str = "today") -> None:
         """
@@ -755,6 +918,9 @@ class SmarterContactBot:
             # Apply date filter before reading rows
             await self._apply_date_filter(self.date_filter)
 
+            # Apply labels filter
+            await self._apply_label_filter()
+
             # Build Label Registry once per session
             await self._scrape_label_registry()
 
@@ -938,37 +1104,72 @@ class SmarterContactBot:
                         if "AM" in line or "PM" in line: unread_data["time"] = line
                     self.extracted_data["unread_conversations"].append(unread_data)
                     skip_unread += 1
-                    logger.info(f"[Worker-{self.worker_id}] SKIP unread: {contact_name}")
+                    logger.debug(f"[Worker-{self.worker_id}] SKIP unread: {contact_name}")
                     continue
 
-                # 2. UNPROCESSED — no label, only "New Lead", or has "Extra" label
+                # 2. UNPROCESSED — no label, or only blacklisted "only" labels, or has a blacklisted "any" label
                 assigned_labels = info["labels"]
-                _skip_any_labels = {"extra"}
-                _skip_only_labels = {"new lead"}
-                has_skip_any = any(l.lower() in _skip_any_labels for l in assigned_labels)
+                has_skip_any = any(l.lower() in self.blacklist_any for l in assigned_labels)
                 is_processed = (
                     assigned_labels
                     and not has_skip_any
-                    and not all(l.lower() in _skip_only_labels for l in assigned_labels)
+                    and not all(l.lower() in self.blacklist_only for l in assigned_labels)
                 )
                 if not is_processed:
                     skip_unprocessed += 1
-                    logger.info(f"[Worker-{self.worker_id}] SKIP unprocessed (label={assigned_labels or 'none'}): {contact_name}")
+                    logger.debug(f"[Worker-{self.worker_id}] SKIP unprocessed (label={assigned_labels or 'none'}): {contact_name}")
                     continue
 
-                # 3. Already AUDITED
+                # 3. LABEL SAFETY NET — if a label filter was requested and the
+                #    browser-level filter failed (popover didn't open), enforce
+                #    the filter here so only matching contacts are processed.
+                if self.labels:
+                    target_labels_lower = [
+                        l.strip().lower() for l in self.labels.split(",") if l.strip()
+                    ]
+                    contact_labels_lower = [l.lower() for l in assigned_labels]
+                    matched = any(
+                        any(tl in cl or cl in tl for cl in contact_labels_lower)
+                        for tl in target_labels_lower
+                    )
+                    if not matched:
+                        logger.debug(
+                            f"[Worker-{self.worker_id}] SKIP label-mismatch "
+                            f"(has={assigned_labels}, want={target_labels_lower}): {contact_name}"
+                        )
+                        continue
+
+                # 4. Already AUDITED
                 if await db.is_chat_audited(self.email, contact_name, info["preview"]):
                     skip_audited += 1
-                    logger.info(f"[Worker-{self.worker_id}] SKIP already audited: {contact_name}")
+                    logger.debug(f"[Worker-{self.worker_id}] SKIP already audited: {contact_name}")
                     continue
 
                 contacts_to_process.append((contact_name, info))
 
-            actual_count = min(len(contacts_to_process), limit)
+            eligible = len(contacts_to_process)
+            actual_count = min(eligible, limit)
+            # ── Extraction summary ───────────────────────────────────────────
             logger.info(
-                f"[Worker-{self.worker_id}] {actual_count} of {len(contacts_to_process)} contacts to extract "
-                f"(limit={limit}, skip_unread={skip_unread}, skip_unprocessed={skip_unprocessed}, skip_audited={skip_audited})"
+                f"[Worker-{self.worker_id}] ┌─ FILTER SUMMARY ─────────────────────────────"
             )
+            logger.info(f"[Worker-{self.worker_id}] │  Collected from inbox : {len(collected_contacts)}")
+            logger.info(f"[Worker-{self.worker_id}] │  Skipped (unread)     : {skip_unread}")
+            logger.info(f"[Worker-{self.worker_id}] │  Skipped (no label)   : {skip_unprocessed}")
+            logger.info(f"[Worker-{self.worker_id}] │  Skipped (audited)    : {skip_audited}")
+            logger.info(f"[Worker-{self.worker_id}] │  Eligible to extract  : {eligible}")
+            logger.info(f"[Worker-{self.worker_id}] │  Requested            : {limit}")
+            logger.info(f"[Worker-{self.worker_id}] │  Will extract         : {actual_count}")
+            logger.info(
+                f"[Worker-{self.worker_id}] └──────────────────────────────────────────────"
+            )
+            if eligible < limit:
+                logger.warning(
+                    f"[Worker-{self.worker_id}] ⚠ Only {eligible} eligible conversations found "
+                    f"for requested {limit} — inbox has no more processable conversations "
+                    f"after filters (unread={skip_unread}, no-label={skip_unprocessed}, "
+                    f"already-audited={skip_audited})"
+                )
 
             for idx, (contact_name, info) in enumerate(contacts_to_process):
                 if idx >= limit:
@@ -1233,7 +1434,7 @@ class SmarterContactBot:
                 f"[Worker-{self.worker_id}] ── {self.agent_name} DONE | "
                 f"grabbed={len(conversations)} | "
                 f"skip_unread={skip_unread} | "
-                f"skip_unprocessed={skip_unprocessed} | "
+                f"skip_no_label={skip_unprocessed} | "
                 f"skip_audited={skip_audited} | "
                 f"unread_inbox={len(self.extracted_data['unread_conversations'])}"
             )
@@ -1322,7 +1523,12 @@ class SmarterContactBot:
                 return result
 
             # Step 2: Extract conversations (which also fills unread_conversations + unread_count)
-            logger.info(f"[Worker-{self.worker_id}] Extraction params: date_filter={self.date_filter}, limit={self.limit}")
+            _date_label = (
+                f"{self.date_start} → {self.date_end}"
+                if self.date_filter == "custom" and self.date_start
+                else self.date_filter
+            )
+            logger.info(f"[Worker-{self.worker_id}] Extraction params: date={_date_label}, requested={self.limit}")
             result["conversations"] = await self.extract_conversations(limit=self.limit)
             result["unread_conversations"] = self.extracted_data.get("unread_conversations", [])
             result["unread_count"] = self.extracted_data.get("unread_count", 0)

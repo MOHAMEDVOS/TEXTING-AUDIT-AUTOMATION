@@ -48,17 +48,180 @@ from ai.scorer import score_agent_conversations
 # ─── Logging Setup ──────────────────────────────────────────
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
+class SimplifiedConsoleFilter(logging.Filter):
+    def __init__(self):
+        super().__init__()
+        self.worker_to_agent = {}
+        self.agent_targets = {}
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        
+        # Determine worker ID if present
+        worker_id = None
+        if "[Worker-" in msg:
+            try:
+                worker_id = int(msg.split("[Worker-")[1].split("]")[0])
+            except Exception:
+                pass
+
+        # Try to parse agent name and associate with worker
+        agent_name = None
+        if worker_id is not None:
+            if "──" in msg and "—" in msg:
+                try:
+                    agent_name = msg.split("──")[1].split("—")[0].strip()
+                    self.worker_to_agent[worker_id] = agent_name
+                except Exception:
+                    pass
+            agent_name = agent_name or self.worker_to_agent.get(worker_id)
+        
+        # Check for scorer agent name
+        if not agent_name and "[Scorer]" in msg:
+            if "──" in msg and "—" in msg:
+                try:
+                    agent_name = msg.split("──")[1].split("—")[0].strip()
+                except Exception:
+                    pass
+            else:
+                try:
+                    agent_name = msg.split("[Scorer]")[1].strip().split()[0]
+                except Exception:
+                    pass
+
+        # Check for main.py single agent runs
+        if not agent_name and "single extraction for:" in msg:
+            try:
+                agent_name = msg.split("single extraction for:")[1].strip()
+            except Exception:
+                pass
+
+        # Fallback to general name if not found
+        agent_name = agent_name or "Agent"
+
+        # 1. Login/Audit Started
+        if "single extraction for:" in msg or "Running single extraction for" in msg:
+            record.msg = f"[LOGIN] [{agent_name}] Starting audit..."
+            record.args = ()
+            return True
+        elif "logging in" in msg:
+            record.msg = f"[LOGIN] [{agent_name}] Logging in to SmarterContact..."
+            record.args = ()
+            return True
+
+        # 2. Login Successful
+        elif "Login successful for" in msg or "Already logged in for" in msg:
+            record.msg = f"[LOGIN] [{agent_name}] Login successful."
+            record.args = ()
+            return True
+
+        # 3. Collection Started
+        elif "starting conversation extraction" in msg:
+            record.msg = f"[COLLECT] [{agent_name}] Starting conversation extraction..."
+            record.args = ()
+            return True
+        elif "contacts to extract" in msg and "limit=" in msg:
+            try:
+                parts = msg.split("contacts to extract")
+                first_part = parts[0].strip()
+                actual_count = int(first_part.split("of")[0].strip().split()[-1])
+            except Exception:
+                actual_count = 0
+            if actual_count > 0:
+                self.agent_targets[agent_name] = actual_count
+            record.msg = f"[COLLECT] [{agent_name}] Target: {actual_count} samples"
+            record.args = ()
+            return True
+
+        # 4. Progress Updates (e.g. "Opening thread X/Y")
+        elif "Opening thread" in msg:
+            try:
+                thread_part = msg.split("Opening thread")[1].split(":")[0].strip()
+                if "/" in thread_part:
+                    curr_str, tgt_str = thread_part.split("/", 1)
+                    curr_val = int(curr_str.strip())
+                    if curr_val % 25 == 0:
+                        progress_str = f"Progress: {thread_part}"
+                    else:
+                        # Silently drop progress logs that are not multiples of 25
+                        return False
+                else:
+                    progress_str = f"Progress: {thread_part}"
+            except Exception:
+                progress_str = "Progress: extracting..."
+            record.msg = f"[COLLECT] [{agent_name}] {progress_str}"
+            record.args = ()
+            return True
+
+        # 5. Collection Done
+        elif "DONE | grabbed=" in msg:
+            try:
+                grabbed = int(msg.split("grabbed=")[1].split("|")[0].strip())
+                target = self.agent_targets.get(agent_name, grabbed)
+                done_str = f"Progress: {grabbed}/{target} (Done)"
+            except Exception:
+                done_str = "Progress: completed collection"
+            record.msg = f"[COLLECT] [{agent_name}] {done_str}"
+            record.args = ()
+            return True
+
+        # 6. Scoring Start
+        elif "scoring" in msg and "conversation" in msg and "parallel" in msg:
+            try:
+                count = msg.split("scoring")[1].split("conversation")[0].strip()
+                scoring_str = f"Scoring {count} conversations..."
+            except Exception:
+                scoring_str = "Scoring conversations..."
+            record.msg = f"[SCORE] [{agent_name}] {scoring_str}"
+            record.args = ()
+            return True
+
+        # 7. Scoring Done
+        elif "overall=" in msg and "adherence=" in msg:
+            try:
+                overall = msg.split("overall=")[1].split("|")[0].strip()
+                done_str = f"Completed scoring (Score: {overall})."
+            except Exception:
+                done_str = "Completed scoring."
+            record.msg = f"[SCORE] [{agent_name}] {done_str}"
+            record.args = ()
+            return True
+
+        # 8. Audit Success
+        elif "Extraction complete for" in msg:
+            record.msg = f"[SUCCESS] [{agent_name}] Audit run completed successfully."
+            record.args = ()
+            return True
+
+        # 9. Audit Failed
+        elif "Extraction failed for" in msg or "Audit failed for" in msg or "Fatal error for" in msg or "Fatal login error" in msg:
+            reason = msg.split(":")[-1].strip() if ":" in msg else "unknown error"
+            record.msg = f"[FAILED] [{agent_name}] Run failed: {reason}"
+            record.args = ()
+            return True
+
+        return False
+
+# Setup handlers
+file_handler = logging.FileHandler(
+    LOG_DIR / f"audit_{get_now().strftime('%Y%m%d_%H%M%S_%f')}_{os.getpid()}.log",
+    encoding="utf-8",
+)
+file_handler.setFormatter(logging.Formatter(
+    fmt="%(asctime)s | %(levelname)-7s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+))
+
+stream_handler = logging.StreamHandler(open(sys.stdout.fileno(), mode='w', encoding='utf-8', closefd=False))
+stream_handler.setFormatter(logging.Formatter(
+    fmt="[%(asctime)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+))
+stream_handler.addFilter(SimplifiedConsoleFilter())
+
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL),
-    format="%(asctime)s | %(levelname)-7s | %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-    handlers=[
-        logging.StreamHandler(open(sys.stdout.fileno(), mode='w', encoding='utf-8', closefd=False)),
-        logging.FileHandler(
-            LOG_DIR / f"audit_{get_now().strftime('%Y%m%d_%H%M%S_%f')}_{os.getpid()}.log",
-            encoding="utf-8",
-        ),
-    ],
+    handlers=[stream_handler, file_handler],
 )
 logger = logging.getLogger(__name__)
 
@@ -106,6 +269,8 @@ def _status_message(result: dict) -> tuple[str, str]:
     messages = {
         "login_failed": "Failed logging in",
         "no_conversations": "No convos available",
+        "save_failed": "Failed saving conversations",
+        "scoring_failed": "Scoring failed — nothing saved",
         "account_not_found": "Account not found",
         "error": "Audit failed",
     }
@@ -118,7 +283,7 @@ def _status_message(result: dict) -> tuple[str, str]:
 
 
 async def run_single_agent(agent_name: str, date_filter: str = "today", limit: int = 20,
-                           date_start: str = None, date_end: str = None):
+                           date_start: str = None, date_end: str = None, labels: str = None):
     """Run extraction for a single agent."""
     logger.info(f"Running single extraction for: {agent_name}")
     _write_run_status(agent_name, "running", "starting", "Starting audit")
@@ -126,13 +291,15 @@ async def run_single_agent(agent_name: str, date_filter: str = "today", limit: i
     db = Database()
     current_stage = "database"
     agent_id: int | None = None
+    audit_scored = False
+    final_status: tuple | None = None
     try:
         _write_run_status(agent_name, "running", "database", "Connecting to database")
         await db.initialize()
         _write_run_status(agent_name, "running", "loading_account", "Loading account")
         current_stage = "loading_account"
         qm = QueueManager(date_filter=date_filter, limit=limit,
-                          date_start=date_start, date_end=date_end)
+                          date_start=date_start, date_end=date_end, labels=labels)
         qm.load_agents()
 
         _write_run_status(agent_name, "running", "extracting_conversations", "Extracting conversations")
@@ -154,9 +321,21 @@ async def run_single_agent(agent_name: str, date_filter: str = "today", limit: i
 
             _write_run_status(agent_name, "running", "saving_results", "Saving extracted conversations")
             current_stage = "saving_results"
-            await db.save_results([result])
-            logger.info(f"Extraction complete for {agent_name}")
             agent_id = await db.upsert_agent(result["agent_name"], result["email"])
+            await db.save_results([result])
+            saved = result.get("_all_conversations") or []
+            if not saved:
+                result["status"] = "save_failed"
+                result.setdefault("errors", []).append(
+                    "Extracted conversations could not be saved to the database"
+                )
+                code, message = _status_message(result)
+                logger.error(f"{message} for {agent_name}")
+                _write_run_status(
+                    agent_name, "failed", "saving_results", message, code, result.get("errors"),
+                )
+                return result
+            logger.info(f"Extraction complete for {agent_name}")
 
             # Pick up the pinned Groq key assigned by the dashboard for this run
             pinned_key = None
@@ -174,12 +353,12 @@ async def run_single_agent(agent_name: str, date_filter: str = "today", limit: i
             await score_agent_conversations(
                 agent_id=agent_id,
                 agent_name=result["agent_name"],
-                conversations=result.get("_all_conversations") or result.get("conversations", []),
+                conversations=saved,
                 unread_count=result.get("unread_count", 0),
                 pool=db.pool,
                 pinned_key=pinned_key,
             )
-            _write_run_status(agent_name, "done", "completed", "Done")
+            audit_scored = True
         else:
             code, message = _status_message(result)
             logger.error(f"Extraction failed for {agent_name}: {message}")
@@ -199,14 +378,45 @@ async def run_single_agent(agent_name: str, date_filter: str = "today", limit: i
         return {"agent_name": agent_name, "status": "error", "errors": [str(exc)]}
     finally:
         if db.pool:
-            cleaned = await db.cleanup_failed_audits(agent_id=agent_id)
-            if cleaned:
-                logger.info(f"[Cleanup] Removed {cleaned} failed conversation(s) for agent_id={agent_id} — will retry next run")
+            if agent_id is not None:
+                cleaned = await db.cleanup_failed_audits(agent_id=agent_id)
+                if cleaned:
+                    logger.info(
+                        f"[Cleanup] Removed {cleaned} failed conversation(s) for "
+                        f"agent_id={agent_id} — will retry next run"
+                    )
+                if audit_scored:
+                    valid = await db.count_valid_scored_conversations(agent_id)
+                    if valid == 0:
+                        final_status = (
+                            "failed",
+                            "scoring",
+                            "Scoring failed — no conversations were saved. "
+                            "Check Groq key assignment and re-run.",
+                            "scoring_failed",
+                            ["All conversations failed scoring or were removed during cleanup"],
+                        )
+                    else:
+                        final_status = (
+                            "done",
+                            "completed",
+                            f"Done — {valid} conversation(s) ready",
+                        )
             await db.close()
+
+    if final_status:
+        _write_run_status(
+            agent_name,
+            final_status[0],
+            final_status[1],
+            final_status[2],
+            final_status[3] if len(final_status) > 3 else None,
+            final_status[4] if len(final_status) > 4 else None,
+        )
 
 
 async def run_test(date_filter: str = "today", limit: int = 20,
-                   date_start: str = None, date_end: str = None):
+                   date_start: str = None, date_end: str = None, labels: str = None):
     """Test extraction with the first agent only."""
     logger.info("=" * 60)
     logger.info("  TEST MODE - Processing first agent only")
@@ -217,7 +427,7 @@ async def run_test(date_filter: str = "today", limit: int = 20,
     last_agent_id: int | None = None
     try:
         qm = QueueManager(max_workers=1, date_filter=date_filter, limit=limit,
-                          date_start=date_start, date_end=date_end)
+                          date_start=date_start, date_end=date_end, labels=labels)
         agents = qm.load_agents()
 
         if not agents:
@@ -276,14 +486,14 @@ async def show_status():
 
 
 async def run_selected_agents(names: list[str], date_filter: str = "today", limit: int = 20,
-                              date_start: str = None, date_end: str = None):
+                              date_start: str = None, date_end: str = None, labels: str = None):
     """Run extraction for a specific list of agents sequentially."""
     logger.info("=" * 60)
     logger.info(f"  SELECTED RUN — {len(names)} agents")
     logger.info("=" * 60)
     for name in names:
         await run_single_agent(name, date_filter=date_filter, limit=limit,
-                               date_start=date_start, date_end=date_end)
+                               date_start=date_start, date_end=date_end, labels=labels)
 
 
 def main():
@@ -344,6 +554,12 @@ Examples:
         default=None,
         help="Custom date range end (YYYY-MM-DD). Requires --date-start.",
     )
+    parser.add_argument(
+        "--labels",
+        type=str,
+        default=None,
+        help="Comma-separated list of custom labels to filter (e.g. 'Warm,Hot')",
+    )
 
     args = parser.parse_args()
 
@@ -361,16 +577,16 @@ Examples:
         asyncio.run(show_status())
     elif args.test:
         asyncio.run(run_test(date_filter=date_filter, limit=limit,
-                             date_start=date_start, date_end=date_end))
+                             date_start=date_start, date_end=date_end, labels=args.labels))
     elif args.single:
         result = asyncio.run(run_single_agent(args.single, date_filter=date_filter, limit=limit,
-                                              date_start=date_start, date_end=date_end))
+                                              date_start=date_start, date_end=date_end, labels=args.labels))
         if not result or result.get("status") != "success":
             sys.exit(1)
     elif args.agents:
         names = [n.strip() for n in args.agents.split(",") if n.strip()]
         asyncio.run(run_selected_agents(names, date_filter=date_filter, limit=limit,
-                                        date_start=date_start, date_end=date_end))
+                                        date_start=date_start, date_end=date_end, labels=args.labels))
     else:
         parser.print_help()
 

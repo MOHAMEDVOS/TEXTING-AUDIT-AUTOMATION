@@ -158,7 +158,7 @@ _DNC = [
     re.compile(r"\bspam\s+bot(s)?\b", re.I),
     re.compile(r"\btired\s+of\s+(you|your|these)\s+(spam|texts?|messages?|calls?|bots?)\b", re.I),
     re.compile(r"\bstop\s+(sending|with)\s+(these\s+)?(spam|unsolicited)\b", re.I),
-    re.compile(r"\byou\s+(pieces?\s+of\s+shit|piece\s+of\s+shit|assholes?|fuckers?)\b", re.I),
+    re.compile(r"\byou\s+(pieces?\s+of\s+shit|piece\s+of\s+shit|assholes?|asshats?|dumbasses?|dipshits?|fuckers?)\b", re.I),
 
     # ── Conjunction patterns: "don't text or call me", "stop texting and calling" ──
     re.compile(r"\bdon'?t\s+(text|txt|call|contact|message)\s+(or|and|,)\s+(text|txt|call|contact|message)(\s+me)?\b", re.I),
@@ -255,6 +255,90 @@ _DNC = [
     re.compile(r"\bi\s+(sell|list|represent)\s+(homes?|houses?|properties|real\s+estate)\s+(for\s+a\s+living|professionally|myself)\b", re.I),
     re.compile(r"\bthis\s+is\s+(a\s+)?(realtor|real\s+estate\s+agent|broker)\b", re.I),
 ]
+
+# Relative is realtor/agent — owner labeled Do Not Call (not Listed)
+# e.g. "My wife is a realtor" — we do not compete with their family rep
+_DNC_RELATIVE_REALTOR = [
+    re.compile(
+        r"\b(my|our)\s+"
+        r"(wife|husband|spouse|partner|mother|mom|father|dad|parent|parents|brother|sister|son|daughter|kid|kids|child|children|family|relative|in[- ]?laws?)\s+"
+        r"(is|was|'s|are|'re)\s+"
+        r"(a\s+|an\s+)?(real\s+estate\s+)?(licensed\s+)?(realtor|realtors|agent|agents|broker|brokers)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(wife|husband|spouse|mother|mom|father|dad|brother|sister|son|daughter)\s+"
+        r"(is|was|'s)\s+(a\s+|an\s+)?(real\s+estate\s+)?(realtor|agent|broker)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(relative|family\s+member)\s+(is|was|'s)\s+(a\s+)?(real\s+estate\s+)?(realtor|agent|broker)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(my|our)\s+(realtor|real\s+estate\s+agent|broker)\s+"
+        r"(wife|husband|spouse|mother|mom|father|dad|brother|sister|son|daughter)\b",
+        re.I,
+    ),
+]
+
+# Owner / number holder is a minor — Do Not Call (compliance; not Wrong Number alone)
+# e.g. "I'm a kid", "this is my son's phone", "he is only 12"
+_DNC_MINOR_OWNER = [
+    re.compile(r"\b(i\s+am|i'?m)\s+(a\s+|just\s+a\s+)?(kid|child|minor|underage)\b", re.I),
+    re.compile(r"\b(i\s+am|i'?m)\s+(only\s+)?(1[0-7]|[1-9])\s*(years?\s+old|yo|y\.?o\.?)\b", re.I),
+    re.compile(
+        r"\b(i'?m|i\s+am)\s+"
+        r"(ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen)"
+        r"(\s+years?\s+old)?\b",
+        re.I,
+    ),
+    re.compile(r"\bunder\s*18\b", re.I),
+    re.compile(r"\b(not\s+18|not\s+an?\s+adult|too\s+young)\b", re.I),
+    re.compile(
+        r"\b(he|she|they|owner|this\s+person|the\s+owner)\s+"
+        r"(is|was|'s)\s+(a\s+|just\s+a\s+)?(kid|child|minor)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(he|she|they)\s+(is|was|'s)\s+(only\s+)?(1[0-7]|[1-9])\s*(years?\s+old|yo|y\.?o\.?)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(that|this|it)\s+is\s+(my|our|a)\s+"
+        r"(kid|child|son|daughter|sons?|daughters?|boy|girl)(?:'?s)?\s+(phone|number|cell)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(my|our)\s+(kid|child|son|daughter|sons?|daughters?|boy|girl)(?:'?s)?\s+(phone|number|cell)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(you\s+)?(have|got|reached|called|texted|contacted)\s+(a\s+)?(kid|child|minor)\b",
+        re.I,
+    ),
+    re.compile(r"\b(kid|child|minor)(?:'s)?\s+(phone|number|cell)\b", re.I),
+    re.compile(r"\b(owner|person)\s+(is|was)\s+(a\s+)?(kid|child|minor)\b", re.I),
+    re.compile(r"\bnot\s+the\s+owner\b.{0,60}\b(kid|child|minor)\b", re.I),
+    re.compile(r"\b(kid|child|minor)\b.{0,60}\bnot\s+the\s+owner\b", re.I),
+    re.compile(r"\b(wrong\s+(person|number)|not\s+\w+)\b.{0,60}\b(kid|child|minor)\b", re.I),
+    re.compile(r"\b(kid|child|minor)\b.{0,60}\b(wrong\s+(person|number))\b", re.I),
+]
+
+# Contact insults / profanity → Do Not Call (beats Wrong Number when combined)
+_DNC_PROFANITY_INSULTS = [
+    re.compile(
+        r"\b(asshole|asshat|dumbass|dipshit|assholes?|asshats?|dumbasses?|dipshits?)\b",
+        re.I,
+    ),
+    re.compile(r"\b(fuck|shit|bitch|bastard|piss\s+off|go\s+to\s+hell)\b", re.I),
+    re.compile(r"\b(f\*\*\*|b\*\*\*\*|s\*\*\*|a\*\*hole)\b", re.I),
+    re.compile(r"\bson\s+of\s+a\s+(bitch|b\*\*\*\*|b|whore)\b", re.I),
+    re.compile(r"\byou\s+suck\b", re.I),
+    re.compile(r"\bhow\s+(fucking\s+)?rude\b", re.I),
+]
+
+_DNC = _DNC + _DNC_RELATIVE_REALTOR + _DNC_MINOR_OWNER + _DNC_PROFANITY_INSULTS
 
 _SOLD = [
     re.compile(r"\b(sold|already\s+sold)\b", re.I),
@@ -634,6 +718,21 @@ def _expected_label(contact_text: str, messages: list[dict], assigned_label: str
     # ── PRIORITY 1: DNC — beats EVERYTHING (WN, Sold, NI, Bluffer, Maybe Later) ──
     # If contact opted out in any way, the actionable label is always Do Not Call.
     if has_dnc:
+        if any(p.search(contact_text) for p in _DNC_MINOR_OWNER):
+            return "Do Not Call", (
+                "ML detected the owner/number holder is a minor (kid/child) — "
+                "Do Not Call. DNC takes priority over Wrong Number and other labels."
+            )
+        if any(p.search(contact_text) for p in _DNC_RELATIVE_REALTOR):
+            return "Do Not Call", (
+                "ML detected a relative is a realtor/agent — owner should be Do Not Call "
+                "(not Listed). DNC takes priority over Not Interested and other labels."
+            )
+        if any(p.search(contact_text) for p in _DNC_PROFANITY_INSULTS):
+            return "Do Not Call", (
+                "ML detected hostile or profane language from contact — Do Not Call. "
+                "DNC takes priority over Wrong Number and other labels."
+            )
         return "Do Not Call", (
             "ML detected opt-out language. DNC takes priority over all other labels "
             "(Wrong Number, Sold, Not Interested, Bluffer, etc.)."

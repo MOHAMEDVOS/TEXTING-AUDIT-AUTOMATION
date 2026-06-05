@@ -431,8 +431,8 @@ async def _fetch_agents_with_scores() -> list[dict]:
 
         # Count red flags from conversation_scores for this agent's latest audit date only
         audit_date = r.get("audit_date")
-        if audit_date:
-            async with app.state.pool.acquire() as conn:
+        async with app.state.pool.acquire() as conn:
+            if audit_date:
                 flagged_rows = await conn.fetch(
                     """SELECT DISTINCT c.contact_id, ct.name
                        FROM conversation_scores cs
@@ -460,13 +460,17 @@ async def _fetch_agents_with_scores() -> list[dict]:
                     agent_id,
                     audit_date,
                 )
-            all_flags = [r["name"] for r in flagged_rows]
-        else:
-            all_flags = []
-            all_convos = 0
+                all_flags = [row["name"] for row in flagged_rows]
+            else:
+                all_flags = []
+                all_convos = 0
+
+            needs_review, flagged_total = await _compute_agent_review_stats(conn, agent_id)
 
         r["red_flags"]              = all_flags
         r["conversations_analyzed"] = all_convos or 0
+        r["needs_review_count"]     = needs_review
+        r["flagged_count"]          = flagged_total
         # label_accuracy and unread from latest run only
         details_raw = r.pop("details", None)
         details = {}
@@ -563,6 +567,220 @@ async def _fetch_agent_detail(agent_id: int) -> dict | None:
     return {"agent": agent, "scores": score, "details": details}
 
 
+def _is_wrong_label_flag(flag: str) -> bool:
+    return (flag or "").strip().lower().startswith("wrong label:")
+
+
+def _parse_json_list(val) -> list:
+    if not val:
+        return []
+    if isinstance(val, list):
+        return val
+    if isinstance(val, str):
+        try:
+            return json.loads(val)
+        except Exception:
+            return []
+    return []
+
+
+def _score_row_to_analysis(score_row) -> dict:
+    if not score_row:
+        return {}
+    raw = dict(score_row)
+    for field in ("pillars_gathered", "rebuttals_used", "red_flags"):
+        raw[field] = _parse_json_list(raw.get(field))
+    return {
+        "compliance": raw.get("compliance_score"),
+        "sentiment": raw.get("sentiment_score"),
+        "professionalism": raw.get("professionalism_score"),
+        "script_adherence": raw.get("script_adherence_score"),
+        "funnel_stage_reached": raw.get("funnel_stage"),
+        "pillars_gathered": raw.get("pillars_gathered", []),
+        "rebuttals_used": raw.get("rebuttals_used", []),
+        "label_assigned": raw.get("label_assigned"),
+        "label_correct": raw.get("label_correct"),
+        "label_should_be": raw.get("label_should_be"),
+        "label_reason": raw.get("label_reason"),
+        "red_flags": raw.get("red_flags", []),
+        "summary": raw.get("summary", ""),
+        "model_used": raw.get("model_used"),
+        "source": raw.get("source"),
+    }
+
+
+def _wrong_label_flag_text(analysis: dict) -> str | None:
+    if not analysis or analysis.get("label_correct") is not False:
+        return None
+    wrong = (analysis.get("label_assigned") or "").strip()
+    should = (analysis.get("label_should_be") or "").strip()
+    if not wrong or not should or wrong == should:
+        return None
+    return f"Wrong label: assigned '{wrong}' but should be '{should}'"
+
+
+def _is_label_wrong_dismissed(analysis: dict, invalidated: set[str]) -> bool:
+    inv_lower = {f.strip().lower() for f in invalidated}
+    for f in inv_lower:
+        if f.startswith("wrong label:"):
+            return True
+    expected = _wrong_label_flag_text(analysis)
+    return bool(expected and expected.lower() in inv_lower)
+
+
+def _label_wrong_active(analysis: dict, invalidated: set[str]) -> bool:
+    if not analysis or analysis.get("label_correct") is not False:
+        return False
+    if (analysis.get("label_assigned") or "") == (analysis.get("label_should_be") or ""):
+        return False
+    return not _is_label_wrong_dismissed(analysis, invalidated)
+
+
+def _conv_issue_count(analysis: dict, invalidated: set[str]) -> int:
+    inv_lower = {f.strip().lower() for f in invalidated}
+    active_flags = [
+        f for f in (analysis.get("red_flags") or [])
+        if f.strip().lower() not in inv_lower and not _is_wrong_label_flag(f)
+    ]
+    label_wrong = 1 if _label_wrong_active(analysis, invalidated) else 0
+    return len(active_flags) + label_wrong
+
+
+def _is_flagged_convo_reviewed(
+    analysis: dict,
+    invalidated: set[str],
+    is_flag_reviewed: bool,
+) -> bool:
+    issues = _conv_issue_count(analysis, invalidated)
+    if issues == 0:
+        return True
+    if is_flag_reviewed:
+        return True
+    inv = {f.strip() for f in invalidated}
+    red_flags = [
+        f.strip() for f in (analysis.get("red_flags") or [])
+        if not _is_wrong_label_flag(f)
+    ]
+    if (
+        red_flags
+        and all(f in inv for f in red_flags)
+        and not _label_wrong_active(analysis, invalidated)
+    ):
+        return True
+    return False
+
+
+async def _compute_agent_review_stats(conn, agent_id: int) -> tuple[int, int]:
+    """Return (needs_review_count, flagged_count) mirroring the convo list UI."""
+    conv_rows = await conn.fetch(
+        """SELECT c.id, ct.name AS contact_name
+           FROM conversations c
+           JOIN contacts ct ON ct.id = c.contact_id
+           WHERE c.agent_id = $1 AND c.is_archived = FALSE
+           ORDER BY c.extracted_at DESC, c.id DESC""",
+        agent_id,
+    )
+
+    seen: set[str] = set()
+    unique_convos = []
+    for row in conv_rows:
+        key = (row["contact_name"] or "").lower().strip()
+        if key and key not in seen:
+            seen.add(key)
+            unique_convos.append(row)
+
+    fb_rows = await conn.fetch(
+        "SELECT contact_name, red_flag FROM flag_feedback WHERE agent_id = $1",
+        agent_id,
+    )
+    invalidated_map: dict[str, set[str]] = {}
+    for fb in fb_rows:
+        key = (fb["contact_name"] or "").lower().strip()
+        invalidated_map.setdefault(key, set()).add(fb["red_flag"])
+
+    try:
+        fr_rows = await conn.fetch(
+            "SELECT contact_name FROM flagged_conversation_reviews WHERE agent_id = $1",
+            agent_id,
+        )
+    except Exception:
+        fr_rows = []
+    reviewed_set = {(fr["contact_name"] or "").lower().strip() for fr in fr_rows}
+
+    needs_review = 0
+    flagged = 0
+    for conv in unique_convos:
+        score_row = await conn.fetchrow(
+            """SELECT compliance_score, sentiment_score, professionalism_score,
+                      script_adherence_score, funnel_stage, pillars_gathered,
+                      rebuttals_used, label_assigned, label_correct,
+                      label_should_be, label_reason, red_flags, summary, model_used,
+                      COALESCE(source, 'groq') AS source
+               FROM conversation_scores
+               WHERE conversation_id = $1
+               ORDER BY id DESC LIMIT 1""",
+            conv["id"],
+        )
+        if not score_row:
+            continue
+
+        contact_key = (conv["contact_name"] or "").lower().strip()
+        invalidated = invalidated_map.get(contact_key, set())
+        analysis = _score_row_to_analysis(score_row)
+        issues = _conv_issue_count(analysis, invalidated)
+        if issues == 0:
+            continue
+        flagged += 1
+        if not _is_flagged_convo_reviewed(
+            analysis,
+            invalidated,
+            contact_key in reviewed_set,
+        ):
+            needs_review += 1
+
+    return needs_review, flagged
+
+
+async def _upsert_flag_review(
+    conn,
+    agent_id: int,
+    contact_name: str,
+    conversation_id: int | None = None,
+) -> None:
+    """Record that a flagged conversation was reviewed by a manager."""
+    await conn.execute(
+        """CREATE TABLE IF NOT EXISTS flagged_conversation_reviews (
+               id              SERIAL PRIMARY KEY,
+               agent_id        INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+               contact_name    TEXT NOT NULL,
+               conversation_id INTEGER REFERENCES conversations(id) ON DELETE SET NULL,
+               reviewed_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+               UNIQUE(agent_id, contact_name)
+           )"""
+    )
+    normalized = contact_name.strip()
+    await conn.execute(
+        """DELETE FROM flagged_conversation_reviews
+           WHERE agent_id = $1 AND LOWER(TRIM(contact_name)) = LOWER(TRIM($2))""",
+        agent_id,
+        normalized,
+    )
+    await conn.execute(
+        """INSERT INTO flagged_conversation_reviews
+               (agent_id, contact_name, conversation_id)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (agent_id, contact_name) DO UPDATE
+               SET reviewed_at = NOW(),
+                   conversation_id = COALESCE(
+                       EXCLUDED.conversation_id,
+                       flagged_conversation_reviews.conversation_id
+                   )""",
+        agent_id,
+        contact_name.strip(),
+        conversation_id,
+    )
+
+
 async def _fetch_agent_conversations(agent_id: int) -> dict | None:
     """
     Return conversations with parsed messages + per-conversation AI analysis
@@ -601,21 +819,24 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
             agent_id,
         )
 
-        # Load validation status for this agent (valid/invalid per contact)
-        vl_rows = await conn.fetch(
-            "SELECT contact_name, status FROM validation_log WHERE agent_id = $1",
-            agent_id,
-        )
+        # Load flagged-conversation review status
+        try:
+            fr_rows = await conn.fetch(
+                "SELECT contact_name FROM flagged_conversation_reviews WHERE agent_id = $1",
+                agent_id,
+            )
+        except Exception as exc:
+            logger.warning("flagged_conversation_reviews query failed: %s", exc)
+            fr_rows = []
 
     invalidated_map: dict[str, set] = {}
     for fb in fb_rows:
         key = (fb["contact_name"] or "").lower().strip()
         invalidated_map.setdefault(key, set()).add(fb["red_flag"])
 
-    validated_set: set[str] = set()
-    for vl in vl_rows:
-        if vl["status"] == "valid":
-            validated_set.add((vl["contact_name"] or "").lower().strip())
+    reviewed_set: set[str] = set()
+    for fr in fr_rows:
+        reviewed_set.add((fr["contact_name"] or "").lower().strip())
 
     merged = []
     async with app.state.pool.acquire() as conn2:
@@ -686,7 +907,7 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
                 "assigned_labels":   list(conv["assigned_labels"] or []),
                 "analysis":          analysis,
                 "invalidated_flags": list(invalidated_map.get(contact_key, set())),
-                "is_validated":      contact_key in validated_set,
+                "is_flag_reviewed":  contact_key in reviewed_set,
                 "conversation_id":   conv_id,
             })
 
@@ -816,6 +1037,7 @@ class RunRequest(BaseModel):
     sample_size: int = 10
     date_start: str = ""   # "YYYY-MM-DD" for custom range
     date_end: str = ""     # "YYYY-MM-DD" for custom range
+    labels: str = ""       # Comma-separated labels to filter
 
 
 class ClearStuckRequest(BaseModel):
@@ -831,6 +1053,15 @@ _ALLOWED_DATE_FILTERS = {
 # ISO date: YYYY-MM-DD. Used to validate custom-range args before subprocess.
 import re as _re
 _ISO_DATE_RE = _re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+class CustomLabelRequest(BaseModel):
+    name: str = ""
+
+
+class BlacklistLabelRequest(BaseModel):
+    name: str = ""
+    skip_mode: str = "any"  # 'any' | 'only'
 
 
 class AddAgentRequest(BaseModel):
@@ -865,11 +1096,10 @@ class RedFlagFeedbackRequest(BaseModel):
     conversation_id: int | None = None
 
 
-class ValidationRequest(BaseModel):
-    agent_id:     int
-    agent_name:   str
-    contact_name: str
-    notes:        str = ""
+class FlagReviewRequest(BaseModel):
+    agent_id:        int
+    contact_name:    str
+    conversation_id: int | None = None
 
 
 class AssignmentRequest(BaseModel):
@@ -939,7 +1169,8 @@ async def _save_trend_snapshot(agent_name: str) -> None:
             )
             if not score_row:
                 logger.info(f"_save_trend_snapshot: no scores yet for '{agent_name}', skipping")
-                _snapshotted.discard(key)  # allow retry once scores appear
+                # Keep the key in _snapshotted so we do not retry snapshotting on every status poll.
+                # If a new run is started today, the key will be discarded there to allow retry.
                 return
 
             # Count total issues from red_flags (JSONB list)
@@ -1173,6 +1404,135 @@ async def api_tool_access_remove(email: str, request: Request):
         return {"success": False, "error": str(exc)}
 
 
+@app.get("/api/custom-labels")
+async def api_custom_labels_list():
+    try:
+        async with app.state.pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT name, created_at FROM custom_labels ORDER BY name"
+            )
+        return {"success": True, "data": [
+            {
+                "name": r["name"],
+                "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+            }
+            for r in rows
+        ]}
+    except Exception as exc:
+        logger.exception("Error in GET /api/custom-labels")
+        return {"success": False, "error": str(exc)}
+
+
+@app.post("/api/custom-labels")
+async def api_custom_labels_add(body: CustomLabelRequest):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Label name required")
+    try:
+        async with app.state.pool.acquire() as conn:
+            exists = await conn.fetchrow(
+                "SELECT id FROM custom_labels WHERE LOWER(name) = LOWER($1)", name
+            )
+            if exists:
+                raise HTTPException(status_code=409, detail="Label already exists")
+            await conn.execute(
+                "INSERT INTO custom_labels (name) VALUES ($1)", name
+            )
+        logger.info(f"custom label added: {name}")
+        return {"success": True, "data": {"name": name}}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Error in POST /api/custom-labels")
+        return {"success": False, "error": str(exc)}
+
+
+@app.delete("/api/custom-labels/{name:path}")
+async def api_custom_labels_remove(name: str):
+    name = name.strip()
+    try:
+        async with app.state.pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM custom_labels WHERE LOWER(name) = LOWER($1)", name
+            )
+        if result == "DELETE 0":
+            raise HTTPException(status_code=404, detail="Label not found")
+        logger.info(f"custom label removed: {name}")
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Error in DELETE /api/custom-labels")
+        return {"success": False, "error": str(exc)}
+
+
+# ── Blacklist Labels ─────────────────────────────────────────────────────────
+
+@app.get("/api/blacklist-labels")
+async def api_blacklist_labels_list():
+    try:
+        async with app.state.pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT id, name, skip_mode, created_at FROM blacklist_labels ORDER BY name"
+            )
+        return {"success": True, "data": [
+            {
+                "id": r["id"],
+                "name": r["name"],
+                "skip_mode": r["skip_mode"],
+                "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+            }
+            for r in rows
+        ]}
+    except Exception as exc:
+        logger.exception("Error in GET /api/blacklist-labels")
+        return {"success": False, "error": str(exc)}
+
+
+@app.post("/api/blacklist-labels")
+async def api_blacklist_labels_add(body: BlacklistLabelRequest):
+    name = body.name.strip()
+    skip_mode = body.skip_mode.strip() if body.skip_mode.strip() in ("any", "only") else "any"
+    if not name:
+        raise HTTPException(status_code=400, detail="Label name required")
+    try:
+        async with app.state.pool.acquire() as conn:
+            exists = await conn.fetchrow(
+                "SELECT id FROM blacklist_labels WHERE LOWER(name) = LOWER($1)", name
+            )
+            if exists:
+                raise HTTPException(status_code=409, detail="Label already in blacklist")
+            row = await conn.fetchrow(
+                "INSERT INTO blacklist_labels (name, skip_mode) VALUES ($1, $2) RETURNING id, name, skip_mode",
+                name, skip_mode
+            )
+        logger.info(f"blacklist label added: {name} (mode={skip_mode})")
+        return {"success": True, "data": {"id": row["id"], "name": row["name"], "skip_mode": row["skip_mode"]}}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Error in POST /api/blacklist-labels")
+        return {"success": False, "error": str(exc)}
+
+
+@app.delete("/api/blacklist-labels/{label_id:int}")
+async def api_blacklist_labels_remove(label_id: int):
+    try:
+        async with app.state.pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM blacklist_labels WHERE id = $1", label_id
+            )
+        if result == "DELETE 0":
+            raise HTTPException(status_code=404, detail="Blacklist label not found")
+        logger.info(f"blacklist label removed id={label_id}")
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Error in DELETE /api/blacklist-labels")
+        return {"success": False, "error": str(exc)}
+
+
 @app.get("/api/agents")
 async def api_agents():
     """Return all agents with their latest audit scores."""
@@ -1191,15 +1551,17 @@ async def api_agents():
         today = get_now().date().isoformat()
         for agent in agents:
             audit_date = agent.get("audit_date")
-            if audit_date == today and agent.get("overall_score") is not None:
-                key = (agent["name"], today)
-                if key not in _snapshotted:
-                    try:
-                        logger.info(f"Backfill: attempting snapshot for '{agent['name']}' (audit_date={audit_date})")
-                        await _save_trend_snapshot(agent["name"])
-                        logger.info(f"Backfill: snapshot saved for '{agent['name']}'")
-                    except Exception as exc:
-                        logger.exception(f"Backfill: FAILED for '{agent['name']}': {exc}")
+            if audit_date is not None:
+                audit_date_str = audit_date.isoformat() if isinstance(audit_date, _date) else str(audit_date)
+                if audit_date_str == today and agent.get("overall_score") is not None:
+                    key = (agent["name"], today)
+                    if key not in _snapshotted:
+                        try:
+                            logger.info(f"Backfill: attempting snapshot for '{agent['name']}' (audit_date={audit_date})")
+                            await _save_trend_snapshot(agent["name"])
+                            logger.info(f"Backfill: snapshot saved for '{agent['name']}'")
+                        except Exception as exc:
+                            logger.exception(f"Backfill: FAILED for '{agent['name']}': {exc}")
 
         return agents
     except Exception as exc:
@@ -1242,6 +1604,9 @@ async def api_run(body: RunRequest):
     existing = running_processes.get(agent_name)
     if existing not in (None, "done", "failed") and existing.poll() is None:
         return {"status": "already_running", "agent": agent_name}
+
+    # Clear today's snapshot block so a new run can attempt trend snapshotting
+    _snapshotted.discard((agent_name, get_now().date().isoformat()))
 
     try:
         from datetime import date as _date
@@ -1315,6 +1680,9 @@ async def api_run(body: RunRequest):
         # Append custom date range args if provided
         if body.date_start and body.date_end:
             cmd.extend(["--date-start", body.date_start, "--date-end", body.date_end])
+        # Append custom labels if provided
+        if body.labels:
+            cmd.extend(["--labels", body.labels])
 
         proc = subprocess.Popen(
             cmd,
@@ -1773,11 +2141,38 @@ async def api_redflag_invalid(body: RedFlagFeedbackRequest):
                     "UPDATE conversation_scores SET red_flags = $1::jsonb WHERE id = $2",
                     json.dumps(updated_flags), cs_row["id"],
                 )
+                if _is_wrong_label_flag(flag_str):
+                    await conn.execute(
+                        "UPDATE conversation_scores SET label_correct = true WHERE id = $1",
+                        cs_row["id"],
+                    )
             else:
                 logger.warning(
                     f"redflag/invalid: no conversation_scores found for "
                     f"agent_id={body.agent_id} contact='{body.contact_name}'"
                 )
+
+            if remaining_flags == 0 and body.contact_name.strip():
+                await _upsert_flag_review(
+                    conn, body.agent_id, body.contact_name.strip(), conv_id,
+                )
+            elif cs_row and _is_wrong_label_flag(flag_str):
+                # Wrong-label was the only issue type but counter only tracks red_flags length
+                score_check = await conn.fetchrow(
+                    "SELECT label_correct, red_flags FROM conversation_scores WHERE id = $1",
+                    cs_row["id"],
+                )
+                if score_check and score_check["label_correct"]:
+                    flags_left = score_check["red_flags"] or []
+                    if isinstance(flags_left, str):
+                        try:
+                            flags_left = json.loads(flags_left)
+                        except Exception:
+                            flags_left = []
+                    if not flags_left:
+                        await _upsert_flag_review(
+                            conn, body.agent_id, body.contact_name.strip(), conv_id,
+                        )
 
             # 4. Remove flag from audit_scores.details and recompute top-level red_flags
             as_row = await conn.fetchrow(
@@ -1797,6 +2192,8 @@ async def api_redflag_invalid(body: RedFlagFeedbackRequest):
                     if (pc.get("contact") or "").lower().strip() == body.contact_name.lower().strip():
                         pc_flags = pc.get("red_flags") or []
                         pc["red_flags"] = [f for f in pc_flags if f.lower() != flag_str.lower()]
+                        if _is_wrong_label_flag(flag_str):
+                            pc["label_correct"] = True
                         break
                 # Recompute top-level list (one entry per conversation that still has flags)
                 top_flags = [pc.get("contact") for pc in pc_list if pc.get("red_flags")]
@@ -1841,48 +2238,39 @@ async def api_redflag_invalid(body: RedFlagFeedbackRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@app.post("/api/conversation/valid", dependencies=[Depends(require_admin)])
-async def api_conversation_valid(body: ValidationRequest):
-    """Mark a conversation's Groq score as confirmed valid."""
+@app.post("/api/conversation/flag-reviewed")
+async def api_conversation_flag_reviewed(body: FlagReviewRequest):
+    """Mark a flagged conversation as reviewed (manager opened / handled it)."""
     if not body.agent_id or not body.contact_name.strip():
         raise HTTPException(status_code=400, detail="agent_id and contact_name required")
     try:
         async with app.state.pool.acquire() as conn:
-            cs_row = await conn.fetchrow(
-                """SELECT cs.id AS score_id, c.id AS conv_id
-                   FROM conversation_scores cs
-                   JOIN conversations c ON c.id = cs.conversation_id
-                   JOIN contacts ct ON ct.id = c.contact_id
-                   WHERE c.agent_id = $1 AND LOWER(ct.name) = LOWER($2)
-                   ORDER BY cs.id DESC
-                   LIMIT 1""",
-                body.agent_id, body.contact_name,
-            )
-            if not cs_row:
-                raise HTTPException(status_code=404, detail="conversation not found")
+            conv_id = body.conversation_id
+            if conv_id is None:
+                cs_row = await conn.fetchrow(
+                    """SELECT c.id AS conv_id
+                       FROM conversations c
+                       JOIN contacts ct ON ct.id = c.contact_id
+                       WHERE c.agent_id = $1 AND LOWER(ct.name) = LOWER($2)
+                       ORDER BY c.id DESC
+                       LIMIT 1""",
+                    body.agent_id, body.contact_name,
+                )
+                conv_id = cs_row["conv_id"] if cs_row else None
 
-            await conn.execute(
-                """INSERT INTO validation_log
-                       (agent_id, agent_name, contact_name, conversation_id, score_id, status, notes)
-                   VALUES ($1, $2, $3, $4, $5, 'valid', $6)
-                   ON CONFLICT (agent_id, contact_name) DO UPDATE
-                       SET status          = 'valid',
-                           score_id        = EXCLUDED.score_id,
-                           conversation_id = EXCLUDED.conversation_id,
-                           notes           = EXCLUDED.notes,
-                           created_at      = NOW()""",
-                body.agent_id, body.agent_name, body.contact_name,
-                cs_row["conv_id"], cs_row["score_id"], body.notes.strip(),
+            await _upsert_flag_review(
+                conn, body.agent_id, body.contact_name.strip(), conv_id,
             )
 
         logger.info(
-            f"Conversation marked valid: agent={body.agent_name}, contact='{body.contact_name}'"
+            f"Flagged conversation reviewed: agent_id={body.agent_id}, "
+            f"contact='{body.contact_name}'"
         )
         return {"status": "ok"}
     except HTTPException:
         raise
     except Exception:
-        logger.exception("Error in /api/conversation/valid")
+        logger.exception("Error in /api/conversation/flag-reviewed")
         raise HTTPException(status_code=500, detail="internal error")
 
 
@@ -2181,6 +2569,18 @@ async def api_trends(start: str = "", end: str = "", agent: str = "all"):
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
 
+    _UNIQUE_CONVOS_SQL = """
+        SELECT COUNT(DISTINCT c.id)
+        FROM conversations c
+        JOIN LATERAL (
+            SELECT 1 FROM conversation_scores cs2
+            WHERE cs2.conversation_id = c.id
+            LIMIT 1
+        ) cs ON TRUE
+        WHERE c.audit_date BETWEEN $1 AND $2
+          {agent_clause}
+    """
+
     try:
         async with app.state.pool.acquire() as conn:
             if agent.lower() == "all":
@@ -2190,6 +2590,11 @@ async def api_trends(start: str = "", end: str = "", agent: str = "all"):
                        ORDER BY audit_date ASC, agent_name ASC""",
                     start_d, end_d,
                 )
+                unique_convos = await conn.fetchval(
+                    _UNIQUE_CONVOS_SQL.format(agent_clause=""),
+                    start_d,
+                    end_d,
+                )
             else:
                 rows = await conn.fetch(
                     """SELECT * FROM trend_snapshots
@@ -2197,7 +2602,21 @@ async def api_trends(start: str = "", end: str = "", agent: str = "all"):
                        ORDER BY audit_date ASC""",
                     start_d, end_d, agent,
                 )
-        return {"success": True, "data": [dict(r) for r in rows]}
+                unique_convos = await conn.fetchval(
+                    _UNIQUE_CONVOS_SQL.format(agent_clause="AND LOWER(c.texter_name) = LOWER($3)"),
+                    start_d,
+                    end_d,
+                    agent,
+                )
+        snapshot_convos = sum((r["conversations_analyzed"] or 0) for r in rows)
+        return {
+            "success": True,
+            "data": [dict(r) for r in rows],
+            "summary": {
+                "unique_conversations": int(unique_convos or 0),
+                "snapshot_conversations_total": snapshot_convos,
+            },
+        }
     except Exception as exc:
         logger.exception("Error in GET /api/trends")
         raise HTTPException(status_code=500, detail=str(exc))
@@ -2245,18 +2664,23 @@ async def api_detailed_dashboard(
     texter_name: str = "",
     start_date: str = "",
     end_date: str = "",
+    flagged_only: bool = False,
+    contact_name: str = "",
 ):
     """
-    Return flagged conversations for a texter within a date range.
+    Return conversations for a texter within a date range.
 
     Required query params: texter_name, start_date (YYYY-MM-DD), end_date (YYYY-MM-DD)
-    Returns only conversations that have at least one red flag.
+    Optional: flagged_only=true limits results to conversations with red flags or label issues.
+    Optional: contact_name filters by owner/contact name (partial, case-insensitive).
     """
     if not texter_name or not start_date or not end_date:
         raise HTTPException(
             status_code=400,
             detail="texter_name, start_date, and end_date are all required",
         )
+    _tn = texter_name.strip().lower()
+    all_texters = _tn in {"all", "all texters", "__all__", "*"}
     # asyncpg requires actual date objects, not strings
     from datetime import date as _date
     try:
@@ -2265,10 +2689,13 @@ async def api_detailed_dashboard(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
 
-    try:
-        async with app.state.pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
+    flagged_clause = """
+                  AND (
+                    jsonb_array_length(cs.red_flags::jsonb) > 0
+                    OR (cs.label_correct = false AND cs.label_assigned IS DISTINCT FROM cs.label_should_be)
+                  )""" if flagged_only else ""
+
+    _DETAILED_SQL = """
                 SELECT
                     c.id             AS conversation_id,
                     ct.name          AS contact_name,
@@ -2304,16 +2731,33 @@ async def api_detailed_dashboard(
                     ORDER BY cs2.id DESC
                     LIMIT 1
                 ) cs ON TRUE
-                WHERE c.texter_name = $1
-                  AND c.audit_date BETWEEN $2 AND $3
-                  AND (
-                    jsonb_array_length(cs.red_flags::jsonb) > 0
-                    OR (cs.label_correct = false AND cs.label_assigned IS DISTINCT FROM cs.label_should_be)
-                  )
+                WHERE {texter_clause}
+                  AND c.audit_date BETWEEN $1 AND $2
+                  {contact_clause}
+                  {flagged_clause}
                 ORDER BY c.audit_date DESC, c.id DESC
-                """,
-                texter_name, start_d, end_d,
+                """
+
+    contact_search = contact_name.strip()
+    params: list = [start_d, end_d]
+    texter_clause = "TRUE"
+    if not all_texters:
+        texter_clause = f"c.texter_name = ${len(params) + 1}"
+        params.append(texter_name)
+
+    contact_clause = ""
+    if contact_search:
+        contact_clause = f"AND ct.name ILIKE ${len(params) + 1}"
+        params.append(f"%{contact_search}%")
+
+    try:
+        async with app.state.pool.acquire() as conn:
+            sql = _DETAILED_SQL.format(
+                texter_clause=texter_clause,
+                contact_clause=contact_clause,
+                flagged_clause=flagged_clause,
             )
+            rows = await conn.fetch(sql, *params)
 
         result = []
         for row in rows:
@@ -2330,6 +2774,10 @@ async def api_detailed_dashboard(
             r["assigned_labels"] = list(r.get("assigned_labels") or [])
             result.append(r)
 
+        logger.info(
+            "detailed-dashboard: texter=%r all_texters=%s flagged_only=%s contact=%r range=%s..%s rows=%d",
+            texter_name, all_texters, flagged_only, contact_search or None, start_d, end_d, len(result),
+        )
         return {"success": True, "data": result}
     except Exception as exc:
         logger.exception("Error in GET /api/detailed-dashboard")
@@ -2393,13 +2841,6 @@ async def api_conversation_messages(conversation_id: int):
                 agent_id, conv_row["contact_name"],
             )
 
-            # Validation status for this contact + agent
-            vl_row = await conn.fetchrow(
-                """SELECT status FROM validation_log
-                   WHERE agent_id = $1 AND LOWER(contact_name) = LOWER($2)""",
-                agent_id, conv_row["contact_name"],
-            )
-
         analysis = {}
         if score_row:
             analysis = dict(score_row)
@@ -2424,7 +2865,6 @@ async def api_conversation_messages(conversation_id: int):
                 "parsed_messages":   [dict(m) for m in msg_rows],
                 "analysis":          analysis,
                 "invalidated_flags": [r["red_flag"] for r in fb_rows],
-                "is_validated":      vl_row is not None and vl_row["status"] == "valid",
             },
         }
     except HTTPException:
