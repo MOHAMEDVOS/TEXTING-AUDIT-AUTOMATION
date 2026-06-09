@@ -227,8 +227,11 @@ class SmarterContactBot:
                 # Try multiple selectors in order of preference
                 tos_checkbox = None
                 for selector in [
-                    'div[data-scope="checkbox"]',  # Primary: Ark UI checkbox
+                    'div[data-scope="checkbox"][data-part="control"][data-state="unchecked"]',  # Current Ark UI control
+                    'label:has-text("I have read")',  # Current label text
+                    'label:has-text("Terms of Service")',  # Current label text
                     'div[data-part="control"][data-state="unchecked"]',  # Control div
+                    'div[data-scope="checkbox"]',  # Older Ark UI wrapper
                     'input[type="checkbox"]',   # Standard checkbox input
                     'input[name*="agree" i]',  # Name contains 'agree'
                     "label.chakra-checkbox",    # Legacy: old Chakra structure
@@ -240,7 +243,7 @@ class SmarterContactBot:
                         break
 
                 if tos_checkbox:
-                    await tos_checkbox.click()
+                    await tos_checkbox.click(force=True)
                     logger.info(f"[Worker-{self.worker_id}] ✓ Checked Terms of Service")
                     await human_delay(0.3, 0.5)
                 else:
@@ -352,11 +355,68 @@ class SmarterContactBot:
                 await self._take_screenshot("reporting_error")
             return {"error": str(e), "agent_name": self.agent_name}
 
+    async def _open_filters_modal(self) -> bool:
+        """Open the new SmarterContact inbox filters modal."""
+        try:
+            apply_btn = self.page.locator(
+                '[data-test-id="messenger_nav_inbox_all_filters-modal_apply"]'
+            ).first
+            if await apply_btn.count() and await apply_btn.is_visible():
+                return True
+        except Exception:
+            pass
+
+        try:
+            await self.page.keyboard.press("Escape")
+            await asyncio.sleep(0.2)
+        except Exception:
+            pass
+
+        open_btn = self.page.locator(
+            '[data-test-id="messenger_nav_inbox_all_filter-button"], button:has-text("Filters")'
+        ).first
+        try:
+            await open_btn.wait_for(state="visible", timeout=8000)
+            await open_btn.click(timeout=5000)
+            await self.page.locator(
+                '[data-test-id="messenger_nav_inbox_all_filters-modal_apply"]'
+            ).first.wait_for(state="visible", timeout=8000)
+            logger.info(f"[Worker-{self.worker_id}] Opened filters modal")
+            return True
+        except Exception as e:
+            logger.warning(f"[Worker-{self.worker_id}] Could not open filters modal: {e}")
+            return False
+
+    async def _apply_filters_modal(self) -> None:
+        """Click Apply in the new filters modal and wait for the inbox refresh."""
+        apply_btn = self.page.locator(
+            '[data-test-id="messenger_nav_inbox_all_filters-modal_apply"]'
+        ).first
+        await apply_btn.wait_for(state="visible", timeout=8000)
+        await apply_btn.click()
+        await human_delay(1.0, 1.8)
+
     async def _open_date_popover(self) -> bool:
         """
         Open the SmarterContact date filter popover.
         Returns True if successfully opened, False otherwise.
         """
+        try:
+            if await self._open_filters_modal():
+                date_trigger = self.page.locator(
+                    '[data-test-id="messenger_nav_inbox_all_filters-modal_date-filter"]'
+                ).first
+                await date_trigger.wait_for(state="visible", timeout=6000)
+                await date_trigger.click()
+                await self.page.locator(".rdrDateRangePickerWrapper, .rdrCalendarWrapper").first.wait_for(
+                    state="visible",
+                    timeout=6000,
+                )
+                logger.info(f"[Worker-{self.worker_id}] Opened filters modal date picker")
+                return True
+        except Exception as e:
+            logger.warning(f"[Worker-{self.worker_id}] New date picker open failed: {e}")
+
         open_selectors = [
             '[data-test-id="messenger_nav_inbox_all_date-filter"]',
             '[data-test-id*="sort-by-dates"]',
@@ -385,6 +445,129 @@ class SmarterContactBot:
         )
         return False
 
+    async def _apply_label_filter_modal(self, target_labels: list[str]) -> bool:
+        """
+        Apply include-label filters through the new Filter contacts modal.
+
+        Verified June 2026:
+          - Include label dropdown opens a checkbox list
+          - Hidden include value: input[name="labelsFilter.include"]
+          - Menu items: [role="listbox"] [role="option"] with checkbox inputs
+          - Apply: messenger_nav_inbox_all_filters-modal_apply
+        """
+        if not target_labels:
+            return True
+
+        try:
+            if not await self._open_filters_modal():
+                return False
+
+            hidden_include = self.page.locator('input[name="labelsFilter.include"]').first
+            include_combo = hidden_include.locator(
+                "xpath=ancestor::div[contains(@class,'css-b62m3t-container')][1]//input[@role='combobox']"
+            ).first
+            if not await include_combo.count():
+                include_combo = self.page.locator(
+                    'input[role="combobox"][id^="react-select-"][id$="-input"][aria-describedby*="react-select-"][aria-describedby$="-placeholder"], '
+                    'input[role="combobox"][aria-describedby*="react-select-"][placeholder="Select label"]'
+                ).first
+
+            await include_combo.wait_for(state="attached", timeout=8000)
+            await include_combo.click(timeout=5000, force=True)
+            await include_combo.evaluate(
+                """el => {
+                    el.focus();
+                    el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                }"""
+            )
+
+            listbox = self.page.locator('[role="listbox"]').first
+            await listbox.wait_for(state="visible", timeout=8000)
+
+            selected_targets: set[str] = set()
+
+            async def click_matching_visible_options() -> None:
+                options = listbox.locator('[role="option"]')
+                option_count = await options.count()
+                for index in range(option_count):
+                    option = options.nth(index)
+                    try:
+                        option_text = (await option.inner_text(timeout=1000)).strip()
+                    except Exception:
+                        continue
+                    option_lower = option_text.lower()
+                    matched_targets = [
+                        target for target in target_labels
+                        if target in option_lower or option_lower in target
+                    ]
+                    if not matched_targets:
+                        continue
+
+                    checkbox = option.locator('input[type="checkbox"]').first
+                    is_checked = False
+                    if await checkbox.count():
+                        is_checked = await checkbox.is_checked()
+                    else:
+                        state = await option.get_attribute("aria-selected")
+                        is_checked = state == "true"
+
+                    if not is_checked:
+                        checkbox_control = option.locator(
+                            '[data-scope="checkbox"][data-part="control"]'
+                        ).first
+                        if await checkbox_control.count():
+                            await checkbox_control.click(timeout=5000, force=True)
+                        elif await checkbox.count():
+                            await checkbox.click(timeout=5000, force=True)
+                        else:
+                            await option.click(timeout=5000, force=True)
+                        logger.info(f"[Worker-{self.worker_id}] Checked label filter: {option_text}")
+                        await human_delay(0.2, 0.4)
+
+                    selected_targets.update(matched_targets)
+
+            previous_visible_text = ""
+            for _ in range(12):
+                await click_matching_visible_options()
+                if len(selected_targets) == len(target_labels):
+                    break
+
+                try:
+                    visible_text = await listbox.inner_text(timeout=2000)
+                except Exception:
+                    break
+
+                if visible_text == previous_visible_text:
+                    break
+                previous_visible_text = visible_text
+
+                await listbox.evaluate("el => { el.scrollTop += el.clientHeight * 0.85; }")
+                await human_delay(0.2, 0.4)
+
+            missing_targets = [label for label in target_labels if label not in selected_targets]
+            if missing_targets:
+                logger.warning(
+                    f"[Worker-{self.worker_id}] Label(s) not found in modal checkbox list: {missing_targets}"
+                )
+                try:
+                    await self.page.keyboard.press("Escape")
+                    await self.page.keyboard.press("Escape")
+                except Exception as _e:
+                    logger.debug("swallowed: %r", _e)
+                return False
+
+            await self._apply_filters_modal()
+            logger.info(f"[Worker-{self.worker_id}] ✓ Applied custom labels filter successfully.")
+            return True
+        except Exception as e:
+            logger.warning(f"[Worker-{self.worker_id}] New label modal filter failed: {e}")
+            try:
+                await self.page.keyboard.press("Escape")
+            except Exception:
+                pass
+            return False
+
     async def _apply_label_filter(self) -> None:
         """
         Apply the custom label filters in the SmarterContact inbox using the checkbox dropdown.
@@ -406,6 +589,9 @@ class SmarterContactBot:
 
         target_labels = [l.strip().lower() for l in self.labels.split(",") if l.strip()]
         logger.info(f"[Worker-{self.worker_id}] Applying label filter for targets: {target_labels}")
+
+        if await self._apply_label_filter_modal(target_labels):
+            return
 
         try:
             # 1. Locate the sort-by-labels filter container
@@ -572,14 +758,40 @@ class SmarterContactBot:
         }
         option_text = label_map.get(date_filter, "Today")
 
+        modal_option_ids = {
+            "today":        "today",
+            "last_week":    "last-week",
+            "this_month":   "this-month",
+            "last_month":   "last-month",
+            "last_30_days": "last-30-days",
+            "last_year":    "last-year",
+            "all_time":     "clear",
+        }
+
         if not await self._open_date_popover():
             return
 
         try:
+            modal_option_id = modal_option_ids.get(date_filter)
+            if modal_option_id:
+                modal_option = self.page.locator(
+                    f'[data-test-id="messenger_nav_inbox_all_filters-modal_sort-by-dates_{modal_option_id}"]'
+                ).first
+                if await modal_option.count() and await modal_option.is_visible():
+                    await modal_option.click()
+                    await self._apply_filters_modal()
+                    logger.info(f"[Worker-{self.worker_id}] ✓ Date filter set to: {option_text}")
+                    return
+
             # Wait for the popover to render, then click the option by exact text
             option_locator = self.page.get_by_text(option_text, exact=True)
             await option_locator.first.wait_for(state="visible", timeout=5000)
             await option_locator.first.click()
+            apply_btn = self.page.locator(
+                '[data-test-id="messenger_nav_inbox_all_filters-modal_apply"]'
+            ).first
+            if await apply_btn.count() and await apply_btn.is_visible():
+                await self._apply_filters_modal()
             logger.info(f"[Worker-{self.worker_id}] ✓ Date filter set to: {option_text}")
             # Wait for the conversation list to refresh
             await human_delay(0.8, 1.5)
@@ -668,9 +880,16 @@ class SmarterContactBot:
         )
         await human_delay(0.8, 1.5)
 
-        # Close popover by pressing Escape or clicking outside
+        # Apply the modal if we're in the new Filters UI; otherwise close the
+        # older date popover by pressing Escape.
         try:
-            await self.page.keyboard.press("Escape")
+            apply_btn = self.page.locator(
+                '[data-test-id="messenger_nav_inbox_all_filters-modal_apply"]'
+            ).first
+            if await apply_btn.count() and await apply_btn.is_visible():
+                await self._apply_filters_modal()
+            else:
+                await self.page.keyboard.press("Escape")
         except Exception as _e:
             logger.debug("swallowed: %r", _e)
 
@@ -702,11 +921,12 @@ class SmarterContactBot:
             "", "January", "February", "March", "April", "May", "June",
             "July", "August", "September", "October", "November", "December"
         ]
-        PFX = "messenger_nav_inbox_all_sort-by-dates"
-        SEL_PREV_YEAR  = f'[data-test-id="{PFX}_arrow-prev-year"], .rdrPrevYear'
-        SEL_NEXT_YEAR  = f'[data-test-id="{PFX}_arrow-next-year"], .rdrNextYear'
-        SEL_PREV_MONTH = f'[data-test-id="{PFX}_arrow-prev-month"], .rdrPrevMonth'
-        SEL_NEXT_MONTH = f'[data-test-id="{PFX}_arrow-next-month"], .rdrNextMonth'
+        OLD_PFX = "messenger_nav_inbox_all_sort-by-dates"
+        NEW_PFX = "messenger_nav_inbox_all_filters-modal_sort-by-dates"
+        SEL_PREV_YEAR  = f'[data-test-id="{NEW_PFX}_arrow-prev-year"], [data-test-id="{OLD_PFX}_arrow-prev-year"], .rdrPrevYear'
+        SEL_NEXT_YEAR  = f'[data-test-id="{NEW_PFX}_arrow-next-year"], [data-test-id="{OLD_PFX}_arrow-next-year"], .rdrNextYear'
+        SEL_PREV_MONTH = f'[data-test-id="{NEW_PFX}_arrow-prev-month"], [data-test-id="{OLD_PFX}_arrow-prev-month"], .rdrPrevMonth'
+        SEL_NEXT_MONTH = f'[data-test-id="{NEW_PFX}_arrow-next-month"], [data-test-id="{OLD_PFX}_arrow-next-month"], .rdrNextMonth'
 
         async def _read_current() -> tuple[int | None, int | None]:
             """Return (year, month) of the FIRST visible calendar month."""
