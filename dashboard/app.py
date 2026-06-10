@@ -1053,6 +1053,26 @@ _ALLOWED_DATE_FILTERS = {
 # ISO date: YYYY-MM-DD. Used to validate custom-range args before subprocess.
 import re as _re
 _ISO_DATE_RE = _re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_ALL_LABEL_FILTER_VALUES = {"all", "all label", "all labels", "all lable", "all lables"}
+
+
+def _normalize_label_filter(labels: str | None) -> str:
+    if not labels:
+        return ""
+
+    requested = [label.strip() for label in labels.split(",") if label.strip()]
+    if not requested:
+        return ""
+
+    def is_all_labels(value: str) -> bool:
+        normalized = _re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+        return normalized in _ALL_LABEL_FILTER_VALUES
+
+    requested = [label for label in requested if not is_all_labels(label)]
+    if not requested:
+        return ""
+
+    return ",".join(requested)
 
 
 class CustomLabelRequest(BaseModel):
@@ -1680,9 +1700,11 @@ async def api_run(body: RunRequest):
         # Append custom date range args if provided
         if body.date_start and body.date_end:
             cmd.extend(["--date-start", body.date_start, "--date-end", body.date_end])
-        # Append custom labels if provided
-        if body.labels:
-            cmd.extend(["--labels", body.labels])
+        # Append custom labels if provided. Legacy "All labels" means leave
+        # SmarterContact's label filter untouched, which is already all labels.
+        label_filter = _normalize_label_filter(body.labels)
+        if label_filter:
+            cmd.extend(["--labels", label_filter])
 
         proc = subprocess.Popen(
             cmd,

@@ -36,6 +36,38 @@ from scraper.anti_detect import (
 logger = logging.getLogger(__name__)
 
 
+_ALL_LABEL_FILTER_VALUES = {"all", "all label", "all labels", "all lable", "all lables"}
+
+
+def _is_all_labels_filter_value(value: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
+    return normalized in _ALL_LABEL_FILTER_VALUES
+
+
+def normalize_label_filter(labels: str | None) -> str | None:
+    """
+    Normalize the optional SmarterContact label filter.
+
+    SmarterContact used to expose an "All labels" option. The current UI treats
+    no label selection as all labels, so that legacy/default value means "skip
+    the label filter" for both browser clicks and Python-side safety checks.
+    """
+    if not labels:
+        return None
+
+    requested = [label.strip() for label in labels.split(",") if label.strip()]
+    if not requested:
+        return None
+    requested = [
+        label for label in requested
+        if not _is_all_labels_filter_value(label)
+    ]
+    if not requested:
+        return None
+
+    return ",".join(requested)
+
+
 async def _read_labels(row, registry: list[str] = None) -> list[str]:
     """
     Read label text directly from the DOM label elements in a row.
@@ -132,7 +164,7 @@ class SmarterContactBot:
         self.date_filter = date_filter or DATE_FILTER
         self.date_start = date_start  # "YYYY-MM-DD" for custom range
         self.date_end = date_end      # "YYYY-MM-DD" for custom range
-        self.labels = labels          # Comma-separated labels to filter
+        self.labels = normalize_label_filter(labels)  # Comma-separated labels to filter
         self.limit = limit or DEFAULT_SAMPLE_SIZE
         # Blacklist: skip if label appears at all (any) or only if it's sole label (only)
         self.blacklist_any  = blacklist_any  if blacklist_any  is not None else {"extra"}
