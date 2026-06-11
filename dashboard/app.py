@@ -361,6 +361,8 @@ running_pinned_keys: dict[str, str] = {}
 # { "Noah": Path("logs/run_status/...json") }
 running_status_files: dict[str, Path] = {}
 running_status_details: dict[str, dict] = {}
+_run_started_at: dict[str, datetime] = {}
+_MAX_RUN_MINUTES = 15
 
 
 # â"€â"€ Async DB helpers â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
@@ -1789,6 +1791,7 @@ async def api_run(body: RunRequest):
             env={**os.environ, **extra_env},
         )
         running_processes[agent_name] = proc
+        _run_started_at[agent_name] = get_now()
         running_pinned_keys[agent_name] = assignment["api_key"]
         logger.info(
             f"Started audit subprocess for '{agent_name}' (PID {proc.pid}) "
