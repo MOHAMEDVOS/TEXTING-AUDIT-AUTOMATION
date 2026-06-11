@@ -137,7 +137,7 @@ async def lifespan(app):
     max_retries = 5
     for attempt in range(1, max_retries + 1):
         try:
-            app.state.pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
+            app.state.pool = await asyncpg.create_pool(DATABASE_URL, min_size=5, max_size=10)
             async with app.state.pool.acquire() as conn:
                 schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
                 await conn.execute(schema_sql)
@@ -368,11 +368,13 @@ running_status_details: dict[str, dict] = {}
 async def _fetch_agents_with_scores() -> list[dict]:
     """
     Return every agent joined with their latest audit score.
-    red_flags and conversations_analyzed are aggregated across ALL audit runs.
     Agents that have never been scored still appear (scores will be None).
+
+    Performance: uses 6 batch queries total regardless of agent/conversation count.
+    Previously used ~182+ queries (N+1 per agent, then M per conversation).
     """
-    # Latest score row per agent (for score numbers and label accuracy)
-    sql = """
+    # ── Q1: Agents + latest audit score row ──────────────────────────────────
+    sql_agents = """
         SELECT
             a.id,
             a.name,
@@ -398,80 +400,156 @@ async def _fetch_agents_with_scores() -> list[dict]:
             )
         ORDER BY a.name
     """
-    # All audit_scores rows — aggregate per_conversation across every run per agent.
-    # ORDER BY id ASC so that later rows overwrite earlier ones for the same contact.
-    sql_all = "SELECT agent_id, details FROM audit_scores ORDER BY id ASC"
+
+    # ── Q2: Flagged contact names per agent (latest audit_date only) ─────────
+    sql_flagged = """
+        SELECT
+            c.agent_id,
+            ct.name AS contact_name
+        FROM conversation_scores cs
+        JOIN conversations c  ON c.id  = cs.conversation_id
+        JOIN contacts ct      ON ct.id = c.contact_id
+        JOIN (
+            SELECT agent_id, MAX(audit_date) AS max_date
+            FROM conversations
+            WHERE is_archived = FALSE
+            GROUP BY agent_id
+        ) latest ON latest.agent_id = c.agent_id AND c.audit_date = latest.max_date
+        WHERE c.is_archived = FALSE
+          AND cs.id = (
+            SELECT MAX(cs2.id) FROM conversation_scores cs2
+            WHERE cs2.conversation_id = c.id
+          )
+          AND (
+            (cs.red_flags IS NOT NULL AND cs.red_flags::text NOT IN ('[]', 'null'))
+            OR (cs.label_correct = false AND cs.label_assigned IS DISTINCT FROM cs.label_should_be)
+          )
+    """
+
+    # ── Q3: Total distinct contacts per agent (latest audit_date only) ────────
+    sql_convos = """
+        SELECT
+            c.agent_id,
+            COUNT(DISTINCT LOWER(TRIM(ct.name))) AS conversations_analyzed
+        FROM conversations c
+        JOIN contacts ct ON ct.id = c.contact_id
+        JOIN (
+            SELECT agent_id, MAX(audit_date) AS max_date
+            FROM conversations
+            WHERE is_archived = FALSE
+            GROUP BY agent_id
+        ) latest ON latest.agent_id = c.agent_id AND c.audit_date = latest.max_date
+        WHERE c.is_archived = FALSE
+        GROUP BY c.agent_id
+    """
+
+    # ── Q4: All non-archived conversations + latest scores (for review stats) ─
+    sql_conv_scores = """
+        SELECT
+            c.agent_id,
+            c.id AS conv_id,
+            ct.name AS contact_name,
+            cs.compliance_score,
+            cs.sentiment_score,
+            cs.professionalism_score,
+            cs.script_adherence_score,
+            cs.funnel_stage,
+            cs.pillars_gathered,
+            cs.rebuttals_used,
+            cs.label_assigned,
+            cs.label_correct,
+            cs.label_should_be,
+            cs.label_reason,
+            cs.red_flags,
+            cs.summary,
+            cs.model_used,
+            COALESCE(cs.source, 'groq') AS source
+        FROM conversations c
+        JOIN contacts ct ON ct.id = c.contact_id
+        LEFT JOIN LATERAL (
+            SELECT * FROM conversation_scores cs2
+            WHERE cs2.conversation_id = c.id
+            ORDER BY cs2.id DESC
+            LIMIT 1
+        ) cs ON TRUE
+        WHERE c.is_archived = FALSE
+        ORDER BY c.agent_id, c.extracted_at DESC, c.id DESC
+    """
+
+    # ── Q5a + Q5b: Flag feedback + review status — all agents at once ─────────
+    sql_fb = "SELECT agent_id, contact_name, red_flag FROM flag_feedback"
+    sql_fr = "SELECT agent_id, contact_name FROM flagged_conversation_reviews"
 
     async with app.state.pool.acquire() as conn:
-        rows     = await conn.fetch(sql)
-        all_rows = await conn.fetch(sql_all)
-
-    # Per agent: deduplicated contact map — latest run’s entry wins for same contact
-    agg: dict[int, dict[str, dict]] = {}
-    for ar in all_rows:
-        aid = ar["agent_id"]
-        if aid not in agg:
-            agg[aid] = {}
+        agent_rows  = await conn.fetch(sql_agents)
+        flagged_raw = await conn.fetch(sql_flagged)
+        convos_raw  = await conn.fetch(sql_convos)
+        cs_raw      = await conn.fetch(sql_conv_scores)
+        fb_raw      = await conn.fetch(sql_fb)
         try:
-            d = ar["details"] or {}
-            if isinstance(d, str):
-                try: d = json.loads(d)
-                except Exception: d = {}
-            for pc in d.get("per_conversation", []):
-                key = (pc.get("contact") or "").lower().strip()
-                if key:
-                    agg[aid][key] = pc
-        except (json.JSONDecodeError, TypeError):
-            pass
+            fr_raw = await conn.fetch(sql_fr)
+        except Exception:
+            fr_raw = []
+
+    # { agent_id -> [contact_name, ...] }
+    flagged_by_agent: dict[int, list[str]] = {}
+    for fr in flagged_raw:
+        flagged_by_agent.setdefault(fr["agent_id"], []).append(fr["contact_name"])
+
+    # { agent_id -> conversations_analyzed }
+    convos_by_agent: dict[int, int] = {}
+    for cr in convos_raw:
+        convos_by_agent[cr["agent_id"]] = cr["conversations_analyzed"]
+
+    # { agent_id -> { contact_key -> score_dict } } — newest first from ORDER BY
+    cs_by_agent: dict[int, dict[str, dict]] = {}
+    for cs in cs_raw:
+        aid = cs["agent_id"]
+        key = (cs["contact_name"] or "").lower().strip()
+        if key and key not in cs_by_agent.setdefault(aid, {}):
+            cs_by_agent[aid][key] = dict(cs)
+
+    # { agent_id -> { contact_key -> set(red_flags) } }
+    fb_by_agent: dict[int, dict[str, set]] = {}
+    for fb in fb_raw:
+        aid = fb["agent_id"]
+        key = (fb["contact_name"] or "").lower().strip()
+        fb_by_agent.setdefault(aid, {}).setdefault(key, set()).add(fb["red_flag"])
+
+    # { agent_id -> set(contact_key) }
+    reviewed_by_agent: dict[int, set[str]] = {}
+    for fr in fr_raw:
+        aid = fr["agent_id"]
+        key = (fr["contact_name"] or "").lower().strip()
+        reviewed_by_agent.setdefault(aid, set()).add(key)
 
     result = []
-    for row in rows:
-        r = dict(row)
+    for row in agent_rows:
+        r        = dict(row)
         agent_id = r["id"]
 
-        # Count red flags from conversation_scores for this agent's latest audit date only
-        audit_date = r.get("audit_date")
-        async with app.state.pool.acquire() as conn:
-            if audit_date:
-                flagged_rows = await conn.fetch(
-                    """SELECT DISTINCT c.contact_id, ct.name
-                       FROM conversation_scores cs
-                       JOIN conversations c ON c.id = cs.conversation_id
-                       JOIN contacts ct ON ct.id = c.contact_id
-                       WHERE c.agent_id = $1
-                         AND c.audit_date = $2
-                         AND c.is_archived = FALSE
-                         AND cs.id = (
-                           SELECT MAX(cs2.id) FROM conversation_scores cs2
-                           WHERE cs2.conversation_id = c.id
-                         )
-                         AND (
-                           (cs.red_flags IS NOT NULL AND cs.red_flags::text NOT IN ('[]','null'))
-                           OR (cs.label_correct = false AND cs.label_assigned IS DISTINCT FROM cs.label_should_be)
-                         )""",
-                    agent_id,
-                    audit_date,
-                )
-                all_convos = await conn.fetchval(
-                    """SELECT COUNT(DISTINCT LOWER(TRIM(ct.name)))
-                       FROM conversations c
-                       JOIN contacts ct ON ct.id = c.contact_id
-                       WHERE c.agent_id = $1 AND c.audit_date = $2 AND c.is_archived = FALSE""",
-                    agent_id,
-                    audit_date,
-                )
-                all_flags = [row["name"] for row in flagged_rows]
-            else:
-                all_flags = []
-                all_convos = 0
+        r["red_flags"]              = flagged_by_agent.get(agent_id, [])
+        r["conversations_analyzed"] = convos_by_agent.get(agent_id, 0)
 
-            needs_review, flagged_total = await _compute_agent_review_stats(conn, agent_id)
+        # Compute needs_review + flagged_count entirely from in-memory batch data
+        conv_map      = cs_by_agent.get(agent_id, {})
+        inv_map       = fb_by_agent.get(agent_id, {})
+        reviewed      = reviewed_by_agent.get(agent_id, set())
+        needs_review  = 0
+        flagged_total = 0
+        for contact_key, cs_row in conv_map.items():
+            analysis    = _score_row_to_analysis(cs_row)
+            invalidated = inv_map.get(contact_key, set())
+            issues      = _conv_issue_count(analysis, invalidated)
+            if issues == 0:
+                continue
+            flagged_total += 1
+            if not _is_flagged_convo_reviewed(analysis, invalidated, contact_key in reviewed):
+                needs_review += 1
 
-        r["red_flags"]              = all_flags
-        r["conversations_analyzed"] = all_convos or 0
-        r["needs_review_count"]     = needs_review
-        r["flagged_count"]          = flagged_total
-        # label_accuracy and unread from latest run only
+        r["needs_review_count"] = needs_review
+        r["flagged_count"]      = flagged_total
+
         details_raw = r.pop("details", None)
         details = {}
         if details_raw:
@@ -482,14 +560,13 @@ async def _fetch_agents_with_scores() -> list[dict]:
                     details = json.loads(details_raw)
                 except (json.JSONDecodeError, TypeError):
                     details = {}
-        r["label_accuracy"]        = details.get("label_accuracy")
-        r["wrong_label_count"]     = details.get("wrong_label_count", 0)
-        r["unread_messages_left"]  = details.get("unread_messages_left")
+        r["label_accuracy"]       = details.get("label_accuracy")
+        r["wrong_label_count"]    = details.get("wrong_label_count", 0)
+        r["unread_messages_left"] = details.get("unread_messages_left")
 
         result.append(r)
 
     return result
-
 
 
 @app.get("/api/flags/realtime")
@@ -671,11 +748,27 @@ def _is_flagged_convo_reviewed(
 
 
 async def _compute_agent_review_stats(conn, agent_id: int) -> tuple[int, int]:
-    """Return (needs_review_count, flagged_count) mirroring the convo list UI."""
-    conv_rows = await conn.fetch(
-        """SELECT c.id, ct.name AS contact_name
+    """
+    Return (needs_review_count, flagged_count) for one agent.
+    Used by endpoints that already hold a connection (e.g. individual agent refresh).
+    For the bulk /api/agents endpoint the batch logic inside
+    _fetch_agents_with_scores supersedes this function.
+    """
+    # Load conversations + their latest scores in one JOIN instead of N fetches
+    conv_score_rows = await conn.fetch(
+        """SELECT c.id AS conv_id, ct.name AS contact_name,
+                  cs.compliance_score, cs.sentiment_score, cs.professionalism_score,
+                  cs.script_adherence_score, cs.funnel_stage, cs.pillars_gathered,
+                  cs.rebuttals_used, cs.label_assigned, cs.label_correct,
+                  cs.label_should_be, cs.label_reason, cs.red_flags, cs.summary,
+                  cs.model_used, COALESCE(cs.source, 'groq') AS source
            FROM conversations c
            JOIN contacts ct ON ct.id = c.contact_id
+           LEFT JOIN LATERAL (
+               SELECT * FROM conversation_scores cs2
+               WHERE cs2.conversation_id = c.id
+               ORDER BY cs2.id DESC LIMIT 1
+           ) cs ON TRUE
            WHERE c.agent_id = $1 AND c.is_archived = FALSE
            ORDER BY c.extracted_at DESC, c.id DESC""",
         agent_id,
@@ -683,11 +776,11 @@ async def _compute_agent_review_stats(conn, agent_id: int) -> tuple[int, int]:
 
     seen: set[str] = set()
     unique_convos = []
-    for row in conv_rows:
+    for row in conv_score_rows:
         key = (row["contact_name"] or "").lower().strip()
         if key and key not in seen:
             seen.add(key)
-            unique_convos.append(row)
+            unique_convos.append(dict(row))
 
     fb_rows = await conn.fetch(
         "SELECT contact_name, red_flag FROM flag_feedback WHERE agent_id = $1",
@@ -710,32 +803,16 @@ async def _compute_agent_review_stats(conn, agent_id: int) -> tuple[int, int]:
     needs_review = 0
     flagged = 0
     for conv in unique_convos:
-        score_row = await conn.fetchrow(
-            """SELECT compliance_score, sentiment_score, professionalism_score,
-                      script_adherence_score, funnel_stage, pillars_gathered,
-                      rebuttals_used, label_assigned, label_correct,
-                      label_should_be, label_reason, red_flags, summary, model_used,
-                      COALESCE(source, 'groq') AS source
-               FROM conversation_scores
-               WHERE conversation_id = $1
-               ORDER BY id DESC LIMIT 1""",
-            conv["id"],
-        )
-        if not score_row:
-            continue
-
+        if conv.get("compliance_score") is None and conv.get("summary") is None:
+            continue  # no score row at all
         contact_key = (conv["contact_name"] or "").lower().strip()
         invalidated = invalidated_map.get(contact_key, set())
-        analysis = _score_row_to_analysis(score_row)
+        analysis = _score_row_to_analysis(conv)
         issues = _conv_issue_count(analysis, invalidated)
         if issues == 0:
             continue
         flagged += 1
-        if not _is_flagged_convo_reviewed(
-            analysis,
-            invalidated,
-            contact_key in reviewed_set,
-        ):
+        if not _is_flagged_convo_reviewed(analysis, invalidated, contact_key in reviewed_set):
             needs_review += 1
 
     return needs_review, flagged
@@ -748,16 +825,7 @@ async def _upsert_flag_review(
     conversation_id: int | None = None,
 ) -> None:
     """Record that a flagged conversation was reviewed by a manager."""
-    await conn.execute(
-        """CREATE TABLE IF NOT EXISTS flagged_conversation_reviews (
-               id              SERIAL PRIMARY KEY,
-               agent_id        INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-               contact_name    TEXT NOT NULL,
-               conversation_id INTEGER REFERENCES conversations(id) ON DELETE SET NULL,
-               reviewed_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-               UNIQUE(agent_id, contact_name)
-           )"""
-    )
+    # NOTE: Table is defined in schema.sql — no DDL needed here.
     normalized = contact_name.strip()
     await conn.execute(
         """DELETE FROM flagged_conversation_reviews
@@ -785,6 +853,8 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
     """
     Return conversations with parsed messages + per-conversation AI analysis
     for the given agent, sourced from the normalized conversations/messages/conversation_scores tables.
+
+    Performance: batches all messages and scores with ANY() instead of N per-conversation fetches.
     """
     async with app.state.pool.acquire() as conn:
         agent_row = await conn.fetchrow(
@@ -838,87 +908,93 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
     for fr in fr_rows:
         reviewed_set.add((fr["contact_name"] or "").lower().strip())
 
-    merged = []
+    if not unique_convos:
+        return {"agent": agent, "conversations": []}
+
+    # Batch-load all messages and scores in 2 queries (instead of 2*N per-conv queries)
+    conv_ids = [conv["id"] for conv in unique_convos]
+
     async with app.state.pool.acquire() as conn2:
-        for conv in unique_convos:
-            conv_id = conv["id"]
-            contact = conv["contact_name"] or "Contact"
-            contact_key = contact.lower().strip()
+        all_msg_rows = await conn2.fetch(
+            """SELECT conversation_id, sender, body AS message,
+                      sent_at AS time, sc_date_label
+               FROM messages
+               WHERE conversation_id = ANY($1)
+               ORDER BY conversation_id, seq ASC, id ASC""",
+            conv_ids,
+        )
+        all_score_rows = await conn2.fetch(
+            """SELECT DISTINCT ON (conversation_id)
+                      conversation_id,
+                      compliance_score, sentiment_score, professionalism_score,
+                      script_adherence_score, funnel_stage, pillars_gathered,
+                      rebuttals_used, label_assigned, label_correct,
+                      label_should_be, label_reason, red_flags, summary, model_used,
+                      COALESCE(source, 'groq') AS source
+               FROM conversation_scores
+               WHERE conversation_id = ANY($1)
+               ORDER BY conversation_id, id DESC""",
+            conv_ids,
+        )
 
-            # Load messages for this conversation
-            msg_rows = await conn2.fetch(
-                """SELECT sender, body AS message, sent_at AS time, sc_date_label
-                   FROM messages
-                   WHERE conversation_id = $1
-                   ORDER BY seq ASC, id ASC""",
-                conv_id,
-            )
-            parsed_messages = [dict(m) for m in msg_rows]
+    # Group messages by conversation_id
+    msgs_by_conv: dict[int, list[dict]] = {}
+    for msg in all_msg_rows:
+        msgs_by_conv.setdefault(msg["conversation_id"], []).append(dict(msg))
 
-            # Load AI analysis from conversation_scores (most recent)
-            score_row = await conn2.fetchrow(
-                """SELECT compliance_score, sentiment_score, professionalism_score,
-                          script_adherence_score, funnel_stage, pillars_gathered,
-                          rebuttals_used, label_assigned, label_correct,
-                          label_should_be, label_reason, red_flags, summary, model_used,
-                          COALESCE(source, 'groq') AS source
-                   FROM conversation_scores
-                   WHERE conversation_id = $1
-                   ORDER BY id DESC LIMIT 1""",
-                conv_id,
-            )
-            analysis = {}
-            if score_row:
-                raw = dict(score_row)
-                # Normalize JSONB fields
-                for field in ("pillars_gathered", "rebuttals_used", "red_flags"):
-                    val = raw.get(field) or []
-                    if isinstance(val, str):
-                        try:
-                            import json as _json
-                            val = _json.loads(val)
-                        except Exception:
-                            val = []
-                    raw[field] = val
-                # Remap DB column names → frontend field names expected by renderAiAnalysis
-                analysis = {
-                    "compliance":          raw.get("compliance_score"),
-                    "sentiment":           raw.get("sentiment_score"),
-                    "professionalism":     raw.get("professionalism_score"),
-                    "script_adherence":    raw.get("script_adherence_score"),
-                    "funnel_stage_reached": raw.get("funnel_stage"),
-                    "pillars_gathered":    raw.get("pillars_gathered", []),
-                    "rebuttals_used":      raw.get("rebuttals_used", []),
-                    "label_assigned":      raw.get("label_assigned"),
-                    "label_correct":       raw.get("label_correct"),
-                    "label_should_be":     raw.get("label_should_be"),
-                    "label_reason":        raw.get("label_reason"),
-                    "red_flags":           raw.get("red_flags", []),
-                    "summary":             raw.get("summary", ""),
-                    "model_used":          raw.get("model_used"),
-                    "source":              raw.get("source"),
-                }
+    # Map score by conversation_id
+    score_by_conv: dict[int, dict] = {sr["conversation_id"]: dict(sr) for sr in all_score_rows}
 
-            merged.append({
-                "contact_name":      contact,
-                "audit_date":        str(conv["audit_date"]) if conv["audit_date"] else None,
-                "convo_date":        (conv["convo_date"] or None),
-                "parsed_messages":   parsed_messages,
-                "assigned_labels":   list(conv["assigned_labels"] or []),
-                "analysis":          analysis,
-                "invalidated_flags": list(invalidated_map.get(contact_key, set())),
-                "is_flag_reviewed":  contact_key in reviewed_set,
-                "conversation_id":   conv_id,
-            })
+    merged = []
+    for conv in unique_convos:
+        conv_id     = conv["id"]
+        contact     = conv["contact_name"] or "Contact"
+        contact_key = contact.lower().strip()
+
+        parsed_messages = msgs_by_conv.get(conv_id, [])
+
+        analysis = {}
+        raw = score_by_conv.get(conv_id)
+        if raw:
+            for field in ("pillars_gathered", "rebuttals_used", "red_flags"):
+                val = raw.get(field) or []
+                if isinstance(val, str):
+                    try:
+                        val = json.loads(val)
+                    except Exception:
+                        val = []
+                raw[field] = val
+            analysis = {
+                "compliance":           raw.get("compliance_score"),
+                "sentiment":            raw.get("sentiment_score"),
+                "professionalism":      raw.get("professionalism_score"),
+                "script_adherence":     raw.get("script_adherence_score"),
+                "funnel_stage_reached": raw.get("funnel_stage"),
+                "pillars_gathered":     raw.get("pillars_gathered", []),
+                "rebuttals_used":       raw.get("rebuttals_used", []),
+                "label_assigned":       raw.get("label_assigned"),
+                "label_correct":        raw.get("label_correct"),
+                "label_should_be":      raw.get("label_should_be"),
+                "label_reason":         raw.get("label_reason"),
+                "red_flags":            raw.get("red_flags", []),
+                "summary":              raw.get("summary", ""),
+                "model_used":           raw.get("model_used"),
+                "source":               raw.get("source"),
+            }
+
+        merged.append({
+            "contact_name":      contact,
+            "audit_date":        str(conv["audit_date"]) if conv["audit_date"] else None,
+            "convo_date":        (conv["convo_date"] or None),
+            "parsed_messages":   parsed_messages,
+            "assigned_labels":   list(conv["assigned_labels"] or []),
+            "analysis":          analysis,
+            "invalidated_flags": list(invalidated_map.get(contact_key, set())),
+            "is_flag_reviewed":  contact_key in reviewed_set,
+            "conversation_id":   conv_id,
+        })
 
     return {"agent": agent, "conversations": merged}
-
-
-# Tracks when each agent's run was first seen as "running" (for stale timeout)
-_run_started_at: dict[str, datetime] = {}
-
-# Max minutes a process may stay in "running" state before being auto-expired
-_MAX_RUN_MINUTES = 45
 
 
 def _cleanup_finished():
