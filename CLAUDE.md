@@ -2,26 +2,26 @@
 
 ## Project Overview
 An advanced, high-performance automated auditing system for SMS/Texting conversations.
-- **Target**: Scrapes SmarterContact (React SPA) conversations.
+- **Target**: Scrapes SmarterContact conversations (via GraphQL and REST APIs).
 - **Audit**: Evaluates agents against 4 metrics: Compliance, Attitude, Professionalism, and Script Adherence.
 - **Efficiency**: Uses a **3-Tier ML Pre-Filter** (Keywords, kNN Similarity, Logistic Regression) to reduce Groq AI costs by skipping "clean" chats.
-- **Tech Stack**: Python 3.10+, Playwright, Groq (Llama 3.3 70B), FastAPI, PostgreSQL.
+- **Tech Stack**: Python 3.10+, Groq (Llama 3.3 70B), FastAPI, PostgreSQL.
 
 ---
 
 ## Core Rules
-- **Playwright Navigation**: Never use `networkidle` or `wait_for_load_state("networkidle")` — SmarterContact is an SPA that keeps connections open indefinitely. Use `wait_until="load"` or poll for specific URL changes/selectors.
-- **Login Persistence**: After clicking Login, poll URL for `/login` removal. Do NOT check `_is_logged_in()` immediately (React takes 2-3s to render).
+- **API Extraction**: SmarterContact data is fetched directly using HTTPX via GraphQL and REST API endpoints. This is robust, fast, and does not require a browser.
+- **Firebase Auth Rotation**: The Firebase access token is automatically refreshed using `scraper/firebase_auth.py` when it expires.
 - **AI Key Pool**: Groq keys live in the `api_keys` Postgres table (`provider='groq'`, `agent_name IS NULL` = shared pool). LRU rotation; rate-limited keys rotate automatically.
 - **ML Gates**: Prefilter promotion requires FALSE-CLEAN ≤ 5%.
-- **Documentation**: Keep Obsidian Brain (`C:\Users\vos\Desktop\obsidian_brain`) updated with verified selectors and known gotchas.
+- **Documentation**: Keep Obsidian Brain (`C:\Users\vos\Desktop\obsidian_brain`) updated with verified API formats and known gotchas.
 
 ---
 
 ## Tech Stack
 - **Backend**: Python 3.10+, FastAPI, uvicorn
 - **Database**: PostgreSQL (asyncpg, pgvector), SQLite (for some local caching)
-- **Scraping**: Playwright (Async)
+- **Scraping**: GraphQL / REST API Bot (pure HTTP request client via `httpx`)
 - **AI Models**: Groq (Llama 3.3 70B), Sentence-Transformers (Local), FAISS, XGBoost
 - **Frontend**: FastAPI + Jinja2, Vanilla JS, anime.js, Apple-inspired Custom CSS
 
@@ -33,7 +33,7 @@ An advanced, high-performance automated auditing system for SMS/Texting conversa
 - `dashboard/`: FastAPI app, HTML templates, and static assets
 - `database/`: Schema definitions and DB helper modules
 - `docs/`: Technical guides (audit workflow, scoring rulebook)
-- `scraper/`: Playwright automation and browser-bot logic
+- `scraper/`: GraphQL & REST API client scraper and queue manager
 - `scripts/`: ML training, evaluation, and system utilities
 - `main.py`: Main CLI entry point for running audits
 
@@ -82,28 +82,10 @@ An advanced, high-performance automated auditing system for SMS/Texting conversa
 
 ---
 
-## SmarterContact Selectors (April 2026)
-| Element | Selector |
-|---|---|
-| Email input on login | `input#email` |
-| Password input | `input#password` |
-| TOS checkbox | `label.chakra-checkbox` (fallback: `span.chakra-checkbox__control`) |
-| Login button | `button:has-text("Log in")` |
-| Chat panel | `div[data-test-id="messenger_nav_inbox_all_contact-panel_messages"]` |
-| Messages inside panel | `p.chakra-text` inside the panel |
-| Conversation rows | `[data-test-class='messenger_nav_inbox_all_messages_row']` |
-| Virtualized list | `div.ReactVirtualized__Grid__innerScrollContainer` |
-| Message Bubbles | `p.chakra-text` inside the chat panel |
-| Inbox Row | `[data-test-class='messenger_nav_inbox_all_messages_row']` |
-
----
-
-## Do NOT do these things
-
-- Do NOT use `wait_until="networkidle"` anywhere — SPAs keep connections open, it always times out
-- Do NOT use `wait_for_load_state("networkidle")` after login button click
-- Do NOT check `_is_logged_in()` immediately after clicking Login — React takes 2-3s to render
-- Do NOT wait on selectors after login before navigating to messenger — page is blank
+## SmarterContact API Client
+- **Auth Service**: `scraper/firebase_auth.py` authenticates agent credentials against the Firebase Auth REST API (`identitytoolkit.googleapis.com`) to fetch `idToken` (JWT) and `refreshToken`.
+- **GraphQL Client**: `scraper/gql_client.py` constructs and executes requests to the SmarterContact backend.
+- **API Bot**: `scraper/api_bot.py` uses the GraphQL client to pull all chats, details, and transcripts, and normalizes them into the exact output format expected by the DB and ML scorer.
 ---
 
 ## Audit Architecture (Three Funnels & Four Pillars)
@@ -170,5 +152,4 @@ Quota-exhausted keys are permanently removed from rotation for the process.
 up to 10 times (≈140 key attempts) before giving up. A skip only happens when
 the model returns malformed JSON — that is a data issue, not a key issue.
 
-**Do NOT:**
-- Use `networkidle` waits anywhere (existing rule — SPA login)
+

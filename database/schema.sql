@@ -59,9 +59,6 @@ CREATE INDEX IF NOT EXISTS idx_conversations_agent   ON conversations(agent_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_texter  ON conversations(texter_name);
 CREATE INDEX IF NOT EXISTS idx_conversations_date    ON conversations(audit_date);
 CREATE INDEX IF NOT EXISTS idx_conversations_contact ON conversations(contact_id);
--- Composite index: covers the most common filter: agent_id + is_archived + audit_date
-CREATE INDEX IF NOT EXISTS idx_conversations_agent_archived_date
-    ON conversations(agent_id, is_archived, audit_date DESC);
 
 -- ── messages (normalized from JSON blobs) ────────────────────────────────────
 CREATE TABLE IF NOT EXISTS messages (
@@ -112,9 +109,6 @@ CREATE TABLE IF NOT EXISTS audit_scores (
 
 CREATE INDEX IF NOT EXISTS idx_scores_agent ON audit_scores(agent_id);
 CREATE INDEX IF NOT EXISTS idx_scores_date  ON audit_scores(audit_date);
--- Composite index: speeds up ORDER BY audit_date DESC, id DESC per agent
-CREATE INDEX IF NOT EXISTS idx_scores_agent_date_id
-    ON audit_scores(agent_id, audit_date DESC, id DESC);
 -- idx_scores_agent_date unique index applied as a one-time migration (not recreated here)
 
 -- ── conversation_scores (per-conversation AI analysis, permanent) ─────────────
@@ -141,8 +135,6 @@ CREATE TABLE IF NOT EXISTS conversation_scores (
 
 CREATE INDEX IF NOT EXISTS idx_conv_scores_conversation ON conversation_scores(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_conv_scores_red_flags    ON conversation_scores USING GIN(red_flags);
--- Composite index: speeds up ORDER BY id DESC per conversation (LATERAL join pattern)
-CREATE INDEX IF NOT EXISTS idx_conv_scores_conv_id_desc ON conversation_scores(conversation_id, id DESC);
 
 -- ── audited_chats (deduplication cache) ──────────────────────────────────────
 CREATE TABLE IF NOT EXISTS audited_chats (
