@@ -3157,7 +3157,7 @@ function toggleAgentCheck(id, evt) {
   if (selectedIds.has(id)) {
     selectedIds.delete(id);
   } else {
-    if (selectedIds.size >= 5) return;
+    if (selectedIds.size >= 20) return;
     selectedIds.add(id);
   }
   updateSelectionUI();
@@ -3173,7 +3173,7 @@ function updateSelectionUI() {
 
 function selectAllVisible() {
   for (const a of filteredAgents) {
-    if (selectedIds.size >= 5) break;
+    if (selectedIds.size >= 20) break;
     selectedIds.add(a.id);
   }
   updateSelectionUI();
