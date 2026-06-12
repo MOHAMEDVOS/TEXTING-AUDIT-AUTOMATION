@@ -213,7 +213,7 @@ class SmarterContactGQL:
         """
         eligible = []
         next_id, next_ts, page = None, None, 0
-        total_seen = skip_date = skip_unread = skip_no_label = skip_label_filter = skip_blacklist = 0
+        total_seen = skip_date = skip_no_label = skip_label_filter = skip_blacklist = 0
 
         while len(eligible) < limit * 2:
             pg = {"moveTo": "NEXT", "limit": batch_size}
@@ -242,8 +242,6 @@ class SmarterContactGQL:
 
                 if not _in_range(ts, date_start, date_end):
                     skip_date += 1
-                elif c.get("unreadMessages", 0) > 0 or not c.get("isRead", True):
-                    skip_unread += 1
                 elif not labels:
                     skip_no_label += 1
                 elif include_labels and not (labels_lower & include_labels):
@@ -280,7 +278,7 @@ class SmarterContactGQL:
 
         logger.info(
             f"[GQL] find_conversations done: pages={page} seen={total_seen} eligible={len(eligible)} | "
-            f"skipped: date={skip_date} unread={skip_unread} no_label={skip_no_label} "
+            f"skipped: date={skip_date} no_label={skip_no_label} "
             f"label_filter={skip_label_filter} blacklist={skip_blacklist}"
         )
         return eligible[:limit]
@@ -325,9 +323,6 @@ class SmarterContactGQL:
 
         ts = c.get("lastMessageAt") or c.get("createdAt") or ""
         if not _in_range(ts, date_start, date_end):
-            return False
-
-        if c.get("unreadMessages", 0) > 0 or not c.get("isRead", True):
             return False
 
         if not labels:
