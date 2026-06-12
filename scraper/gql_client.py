@@ -13,6 +13,7 @@ from typing import Optional
 import httpx
 
 from scraper.firebase_auth import AuthSession
+from config.settings import get_now as _get_now, TIMEZONE as _TZ
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +95,7 @@ def _date_range_for_filter(date_filter: str, date_start: str = None, date_end: s
         today | last_week | this_month | last_month | last_30_days | last_year | all_time
         custom (uses date_start / date_end strings "YYYY-MM-DD")
     """
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = _get_now().replace(tzinfo=None)
 
     if date_filter == "today":
         start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -137,7 +138,8 @@ def _in_range(ts_str: str, start: Optional[datetime], end: Optional[datetime]) -
     if not ts_str:
         return False
     try:
-        dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00")).replace(tzinfo=None)
+        dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        dt = dt.astimezone(_TZ).replace(tzinfo=None)  # compare in local tz, same as start/end
         if start and dt < start:
             return False
         if end and dt > end:
