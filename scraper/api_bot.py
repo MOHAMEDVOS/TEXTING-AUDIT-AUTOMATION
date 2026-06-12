@@ -159,10 +159,12 @@ class SmarterContactAPIBot:
 
         async with httpx.AsyncClient(timeout=60, follow_redirects=True) as http:
             # ---- 1. Firebase auth ----
+            logger.info(f"[STEP] [{self.agent_name}] Authenticating with Firebase...")
             try:
                 auth = await firebase_sign_in(self.email, self.password, http)
+                logger.info(f"[STEP] [{self.agent_name}] Firebase auth OK")
             except Exception as e:
-                logger.error(f"[Worker-{self.worker_id}] {self.agent_name}: login failed — {e}")
+                logger.error(f"[STEP] [{self.agent_name}] Firebase auth FAILED: {e}")
                 result["status"] = "login_failed"
                 result["errors"].append(str(e))
                 return result
@@ -172,11 +174,18 @@ class SmarterContactAPIBot:
             # ---- 2. Unread count ----
             try:
                 result["unread_count"] = await gql.get_unread_count()
+                logger.info(f"[STEP] [{self.agent_name}] Unread count: {result['unread_count']}")
             except Exception as e:
-                logger.warning(f"[Worker-{self.worker_id}] Could not get unread count: {e}")
+                logger.warning(f"[STEP] [{self.agent_name}] Could not get unread count: {e}")
 
             # ---- 3. Paginate conversations (all filters applied) ----
             date_start_dt, date_end_dt = _date_range_for_filter(self.date_filter, self.date_start, self.date_end)
+            date_range_str = f"{date_start_dt.date() if date_start_dt else 'any'} → {date_end_dt.date() if date_end_dt else 'any'}"
+            logger.info(
+                f"[STEP] [{self.agent_name}] Fetching conversations: "
+                f"filter={self.date_filter!r} range={date_range_str} "
+                f"limit={self.limit} labels={self.include_labels or 'all'}"
+            )
 
             try:
                 convos = await gql.find_conversations(
@@ -188,16 +197,16 @@ class SmarterContactAPIBot:
                     limit=self.limit,
                 )
             except Exception as e:
-                logger.error(f"[Worker-{self.worker_id}] {self.agent_name}: conversation fetch error — {e}")
+                logger.error(f"[STEP] [{self.agent_name}] Conversation fetch FAILED: {e}")
                 result["errors"].append(str(e))
                 return result
 
             if not convos:
-                logger.info(f"[Worker-{self.worker_id}] {self.agent_name}: 0 eligible conversations")
+                logger.warning(f"[STEP] [{self.agent_name}] 0 eligible conversations in range {date_range_str}")
                 result["status"] = "success"
                 return result
 
-            logger.info(f"[Worker-{self.worker_id}] {self.agent_name}: {len(convos)} conversations to process")
+            logger.info(f"[STEP] [{self.agent_name}] Found {len(convos)} conversations to process")
 
             # ---- 4-5. Fetch full threads + build transcripts ----
             _own_db = db is None

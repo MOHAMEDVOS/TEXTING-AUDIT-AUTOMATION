@@ -213,6 +213,7 @@ class SmarterContactGQL:
         """
         eligible = []
         next_id, next_ts, page = None, None, 0
+        total_seen = skip_date = skip_unread = skip_no_label = skip_label_filter = skip_blacklist = 0
 
         while len(eligible) < limit * 2:
             pg = {"moveTo": "NEXT", "limit": batch_size}
@@ -230,20 +231,43 @@ class SmarterContactGQL:
             page += 1
 
             if not items:
+                logger.info(f"[GQL] Page {page}: inbox empty or exhausted")
                 break
 
+            total_seen += len(items)
             for c in items:
-                if self._is_eligible(c, date_start, date_end,
-                                     include_labels, blacklist_any, blacklist_only):
+                ts = c.get("lastMessageAt") or c.get("createdAt") or ""
+                labels = [l["title"] for l in (c.get("labels") or [])]
+                labels_lower = {l.lower() for l in labels}
+
+                if not _in_range(ts, date_start, date_end):
+                    skip_date += 1
+                elif c.get("unreadMessages", 0) > 0 or not c.get("isRead", True):
+                    skip_unread += 1
+                elif not labels:
+                    skip_no_label += 1
+                elif include_labels and not (labels_lower & include_labels):
+                    skip_label_filter += 1
+                elif labels_lower & blacklist_any:
+                    skip_blacklist += 1
+                elif blacklist_only and labels_lower and labels_lower.issubset(blacklist_only):
+                    skip_blacklist += 1
+                else:
                     eligible.append(c)
 
             if date_start:
                 oldest_ts = items[-1].get("lastMessageAt", "")
                 if oldest_ts:
                     try:
-                        oldest_dt = datetime.fromisoformat(oldest_ts.replace("Z", "+00:00")).replace(tzinfo=None)
+                        oldest_dt = (
+                            datetime.fromisoformat(oldest_ts.replace("Z", "+00:00"))
+                            .astimezone(_TZ).replace(tzinfo=None)
+                        )
                         if oldest_dt < date_start:
-                            logger.debug(f"Reached date boundary at page {page}")
+                            logger.info(
+                                f"[GQL] Page {page}: reached date boundary "
+                                f"(oldest={oldest_dt.date()}, start={date_start.date()})"
+                            )
                             break
                     except Exception:
                         pass
@@ -254,7 +278,11 @@ class SmarterContactGQL:
             next_id = result.get("nextId")
             next_ts = result.get("nextCreatedAt")
 
-        logger.debug(f"find_conversations: {page} pages, {len(eligible)} eligible found")
+        logger.info(
+            f"[GQL] find_conversations done: pages={page} seen={total_seen} eligible={len(eligible)} | "
+            f"skipped: date={skip_date} unread={skip_unread} no_label={skip_no_label} "
+            f"label_filter={skip_label_filter} blacklist={skip_blacklist}"
+        )
         return eligible[:limit]
 
     async def find_messages(self, contact_id: str, batch_size: int = 200) -> list[dict]:

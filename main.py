@@ -99,6 +99,16 @@ class SimplifiedConsoleFilter(logging.Filter):
         # Fallback to general name if not found
         agent_name = agent_name or "Agent"
 
+        # ── Extract agent name from [STEP] / [GQL] tags ──────────────────────────
+        if "[STEP]" in msg or "[GQL]" in msg:
+            try:
+                tag = "[STEP]" if "[STEP]" in msg else "[GQL]"
+                after = msg.split(tag, 1)[1].strip()
+                if after.startswith("["):
+                    agent_name = after[1:after.index("]")]
+            except Exception:
+                pass
+
         # 1. Login/Audit Started
         if "single extraction for:" in msg or "Running single extraction for" in msg:
             record.msg = f"[LOGIN] [{agent_name}] Starting audit..."
@@ -109,15 +119,73 @@ class SimplifiedConsoleFilter(logging.Filter):
             record.args = ()
             return True
 
-        # 2. Login Successful
+        # 2. Login Successful (browser bot legacy + API bot)
         elif "Login successful for" in msg or "Already logged in for" in msg:
             record.msg = f"[LOGIN] [{agent_name}] Login successful."
             record.args = ()
             return True
+        elif "[STEP]" in msg and "Firebase auth OK" in msg:
+            record.msg = f"[LOGIN] [{agent_name}] Firebase auth successful."
+            record.args = ()
+            return True
+        elif "[STEP]" in msg and "Firebase auth FAILED" in msg:
+            reason = msg.split("FAILED:", 1)[-1].strip() if "FAILED:" in msg else "check password"
+            record.msg = f"[FAILED] [{agent_name}] Login failed: {reason}"
+            record.args = ()
+            return True
 
-        # 3. Collection Started
+        # 3. Collection Started / Fetch status
         elif "starting conversation extraction" in msg:
             record.msg = f"[COLLECT] [{agent_name}] Starting conversation extraction..."
+            record.args = ()
+            return True
+        elif "[STEP]" in msg and "Fetching conversations:" in msg:
+            try:
+                detail = msg.split("Fetching conversations:", 1)[1].strip()
+            except Exception:
+                detail = ""
+            record.msg = f"[COLLECT] [{agent_name}] Fetching conversations... {detail}"
+            record.args = ()
+            return True
+        elif "[STEP]" in msg and "Found" in msg and "conversations to process" in msg:
+            try:
+                count = msg.split("Found")[1].split("conversations")[0].strip()
+            except Exception:
+                count = "?"
+            record.msg = f"[COLLECT] [{agent_name}] Found {count} conversations."
+            record.args = ()
+            return True
+        elif "[STEP]" in msg and "0 eligible conversations" in msg:
+            try:
+                detail = msg.split("0 eligible conversations in range", 1)[-1].strip()
+            except Exception:
+                detail = ""
+            record.msg = f"[COLLECT] [{agent_name}] 0 eligible conversations {detail}"
+            record.args = ()
+            return True
+        elif "[STEP]" in msg and "Conversation fetch FAILED" in msg:
+            reason = msg.split("FAILED:", 1)[-1].strip() if "FAILED:" in msg else ""
+            record.msg = f"[FAILED] [{agent_name}] Conversation fetch failed: {reason}"
+            record.args = ()
+            return True
+        elif "[GQL]" in msg and "find_conversations done" in msg:
+            try:
+                stats = msg.split("find_conversations done:", 1)[1].strip()
+            except Exception:
+                stats = msg
+            record.msg = f"[COLLECT] [{agent_name}] Inbox scan: {stats}"
+            record.args = ()
+            return True
+        elif "[GQL]" in msg and ("date boundary" in msg or "inbox empty" in msg):
+            record.msg = f"[COLLECT] [{agent_name}] {msg.split('[GQL]', 1)[-1].strip()}"
+            record.args = ()
+            return True
+        elif "[STEP]" in msg and "Unread count:" in msg:
+            try:
+                count = msg.split("Unread count:", 1)[1].strip()
+            except Exception:
+                count = "?"
+            record.msg = f"[COLLECT] [{agent_name}] Unread messages in inbox: {count}"
             record.args = ()
             return True
         elif "contacts to extract" in msg and "limit=" in msg:
@@ -143,7 +211,6 @@ class SimplifiedConsoleFilter(logging.Filter):
                     if curr_val % 25 == 0:
                         progress_str = f"Progress: {thread_part}"
                     else:
-                        # Silently drop progress logs that are not multiples of 25
                         return False
                 else:
                     progress_str = f"Progress: {thread_part}"
