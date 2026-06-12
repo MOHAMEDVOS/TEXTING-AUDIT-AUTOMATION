@@ -2367,6 +2367,106 @@
           });
         </script>
 
+        <!-- ── Danger Zone (owner only) ── -->
+        <div id="danger-zone-section" style="display:none; margin-top:32px;">
+          <div style="background:var(--surface); border:1px solid rgba(239,68,68,.35); border-radius:var(--radius-md,10px); overflow:hidden;">
+            <div style="padding:14px 20px; border-bottom:1px solid rgba(239,68,68,.2); display:flex; align-items:center; gap:8px;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--danger,#ef4444)" stroke-width="2.2" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              <span style="font-size:.85rem; font-weight:700; color:var(--danger,#ef4444); letter-spacing:.03em; text-transform:uppercase;">Danger Zone</span>
+            </div>
+            <div style="padding:20px; display:flex; flex-direction:column; gap:20px;">
+
+              <!-- Action 1: Clear dedup cache -->
+              <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:24px; padding-bottom:20px; border-bottom:1px solid var(--surface-border);">
+                <div style="flex:1;">
+                  <div style="font-size:.83rem; font-weight:600; color:var(--text-primary); margin-bottom:3px;">Clear Dedup Cache</div>
+                  <div style="font-size:.74rem; color:var(--text-muted); line-height:1.55;">
+                    Clears the re-audit block so conversations can be scraped again. Use this first when you see "No convos available".
+                    Keeps all history, scores, and ML data.
+                  </div>
+                </div>
+                <button id="danger-dedup-btn" onclick="dangerClearDedup()"
+                  style="flex-shrink:0; display:flex; align-items:center; gap:7px; padding:8px 18px; background:transparent; border:1.5px solid var(--danger,#ef4444); color:var(--danger,#ef4444); border-radius:980px; font-size:.8rem; font-weight:600; cursor:pointer; transition:.15s; white-space:nowrap;"
+                  onmouseover="this.style.background='var(--danger,#ef4444)';this.style.color='#fff'"
+                  onmouseout="this.style.background='transparent';this.style.color='var(--danger,#ef4444)'">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21.5 2v6h-6M2.13 15.57a10 10 0 1 0 3.3-8.83L2 9"/></svg>
+                  Clear Dedup Cache
+                </button>
+              </div>
+
+              <!-- Action 2: Clear all history -->
+              <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:24px;">
+                <div style="flex:1;">
+                  <div style="font-size:.83rem; font-weight:600; color:var(--text-primary); margin-bottom:3px;">Clear All Conversation History</div>
+                  <div style="font-size:.74rem; color:var(--text-muted); line-height:1.55;">
+                    Deletes all conversations, messages, audit scores, and session data. Dashboard resets to zero.
+                    ML training data (<code style="font-size:.72rem;">flag_feedback</code>), trend snapshots, and validation logs are
+                    <strong style="color:var(--text-primary);">preserved</strong>.
+                    Accounts, credentials, keys, labels, and roster are unaffected.
+                  </div>
+                </div>
+                <button id="danger-history-btn" onclick="dangerClearHistory()"
+                  style="flex-shrink:0; display:flex; align-items:center; gap:7px; padding:8px 18px; background:transparent; border:1.5px solid var(--danger,#ef4444); color:var(--danger,#ef4444); border-radius:980px; font-size:.8rem; font-weight:600; cursor:pointer; transition:.15s; white-space:nowrap;"
+                  onmouseover="this.style.background='var(--danger,#ef4444)';this.style.color='#fff'"
+                  onmouseout="this.style.background='transparent';this.style.color='var(--danger,#ef4444)'">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                  Clear All History
+                </button>
+              </div>
+
+              <div id="danger-msg" style="font-size:.78rem; display:none; margin-top:-8px;"></div>
+            </div>
+          </div>
+        </div>
+
+        <script>
+          (async () => {
+            try {
+              const r = await fetch('/api/me');
+              const d = await r.json();
+              if (d.email === 'mohamedibrahimpayonner@gmail.com') {
+                const el = document.getElementById('danger-zone-section');
+                if (el) el.style.display = 'block';
+              }
+            } catch(e) {}
+          })();
+
+          async function _dangerAction(endpoint, confirmText, btnId) {
+            const btn = document.getElementById(btnId);
+            const msg = document.getElementById('danger-msg');
+            if (!confirm(confirmText)) return;
+            btn.disabled = true;
+            btn.style.opacity = '.5';
+            msg.style.display = 'none';
+            try {
+              const r = await fetch(endpoint, { method: 'DELETE' });
+              const d = await r.json();
+              if (d.success) {
+                msg.style.display = 'block';
+                msg.style.color = 'var(--success,#22c55e)';
+                msg.textContent = 'Done — ' + (endpoint.includes('dedup') ? 'dedup cache cleared.' : 'all conversation history cleared.');
+              } else {
+                throw new Error(d.detail || 'Unknown error');
+              }
+            } catch(e) {
+              msg.style.display = 'block';
+              msg.style.color = 'var(--danger,#ef4444)';
+              msg.textContent = 'Error: ' + String(e);
+            } finally {
+              btn.disabled = false;
+              btn.style.opacity = '1';
+            }
+          }
+
+          function dangerClearDedup() {
+            _dangerAction('/api/reset-dedup-cache', 'Clear the dedup cache? Conversations will be re-auditable on the next run.', 'danger-dedup-btn');
+          }
+
+          function dangerClearHistory() {
+            _dangerAction('/api/reset-history', 'This will permanently delete ALL conversation history (scores, messages, contacts). ML data and trends are kept. Cannot be undone. Continue?', 'danger-history-btn');
+          }
+        </script>
+
       </div>
     </div>
 

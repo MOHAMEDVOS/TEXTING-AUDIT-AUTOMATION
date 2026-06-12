@@ -1384,6 +1384,54 @@ async def auth_logout(request: Request):
     return RedirectResponse("/login")
 
 
+@app.get("/api/me")
+async def api_me(request: Request):
+    """Return the current session user's email."""
+    email = request.session.get("user_email", "")
+    return {"email": email}
+
+
+@app.delete("/api/reset-dedup-cache")
+async def api_reset_dedup_cache(request: Request):
+    """Owner-only: clear the dedup cache so all conversations can be re-audited."""
+    requester = (request.session.get("user_email") or "").lower()
+    if requester != OWNER_EMAIL.lower():
+        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        async with app.state.pool.acquire() as conn:
+            await conn.execute("DELETE FROM audited_chats")
+        logger.info(f"reset-dedup-cache: audited_chats cleared by {requester}")
+        return {"success": True}
+    except Exception as exc:
+        logger.exception("Error in /api/reset-dedup-cache")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.delete("/api/reset-history")
+async def api_reset_history(request: Request):
+    """Owner-only: wipe all conversation history, keeping ML data, trends, accounts/credentials/keys/labels."""
+    requester = (request.session.get("user_email") or "").lower()
+    if requester != OWNER_EMAIL.lower():
+        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        async with app.state.pool.acquire() as conn:
+            await conn.execute("DELETE FROM flagged_conversation_reviews")
+            await conn.execute("DELETE FROM conversation_scores")
+            await conn.execute("DELETE FROM messages")
+            await conn.execute("DELETE FROM conversations")
+            await conn.execute("DELETE FROM contacts")
+            await conn.execute("DELETE FROM audit_scores")
+            await conn.execute("DELETE FROM extractions")
+            await conn.execute("DELETE FROM audited_chats")
+            await conn.execute("DELETE FROM session_events")
+        _snapshotted.clear()
+        logger.info(f"reset-history: conversation history wiped by {requester}")
+        return {"success": True}
+    except Exception as exc:
+        logger.exception("Error in /api/reset-history")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 # ── Tool Access API ───────────────────────────────────────────────────────────
 
 class ToolAccessRequest(BaseModel):
