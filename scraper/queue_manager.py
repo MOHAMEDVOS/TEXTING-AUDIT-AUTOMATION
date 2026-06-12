@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from config.settings import MAX_PARALLEL_WORKERS, MAX_RETRIES, DATABASE_URL, get_now
 from scraper.api_bot import SmarterContactAPIBot
+from database.db import Database
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +118,20 @@ class QueueManager:
             json.dump(template, f, indent=2)
         logger.info(f"Template created at {filepath} — fill in your agent credentials")
 
+    async def _ensure_db(self) -> bool:
+        """
+        Guarantee a real, initialized Database is available on self.db before
+        workers run. Returns True if this call created (and therefore owns) the
+        db, so the caller can close it when the run finishes. If a db was already
+        provided, leaves it untouched and returns False (caller owns it).
+        """
+        if self.db:
+            return False
+        db = Database()
+        await db.initialize()
+        self.db = db
+        return True
+
     async def process_agent(self, agent: dict, worker_id: int) -> dict:
         """
         Process a single agent account:
@@ -196,14 +211,20 @@ class QueueManager:
         logger.info(f"  Estimated time: ~{self._estimate_time()} minutes")
         logger.info("=" * 60)
 
-        # Create tasks for all agents
-        tasks = [
-            self.process_agent(agent, i % self.max_workers)
-            for i, agent in enumerate(self.agents)
-        ]
+        own_db = await self._ensure_db()
+        try:
+            # Create tasks for all agents
+            tasks = [
+                self.process_agent(agent, i % self.max_workers)
+                for i, agent in enumerate(self.agents)
+            ]
 
-        # Run all tasks concurrently (semaphore limits actual parallelism)
-        self.results = await asyncio.gather(*tasks)
+            # Run all tasks concurrently (semaphore limits actual parallelism)
+            self.results = await asyncio.gather(*tasks)
+        finally:
+            if own_db and self.db:
+                await self.db.close()
+                self.db = None
 
         # Print summary
         self._print_summary()
@@ -227,7 +248,13 @@ class QueueManager:
         self.completed = 0
         self.start_time = time.time()
 
-        result = await self.process_agent(agent, worker_id=0)
+        own_db = await self._ensure_db()
+        try:
+            result = await self.process_agent(agent, worker_id=0)
+        finally:
+            if own_db and self.db:
+                await self.db.close()
+                self.db = None
         return result
 
     def _estimate_time(self) -> int:

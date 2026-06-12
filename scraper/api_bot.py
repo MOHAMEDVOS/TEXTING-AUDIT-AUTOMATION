@@ -12,8 +12,6 @@ from typing import Optional
 
 import httpx
 
-from database.db import Database
-from ai.transcript_parser import parse_transcript
 from config.settings import DEFAULT_SAMPLE_SIZE, get_now
 from scraper.firebase_auth import firebase_sign_in
 from scraper.gql_client import SmarterContactGQL, _date_range_for_filter
@@ -209,10 +207,8 @@ class SmarterContactAPIBot:
             logger.info(f"[STEP] [{self.agent_name}] Found {len(convos)} conversations to process")
 
             # ---- 4-5. Fetch full threads + build transcripts ----
-            _own_db = db is None
-            if _own_db:
-                db = Database()
-                await db.initialize()
+            if db is None:
+                raise ValueError("extract_all requires an initialized db (pass db= from the caller)")
 
             extracted = []
             errors = []
@@ -275,8 +271,5 @@ class SmarterContactAPIBot:
                 f"[Worker-{self.worker_id}] {self.agent_name}: extracted {len(extracted)} conversations "
                 f"({'errors: ' + str(len(errors)) if errors else 'no errors'})"
             )
-
-            if _own_db:
-                await db.close()
 
         return result
