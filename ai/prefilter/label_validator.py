@@ -293,6 +293,14 @@ _DNC_RELATIVE_REALTOR = [
 _DNC_MINOR_OWNER = [
     re.compile(r"\b(i\s+am|i'?m)\s+(a\s+|just\s+a\s+)?(kid|child|minor|underage)\b", re.I),
     re.compile(r"\b(i\s+am|i'?m)\s+(only\s+)?(1[0-7]|[1-9])\s*(years?\s+old|yo|y\.?o\.?)\b", re.I),
+    # Bare age statement — "by the way I'm 15" (no "years old" suffix).
+    # Ages 10-17 only; guarded against measurements ("I'm 15 minutes away").
+    re.compile(
+        r"\b(i\s+am|i'?m)\s+(only\s+)?(1[0-7])\b"
+        r"(?!\s*(minutes?|mins?|miles?|hours?|hrs?|days?|weeks?|months?|years?|"
+        r"blocks?|percent|%|k\b|grand|dollars?|bucks?|out|away))",
+        re.I,
+    ),
     re.compile(
         r"\b(i'?m|i\s+am)\s+"
         r"(ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen)"

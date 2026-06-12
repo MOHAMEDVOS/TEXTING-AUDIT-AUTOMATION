@@ -1841,15 +1841,30 @@ def evaluate(
         # DNC ALWAYS wins over Wrong Number.
         # If contact said wrong number AND opted out, the actionable label is DNC —
         # regardless of what the texter assigned.
+        # KID-DNC RULE: a contact who reveals they are a minor ("I'm 15") is a
+        # compliance DNC — beats Wrong Number even when "not Robert" also fired.
+        from .label_validator import _DNC_MINOR_OWNER as _MINOR_PATTERNS
+        _contact_is_minor = any(p.search(contact_text) for p in _MINOR_PATTERNS)
         if contact_opted_out:
             expected_label = "DO Not Call"
             reason = "Contact stated wrong number AND explicit opt-out — DNC takes priority over Wrong Number."
+        elif _contact_is_minor:
+            expected_label = "DO Not Call"
+            reason = (
+                "Contact revealed they are a minor — compliance requires DO Not Call; "
+                "the kid-DNC rule takes priority over Wrong Number."
+            )
         else:
             expected_label = "Wrong Number"
             reason = "Contact explicitly stated wrong number."
 
         # Fix summary hallucination
-        if len(agent_msgs_after_wn) > 0:
+        if _contact_is_minor:
+            summary = (
+                "Contact is not the owner and revealed they are a minor. "
+                "Texter stopped correctly — DO Not Call required (kid-DNC rule)."
+            )
+        elif len(agent_msgs_after_wn) > 0:
             summary = "Wrong number. Texter apologized and pivoted to referral close."
         else:
             summary = "Contact indicated wrong number. Texter stopped messaging."

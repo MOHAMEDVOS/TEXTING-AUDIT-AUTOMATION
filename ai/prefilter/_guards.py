@@ -356,6 +356,25 @@ def apply_label_guards(result: dict, messages: list[dict]) -> None:
             )
             return
 
+    # Guard D: texter chose DNC, auditor wants Wrong Number, but the contact
+    # revealed they are a minor ("I'm 15"). Kid-DNC compliance rule: a minor on
+    # the line is always DO Not Call — it beats Wrong Number even when "not
+    # Robert / random text" also fired.
+    if (
+        result.get("label_correct") is False
+        and DNC_LABEL_RE.search(assigned)
+        and re.search(r"\bwrong\s+(number|person)\b", should_be, re.I)
+    ):
+        from ai.prefilter.label_validator import _DNC_MINOR_OWNER
+        if any(p.search(_contact_text) for p in _DNC_MINOR_OWNER):
+            result["label_correct"] = True
+            result["label_should_be"] = assigned
+            result["label_reason"] = (
+                "Contact revealed they are a minor — compliance requires DO Not "
+                "Call (kid-DNC rule beats Wrong Number). The texter's label stands."
+            )
+            return
+
     # Guard C: auditor wants Bluffer, but the contact never quoted a concrete
     # dollar amount and made no bluff/paranoid statement. Holding out for
     # "full value" / refusing to name a number first is a NEGOTIATION STANCE,

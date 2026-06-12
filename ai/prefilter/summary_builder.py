@@ -130,6 +130,20 @@ _FULL_VALUE_STANCE_RE = re.compile(
     re.I,
 )
 
+# ── Minor disclosure — contact reveals they are a kid ("I'm 15") ─────────────
+# Compliance: texting a minor must stop immediately; DO Not Call is the
+# required label and beats Wrong Number. (Canonical classification patterns
+# live in label_validator._DNC_MINOR_OWNER — this lighter copy exists only for
+# feedback text, since label_validator imports this module.)
+_MINOR_DISCLOSURE_RE = re.compile(
+    r"\b(i\s+am|i'?m)\s+(only\s+|just\s+)?"
+    r"(a\s+(kid|child|minor)|underage|under\s*18"
+    r"|1[0-7]\b(?!\s*(minutes?|mins?|miles?|hours?|hrs?|days?|weeks?|months?|years?|blocks?|percent|%|k\b|grand|dollars?|bucks?|out|away))"
+    r"|(ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen)\b)"
+    r"|\b(1[0-7]|[1-9])\s*(years?\s+old|yo\b|y\.?o\.?)",
+    re.I,
+)
+
 # ── Offer flip — contact bounces the price question back to the agent ────────
 # "You are the one offering, I didn't reach out to you, what's your best offer?"
 # Engaged negotiation, not disinterest/bluffing. Script: agent must NOT quote a
@@ -864,7 +878,16 @@ def coaching_bullets(messages: list[dict]) -> list[str]:
             "details') and keep gathering pillars"
         )
 
-    # 6. Contact showed condescension/mockery — tone friction signal
+    # 6. Minor disclosure — compliance stop, DNC required
+    if _MINOR_DISCLOSURE_RE.search(contact_text):
+        minor_msg = _find_first(contact_msgs, [_MINOR_DISCLOSURE_RE])
+        bullets.append(
+            f"Contact disclosed they are a minor: {_q(minor_msg) if minor_msg else ''} — "
+            "texting must stop immediately; DO Not Call is the required label "
+            "(kid-DNC rule beats Wrong Number)"
+        )
+
+    # 7. Contact showed condescension/mockery — tone friction signal
     if _CONDESCENSION_RE.search(contact_text):
         mock_msg = next(
             (m for m in contact_msgs
