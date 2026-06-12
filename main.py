@@ -299,7 +299,7 @@ async def run_single_agent(agent_name: str, date_filter: str = "today", limit: i
         _write_run_status(agent_name, "running", "loading_account", "Loading account")
         current_stage = "loading_account"
         qm = QueueManager(date_filter=date_filter, limit=limit,
-                          date_start=date_start, date_end=date_end, labels=labels)
+                          date_start=date_start, date_end=date_end, labels=labels, db=db)
         qm.load_agents()
 
         _write_run_status(agent_name, "running", "extracting_conversations", "Extracting conversations")
@@ -427,7 +427,7 @@ async def run_test(date_filter: str = "today", limit: int = 20,
     last_agent_id: int | None = None
     try:
         qm = QueueManager(max_workers=1, date_filter=date_filter, limit=limit,
-                          date_start=date_start, date_end=date_end, labels=labels)
+                          date_start=date_start, date_end=date_end, labels=labels, db=db)
         agents = qm.load_agents()
 
         if not agents:

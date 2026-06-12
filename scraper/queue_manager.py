@@ -8,10 +8,8 @@ import logging
 import time
 from datetime import datetime
 from pathlib import Path
-from playwright.async_api import async_playwright
-
 from config.settings import MAX_PARALLEL_WORKERS, MAX_RETRIES, DATABASE_URL, get_now
-from scraper.browser_bot import SmarterContactBot
+from scraper.api_bot import SmarterContactAPIBot
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +25,9 @@ class QueueManager:
     """
 
     def __init__(self, max_workers: int = None, date_filter: str = "today", limit: int = 20,
-                 date_start: str = None, date_end: str = None, labels: str = None):
+                 date_start: str = None, date_end: str = None, labels: str = None, db=None):
         self.max_workers = max_workers or MAX_PARALLEL_WORKERS
+        self.db = db
         self.date_filter = date_filter
         self.date_start = date_start
         self.date_end = date_end
@@ -129,7 +128,7 @@ class QueueManager:
         Returns extraction result dict.
         """
         async with self.semaphore:
-            bot = SmarterContactBot(
+            bot = SmarterContactAPIBot(
                 agent_name=agent["name"],
                 email=agent["email"],
                 password=agent["password"],
@@ -151,11 +150,9 @@ class QueueManager:
             }
 
             try:
-                async with async_playwright() as playwright:
-                    await bot.start_browser(playwright)
-                    extraction = await bot.extract_all()
-                    result.update(extraction)
-                    await bot.close()
+                extraction = await bot.extract_all(db=self.db)
+                result.update(extraction)
+
 
             except Exception as e:
                 result["status"] = "error"
