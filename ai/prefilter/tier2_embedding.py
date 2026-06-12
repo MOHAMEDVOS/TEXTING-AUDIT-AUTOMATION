@@ -213,6 +213,10 @@ def _build_result(
     label = (assigned_labels or [""])[0].strip() if assigned_labels else ""
     from .label_validator import validate_label
     label_check = validate_label(messages, label)
+    label_flags = label_check.get("red_flags", [])
+    if label_flags:
+        # Missing handoff after a valid push degrades script adherence (1 flag = -20)
+        scores = {**scores, "script_adherence_score": min(scores["script_adherence_score"], 80.0)}
 
     if messages:
         smart_summary = summary_builder.build_summary(
@@ -239,8 +243,8 @@ def _build_result(
         "label_correct": label_check["label_correct"],
         "label_should_be": label_check["label_should_be"],
         "label_reason": label_check["label_reason"],
-        "red_flags": [],
-        "actions_triggered": [],
+        "red_flags": label_flags,
+        "actions_triggered": ["Not Following Lead Flow"] if label_flags else [],
         "summary": smart_summary,
         "model_used": "prefilter_t2",
         "contact_name": contact_name,

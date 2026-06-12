@@ -523,7 +523,78 @@ _AI_REQUIRED_LABELS = {
 _LOCAL_FU_LABELS = {"wl drip", "ap drip", "hl drip", "reason fu"}
 
 # Push/Lead labels validated locally by validate_push_label() — do NOT escalate to AI.
-_LOCAL_PUSH_LABELS = {"waiting to be pushed", "pushed to client", "lead"}
+# Compound labels like "Lead, Pushed to client" are matched part-by-part.
+_LOCAL_PUSH_LABELS = {"waiting to be pushed", "pushed to client", "lead", "lead pushed"}
+
+
+def _is_push_label(label: str | None) -> bool:
+    """True if the label (or any comma/slash-separated part of it) is a push label."""
+    normalized = _norm(label)
+    if normalized in _LOCAL_PUSH_LABELS:
+        return True
+    parts = {p.strip() for p in re.split(r"[,;/|+]", normalized) if p.strip()}
+    return bool(parts & _LOCAL_PUSH_LABELS)
+
+
+# ── Wide-funnel hand raise — ANY contact reply that isn't a hard no ──────────
+# Per the funnel framework, a hand raise alone qualifies a WF lead for pushing:
+# price questions, soft interest, curiosity questions, "yes" replies.
+_HAND_RAISE = [
+    re.compile(r"\bhow\s+much\b", re.I),                                  # "How much" / "How much are you offering"
+    re.compile(r"\bmake\s+(me\s+)?an?\s+offer\b", re.I),
+    re.compile(r"\b(did|do)\s+you\s+have\s+an?\s+offer\b", re.I),
+    re.compile(r"\bwhat\s+price\s+(were|are)\s+you\s+(thinking|offering)\b", re.I),
+    re.compile(r"\bwhat\s+(would|do|will|can|are)\s+you\s+(pay|offer|give|offering|paying)\b", re.I),
+    re.compile(r"\bwhat'?s?\s+(your|the)\s+offer\b", re.I),
+    re.compile(r"\byou\s+want\s+to\s+buy\s+my\s+(house|home|property)\b", re.I),
+    re.compile(r"\bare\s+you\s+interested\b", re.I),
+    re.compile(r"\byes,?\s+i\s+(have|am|do|would)\b", re.I),
+    re.compile(r"\byes,?\s+(i'?m|i\s+am)\s+interested\b", re.I),
+    re.compile(r"\b(sure|yeah|yes)[.,!]?\s+(tell\s+me\s+more|make\s+an?\s+offer|i'?ve\s+thought)\b", re.I),
+    re.compile(r"\btell\s+me\s+more\b", re.I),
+    re.compile(r"\bhow\s+(does|do)\s+(that|this|it|you\s+guys?)\s+work\b", re.I),
+    re.compile(r"\bdepends\s+on\s+(the\s+)?(price|offer|amount|number)\b", re.I),
+    re.compile(r"\bwhat\s+are\s+you\s+(willing|able)\s+to\s+pay\b", re.I),
+    re.compile(r"\b(interesting|interested)\s+(trades?|offers?)\b", re.I),  # "All interesting trades will be considered"
+]
+
+
+def _contact_raised_hand(messages: list[dict]) -> bool:
+    """True if any contact message contains a hand-raise signal."""
+    for m in messages:
+        if _sender(m) != "contact":
+            continue
+        body = _body(m)
+        if not body:
+            continue
+        if any(p.search(body) for p in _HAND_RAISE):
+            return True
+        if any(p.search(body) for p in _POSITIVE_ENGAGEMENT):
+            return True
+    return False
+
+
+# Handoff / escalation phrasing the agent must send after a valid lead push:
+# "I'll have my partner touch base soon to go over the next steps."
+_PUSH_HANDOFF_RE = re.compile(
+    r"\b(partner|team|colleague|manager|specialist|acquisitions?|someone)\b.{0,60}"
+    r"\b(touch\s+base|reach\s+out|be\s+in\s+touch|contact\s+you|call\s+you|text\s+you|connect|go\s+over|follow\s+up)\b"
+    r"|\bgo\s+over\s+(the\s+)?next\s+steps\b"
+    r"|\b(pass(ing)?|hand(ing)?)\b.{0,30}\b(to\s+(my|our|the)|over|along)\b"
+    r"|\blooking\s+forward\s+to\s+.{0,30}working\s+together\b",
+    re.I,
+)
+
+NO_HANDOFF_FLAG = "No handoff message sent after lead push."
+
+
+def _agent_sent_handoff(messages: list[dict]) -> bool:
+    """True if any agent message contains handoff/escalation phrasing."""
+    return any(
+        _PUSH_HANDOFF_RE.search(_body(m))
+        for m in messages
+        if _sender(m) != "contact" and _body(m)
+    )
 
 _CALL_ME_RE = re.compile(
     r"\b(call\s+me|give\s+me\s+a\s+call|call\s+(us|my\s+husband|my\s+wife)"
@@ -883,23 +954,53 @@ def validate_push_label(messages: list[dict], assigned_label: str, funnel_tier: 
     """
     Validate Lead / Pushed to Client labels against funnel thresholds.
 
-    WF (Wide Funnel)   → 0 pillars needed
+    WF (Wide Funnel)   → 0 pillars needed, but the contact must have raised a hand
     MF (Middle Funnel) → 2 pillars needed
     NF (Narrow Funnel) → 3 pillars needed
 
     Also handles the 'Call Me' override: if contact explicitly asks for a call,
     they can be pushed regardless of the pillar count.
+
+    HANDOFF RULE: a valid push label additionally requires the agent to close
+    with a handoff message ("I'll have my partner touch base..."). The label
+    stays correct without it, but the result carries the NO_HANDOFF_FLAG so the
+    audit surfaces it and degrades script adherence.
     """
     contact_bodies = [_body(m) for m in messages if _sender(m) == "contact"]
     contact_text = "\n".join(contact_bodies)
 
+    def _with_handoff_check(result: dict) -> dict:
+        """Attach the missing-handoff flag to a valid push result."""
+        if result.get("label_correct") and not _agent_sent_handoff(messages):
+            result["red_flags"] = [NO_HANDOFF_FLAG]
+            result["label_reason"] += (
+                " However, the agent never sent a handoff message after the push — flagged."
+            )
+        return result
+
     # 1. Did they ask to be called? (Overrides pillar requirements)
     if _CALL_ME_RE.search(contact_text):
-        return {
+        return _with_handoff_check({
             "label_correct": True,
             "label_should_be": assigned_label,
             "label_reason": f"ML detected 'Call Me' override. Contact requested a call, satisfying {funnel_tier} push requirements.",
-        }
+        })
+
+    # 1b. Wide funnel: a hand raise ALONE qualifies the push — zero pillars needed.
+    if funnel_tier == "WF":
+        if _contact_raised_hand(messages):
+            return _with_handoff_check({
+                "label_correct": True,
+                "label_should_be": assigned_label,
+                "label_reason": (
+                    "ML detected a hand raise on a Wide Funnel account (e.g. 'How much', "
+                    "'Make an offer', interest question). WF requires zero pillars — "
+                    "push label is valid."
+                ),
+            })
+        # No hand raise found — ambiguous (contact may have engaged in a way the
+        # regexes miss). Defer to Groq rather than calling the push premature.
+        return {"label_correct": None, "label_should_be": None, "label_reason": ""}
 
     # 2. Count distinct pillars
     collected_pillars = set()
@@ -915,11 +1016,11 @@ def validate_push_label(messages: list[dict], assigned_label: str, funnel_tier: 
             f"ML detected {has_count}/{required} required pillars for {funnel_tier} funnel "
             f"({', '.join(collected_pillars)}). Push label is valid."
         ) if required > 0 else f"ML detected Wide Funnel (WF) — 0 pillars required. Push label is valid."
-        return {
+        return _with_handoff_check({
             "label_correct": True,
             "label_should_be": assigned_label,
             "label_reason": reason,
-        }
+        })
     else:
         reason = (
             f"ML detected only {has_count}/{required} required pillars for {funnel_tier} funnel "
@@ -988,13 +1089,15 @@ def validate_label(messages: list[dict] | None, assigned_label: str | None, funn
             # No price detected — can't validate ABV MV locally, defer
             return {"label_correct": None, "label_should_be": None, "label_reason": ""}
 
-    # Phase 3: handle Push/Lead labels locally using funnel thresholds
-    if norm_assigned in _LOCAL_PUSH_LABELS:
+    # Phase 3: handle Push/Lead labels locally using funnel thresholds.
+    # Compound labels like "Lead, Pushed to client" are recognized part-by-part.
+    if _is_push_label(assigned):
         push_result = validate_push_label(messages, assigned, funnel_tier)
         return {
             "label_correct": push_result["label_correct"],
             "label_should_be": push_result["label_should_be"],
             "label_reason": push_result["label_reason"],
+            "red_flags": push_result.get("red_flags", []),
         }
 
     # Phase 2: handle FU drip labels locally

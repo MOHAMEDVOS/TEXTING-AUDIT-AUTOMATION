@@ -75,6 +75,7 @@ F10 "Pushed to close with zero property info." (Pushed for call with 0 lead info
 F11 "Did not escalate after all 4 pillars gathered." (Got all 4 pillars but didn't ask for call).
 F12 "Skipped $1k referral close after high price." (Lead gave high price, agent ended chat without $1k referral).
 F13 "Affirmed lead's asking price without negotiation." (Agent said "Great!" to lead's price without negotiating).
+F14 "No handoff message sent after lead push." (Fires ONLY when the assigned label is a push label — "Pushed to client", "Lead Pushed", "Lead, Pushed to client", "waiting to be pushed" — AND the lead validly raised their hand, but the agent never sent a handoff/escalation message such as "I'll have my partner touch base soon to go over the next steps". A pushed lead must ALWAYS be closed with a handoff message; skipping it is unprofessional and lowers script adherence.).
 </RED_FLAGS>
 
 <SCORING_AND_LABELS>
@@ -84,6 +85,8 @@ professionalism_score: 0-100 for the AGENT's conduct ONLY. Penalize ONLY for F8 
 script_adherence_score: 100 - (number of flags * 20). Min 0.
 
 VALID LABELS: Potential, Warm, Hot, Lead, Lead Pushed, Investor, FU1, FU2, FU3, WL drip, AP drip, HL drip, Reason FU, waiting to be pushed, Pushed to client, Deal closed, sold, Not Interested, Verified, Maybe Later, Stopped Responding, Missed Call, Bluffer, DO Not Call, Disqualified, Abv MV, Listed, Duplicate, Wrong Number.
+
+PUSH LABEL RULE: "Lead", "Lead Pushed", "Pushed to client" (and compounds like "Lead, Pushed to client") are VALID as soon as the lead meets the account's funnel bar. On WIDE FUNNEL accounts the bar is a HAND RAISE alone — "How much", "How much are you offering", "Make an offer", "What price were you thinking", "Yes I have", "Are you interested?", or ANY question back. Zero pillars are required to push on wide funnel. NEVER mark a push label wrong as "too early", "premature", or "not enough information gathered" when the lead raised a hand on a wide-funnel account — set label_correct to true. If the push label is valid but the agent never sent a handoff message, KEEP label_correct=true and raise flag F14 instead.
 
 NOTE: "DO Not Call" is STRICTLY for hard opt-outs ("stop", "remove me") or severe hostility. DO NOT accept "DO Not Call" just because a lead asked for a high price (e.g., $800,000). High prices are engagement (Asking Price pillar) and should be labeled "Bluffer", "Abv MV", or followed up on. If an agent assigns "DO Not Call" just because the lead quoted a high price, the label is WRONG.
 When in doubt, set label_correct to true.
@@ -233,8 +236,15 @@ WIDE FUNNEL JOB: Send warm, conversational follow-ups. Identify hand-raises. Tha
  - NEVER flag: "no clear next steps" or "no call to action" — WF does not require a CTA.
  - NEVER flag: "agent did not attempt to close" — closing is not a WF task.
  - NEVER flag: "script_adherence" issues for pillar order, pillar count, or escalation to call.
- - The ONLY valid red flags for WF accounts: explicit opt-out ignored, aggressive/deceptive language, wrong name used, incoherent message, or SLA breach (if <ACCOUNT_GUIDELINES> defines one).
- - Expected labels: WL drip, AP drip, HL drip, Stopped Responding, Not Interested. "Potential" only when 3+ clear pillars are present.
+ - The ONLY valid red flags for WF accounts: explicit opt-out ignored, aggressive/deceptive language, wrong name used, incoherent message, F14 (no handoff after a valid lead push), or SLA breach (if <ACCOUNT_GUIDELINES> defines one).
+
+WF PUSH RULE (HAND RAISE = PUSHABLE LEAD):
+ - In wide funnel, a hand raise ALONE fully qualifies a lead for pushing. A hand raise is ANY contact reply that is not a hard no: "How much", "How much are you offering", "Make an offer", "Did you have an offer?", "What price were you thinking", "Yes I have", "Are you interested?", or ANY question back.
+ - When the lead raised a hand, the labels "Lead", "Lead Pushed", "Pushed to client" (and compounds like "Lead, Pushed to client") are CORRECT. Set label_correct=true.
+ - NEVER set label_should_be to "Potential", "Undefined", or "Stopped Responding" for a hand-raised lead carrying a push label. NEVER call a push label "premature" or "too early to classify" — wide funnel requires ZERO pillars to push.
+ - HANDOFF REQUIRED AFTER PUSH: when the label is a push label and the lead raised a hand, the agent MUST close with a handoff message (e.g. "I'll have my partner touch base soon to go over the next steps. Looking forward to working together!"). If no agent message contains a handoff (partner/team/someone will reach out / touch base / go over next steps) → raise flag F14 "No handoff message sent after lead push." and reduce script_adherence accordingly. The label itself STAYS correct.
+
+ - Expected labels: WL drip, AP drip, HL drip, Stopped Responding, Not Interested. "Potential" only when 3+ clear pillars are present. "Lead", "Lead Pushed", "Pushed to client" whenever the lead raised a hand.
  - "Undefined" label is acceptable when conversation is too early to classify — never flag it as wrong unless a clear label is obvious.
  - Score script_adherence based on tone warmth and reply quality ONLY, not pillar count.
  - If <ACCOUNT_GUIDELINES> mentions an SLA (e.g., "leads must be sent within 5-7 min"), flag any agent delay that exceeds it as the ONE valid script flag.
