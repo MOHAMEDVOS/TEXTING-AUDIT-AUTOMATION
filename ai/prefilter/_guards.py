@@ -356,6 +356,37 @@ def apply_label_guards(result: dict, messages: list[dict]) -> None:
             )
             return
 
+    # Guard C: auditor wants Bluffer, but the contact never quoted a concrete
+    # dollar amount and made no bluff/paranoid statement. Holding out for
+    # "full value" / refusing to name a number first is a NEGOTIATION STANCE,
+    # not a bluff — Bluffer requires a joke-tier price ($1M+) or time-wasting
+    # signals (e.g. "the FBI monitors this phone"). A contact asking "what's
+    # your best offer?" is engaged, not bluffing.
+    if (
+        result.get("label_correct") is False
+        and re.search(r"\bbluffer\b", should_be, re.I)
+        and not re.search(r"\bbluffer\b", assigned, re.I)
+        and not has_joke_price
+    ):
+        from ai.prefilter.summary_builder import _parse_contact_price
+        from ai.prefilter.tier1_phrases_v2 import _has_bluffer_indicator
+        _stated_concrete_price = any(
+            _parse_contact_price((m.get("body") or m.get("message") or "").strip()) is not None
+            for m in (messages or [])
+            if (m.get("sender") or "").strip().lower() in ("contact", "lead")
+        )
+        _bluff, _ = _has_bluffer_indicator(messages or [])
+        if not _stated_concrete_price and not _bluff:
+            result["label_correct"] = True
+            result["label_should_be"] = assigned
+            result["label_reason"] = (
+                "Contact never quoted a concrete dollar amount and made no "
+                "bluff/time-wasting statement — wanting 'full value' or flipping "
+                "the price question back to the agent is a negotiation stance, "
+                f"not a Bluffer signal. '{assigned}' stands."
+            )
+            return
+
     # 1. No signal -> AI cannot force DNC
     if not has_opt_out and not has_joke_price:
         if result.get("label_correct") is False and DNC_LABEL_RE.search(should_be):
@@ -389,8 +420,10 @@ def apply_label_guards(result: dict, messages: list[dict]) -> None:
         return
 
     if has_joke_price:
-        # Joke price (1 million, etc) ACCEPTED as DNC or Bluffer
-        if assigned_is_dnc or assigned_is_bluffer:
+        # Joke price (1 million, etc) ACCEPTED as DNC, Bluffer, or Abv MV
+        # (same accepted-label group as tier1_phrases_v2 / label_validator)
+        assigned_is_abv = bool(re.search(r"\babv\s*mv\b|\babove\s+market\b", assigned, re.I))
+        if assigned_is_dnc or assigned_is_bluffer or assigned_is_abv:
             result["label_correct"] = True
             result["label_should_be"] = assigned
             result["label_reason"] = f"Contact used joke/inflated price; '{assigned}' is an accepted label."

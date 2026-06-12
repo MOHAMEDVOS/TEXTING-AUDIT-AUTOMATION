@@ -118,6 +118,32 @@ _PERMISSION_OPENER_RE = re.compile(
     re.I,
 )
 
+# ── Full-value stance — contact wants market/appreciation value, NO number ───
+# "Full appreciation value if anyone is interested to pay full value" — this is
+# a negotiation posture, NOT a Bluffer signal. Bluffer needs a joke-tier price
+# or time-wasting statements; a vague "full value" demand needs pinning down.
+_FULL_VALUE_STANCE_RE = re.compile(
+    r"\bfull\s+(appreciation\s+|market\s+)?(value|price)\b"
+    r"|\bwhat\s+(it'?s|the\s+(house|property|home)\s+is)\s+worth\b"
+    r"|\btop\s+dollar\b"
+    r"|\b(market|appraised|retail)\s+value\b",
+    re.I,
+)
+
+# ── Offer flip — contact bounces the price question back to the agent ────────
+# "You are the one offering, I didn't reach out to you, what's your best offer?"
+# Engaged negotiation, not disinterest/bluffing. Script: agent must NOT quote a
+# number (F3) — deflect ("hard to give an exact number without more details")
+# and keep pulling pillars.
+_OFFER_FLIP_RE = re.compile(
+    r"\bwhat'?s?\s+your\s+(best\s+)?offer\b"
+    r"|\byou(?:'re|\s+are)\s+the\s+(one|buyer)\b"
+    r"|\bsince\s+you\s+are\s+(the\s+one\s+)?interested\b"
+    r"|\byou\s+(contacted|texted|called|reached\s+out\s+to)\s+me\b"
+    r"|\bi\s+didn'?t\s+(reach\s+out|contact|text|call)\s+(to\s+)?you\b",
+    re.I,
+)
+
 
 def _classify_contact_tone(contact_msgs: list[dict]) -> str:
     """Classify the overall contact tone from their messages."""
@@ -810,10 +836,35 @@ def coaching_bullets(messages: list[dict]) -> list[str]:
                 "(address + opportunity) avoids inviting a free refusal"
             )
 
-    # 4. Contact showed condescension/mockery — tone friction signal
     contact_text = " \n ".join(
         (m.get("body") or m.get("message") or "") for m in contact_msgs
     )
+
+    # 4. Full-value stance without a concrete number — negotiation, not bluffing
+    if _FULL_VALUE_STANCE_RE.search(contact_text):
+        _any_concrete_price = any(
+            _parse_contact_price((m.get("body") or m.get("message") or "").strip()) is not None
+            for m in contact_msgs
+        )
+        if not _any_concrete_price:
+            fv_msg = _find_first(contact_msgs, [_FULL_VALUE_STANCE_RE])
+            bullets.append(
+                f"Contact is holding out for full market value without naming a number: "
+                f"{_q(fv_msg) if fv_msg else ''} — a negotiation stance, NOT a Bluffer signal; "
+                "the right play is pinning down a concrete figure"
+            )
+
+    # 5. Offer flip — contact bounced the price question back to the agent
+    if _OFFER_FLIP_RE.search(contact_text):
+        flip_msg = _find_first(contact_msgs, [_OFFER_FLIP_RE])
+        bullets.append(
+            f"Contact flipped the price question back to the texter: "
+            f"{_q(flip_msg) if flip_msg else ''} — engaged negotiation; per script the texter "
+            "must NOT quote a number, deflect ('hard to give an exact number without more "
+            "details') and keep gathering pillars"
+        )
+
+    # 6. Contact showed condescension/mockery — tone friction signal
     if _CONDESCENSION_RE.search(contact_text):
         mock_msg = next(
             (m for m in contact_msgs
@@ -948,6 +999,13 @@ def build_summary(
                 bullets.append(
                     "Contact engaged mid-conversation but ultimately declined — "
                     "the conversation ended on a refusal"
+                )
+            elif ni_msg is None:
+                # No decline ever happened — this is straight engagement
+                first_pos = _find_first(contact_msgs, _POSITIVE_PATTERNS)
+                bullets.append(
+                    f"Contact engaged with interest{f': {_q(first_pos)}' if first_pos else ''} — "
+                    "live conversation (Potential)"
                 )
             else:
                 bullets.append(
