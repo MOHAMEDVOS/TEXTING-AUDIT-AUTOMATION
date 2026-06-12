@@ -2936,6 +2936,10 @@ let selectedIds    = new Set();
 let todayAssignments = {};  // { "account@email.com": "Texter Name" | null }
 // Agents that just finished — show notification badge until clicked
 let doneNotifications = new Set();
+// Agents whose green "Done" status was acknowledged by opening the account
+// ("mark as read"). Persisted across reloads; cleared when a new run starts.
+let ackedDone = new Set(JSON.parse(localStorage.getItem("ackedDone") || "[]"));
+function _saveAckedDone() { localStorage.setItem("ackedDone", JSON.stringify([...ackedDone])); }
 
 function _normEmail(email) {
   return String(email || "").trim().toLowerCase();
@@ -3271,6 +3275,7 @@ async function runSelectedAgents() {
       if (data.status === "started") {
         processStatus[name] = "running";
         processStatusDetails[name] = { state: "running", message: "Starting audit" };
+        ackedDone.delete(name); _saveAckedDone();
       }
     } catch (e) {
       console.warn("Failed to start", name, e);
@@ -3381,8 +3386,11 @@ function renderSidebar() {
       statusText = statusMessage(a.name, "Auditing");
       statusColor = "var(--brand)";
     } else if (status === "done") {
-      statusText = convos > 0 ? "Done" : "Done — 0 convos";
-      statusColor = convos > 0 ? "var(--success)" : "var(--warning)";
+      // Hide the green "Done" once the account was opened (read-acknowledged)
+      if (!ackedDone.has(a.name)) {
+        statusText = convos > 0 ? "Done" : "Done — 0 convos";
+        statusColor = convos > 0 ? "var(--success)" : "var(--warning)";
+      }
     } else if (status === "failed") {
       statusText = statusMessage(a.name, "Failed");
       statusColor = "var(--danger)";
@@ -3466,6 +3474,12 @@ async function selectAgent(id, { forceReload = false } = {}) {
   await loadAgents();
   const agent = allAgents.find(a => a.id === id);
   if (!agent) return;
+
+  // Mark the green "Done" as read — opening the account acknowledges it
+  if ((processStatus[agent.name] || "idle") === "done" && !ackedDone.has(agent.name)) {
+    ackedDone.add(agent.name);
+    _saveAckedDone();
+  }
 
   // Clear done notification
   if (doneNotifications.has(agent.name)) {
@@ -4339,6 +4353,7 @@ async function runAgent(name, evt) {
     if (data.status === "started") {
       processStatus[name] = "running";
       processStatusDetails[name] = { state: "running", message: "Starting audit" };
+      ackedDone.delete(name); _saveAckedDone();
       renderSidebar(); updateRunButton();
       toast(`Audit started for ${name}`);
     } else {
@@ -5012,6 +5027,10 @@ async function pollStatus() {
           toastDone(label, convos, 7000, agent?.id);
         }
         processStatus[name] = state;
+        // New run started → un-acknowledge so the next "Done" shows again
+        if (state === "running" && ackedDone.has(name)) {
+          ackedDone.delete(name); _saveAckedDone();
+        }
         changed = true;
       }
       const detail = details[name];
