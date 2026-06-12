@@ -303,6 +303,59 @@ def apply_label_guards(result: dict, messages: list[dict]) -> None:
     assigned = str(result.get("label_assigned") or "").strip()
     should_be = str(result.get("label_should_be") or "").strip()
 
+    _contact_text = " \n ".join(
+        (m.get("body") or m.get("message") or "")
+        for m in (messages or [])
+        if (m.get("sender") or "").strip().lower() in ("contact", "lead")
+    )
+    _wants_ni = bool(re.search(r"\bnot\s+interested\b", should_be, re.I))
+
+    # Guard A: texter chose DNC, auditor wants Not Interested, contact was
+    # mocking/condescending ("do you ask dumb things on purpose?"). Dismissive
+    # hostility without a regex opt-out is an accepted DNC scenario — confirm
+    # the texter's label instead of flagging it.
+    if (
+        result.get("label_correct") is False
+        and _wants_ni
+        and DNC_LABEL_RE.search(assigned)
+    ):
+        from ai.prefilter.summary_builder import _CONDESCENSION_RE
+        if _CONDESCENSION_RE.search(_contact_text):
+            result["label_correct"] = True
+            result["label_should_be"] = assigned
+            result["label_reason"] = (
+                "Contact paired the refusal with mocking/condescending language — "
+                "dismissive hostility is an accepted Do Not Call scenario, so the "
+                "texter's label stands (not forced to Not Interested)."
+            )
+            return
+
+    # Guard B: texter chose Abv MV / Bluffer, auditor wants Not Interested, but
+    # the contact stated a concrete price before declining. The "No" rejects the
+    # agent's number (price disagreement), not the idea of selling.
+    if (
+        result.get("label_correct") is False
+        and _wants_ni
+        and re.search(r"\babv\s*mv\b|\babove\s+market\b|\bbluffer\b", assigned, re.I)
+    ):
+        from ai.prefilter.summary_builder import (
+            detect_abv_mv_response,
+            _BUYER_SIDE_REJECTION_RE,
+        )
+        _abv = detect_abv_mv_response(messages)
+        if _abv["contact_stated_price"]:
+            _buyer_side = _BUYER_SIDE_REJECTION_RE.search(_contact_text)
+            result["label_correct"] = True
+            result["label_should_be"] = assigned
+            result["label_reason"] = (
+                f"Contact quoted ${_abv['price_amount']:,.0f} before declining — the "
+                "'No' rejects the agent's price range, not the idea of selling."
+                + (" The buy-side reply ('I'd buy at that price') confirms the number "
+                   "was rejected as too low." if _buyer_side else "")
+                + f" '{assigned}' is the correct team label for a price-disagreement decline."
+            )
+            return
+
     # 1. No signal -> AI cannot force DNC
     if not has_opt_out and not has_joke_price:
         if result.get("label_correct") is False and DNC_LABEL_RE.search(should_be):

@@ -82,6 +82,43 @@ _POSITIVE_PATTERNS = [
 ]
 
 
+# ── Condescension / mockery — dismissive hostility without explicit opt-out ──
+# "Do you ask dumb things on purpose?" — contact is mocking the agent. Not a
+# regex opt-out, but the team accepts DO Not Call for dismissive/mocking
+# contacts, so label guards must never force "Not Interested" over it.
+_CONDESCENSION_RE = re.compile(
+    r"\b(dumb|stupid|silly|ridiculous|pointless|idiotic)\s+(question|things?|stuff|texts?|messages?)\b"
+    r"|\bdo\s+you\s+(ask|say|send)\s+(dumb|stupid|silly)\b"
+    r"|\bare\s+you\s+(a\s+bot|a\s+robot|stupid|dumb|illiterate)\b"
+    r"|\bis\s+this\s+a\s+(bot|joke|scam)\b"
+    r"|\b(can|do)\s+you\s+(even\s+|not\s+)?read\b"
+    r"|\bwhat\s+part\s+of\s+no\b"
+    r"|\bmakes?\s+no\s+sense\b"
+    r"|\bwast(e|ing)\s+(of\s+)?(my\s+)?time\b",
+    re.I,
+)
+
+# ── Buyer-side price rejection — contact says the agent's number is too LOW ──
+# "I'd buy more at that price" / "way too low" — the contact is rejecting the
+# agent's range as an investor would, NOT declining to sell. This is the
+# signature of an Abv MV conversation, never a plain Not Interested.
+_BUYER_SIDE_REJECTION_RE = re.compile(
+    r"\bi(?:'?d|\s+would)?\s+buy\s+(?:more\s+|one\s+|another\s+)?(?:at|for)\s+(?:that|this)\s+price\b"
+    r"|\b(?:that'?s|way|much|far)\s+too\s+low\b"
+    r"|\bnot\s+(?:nearly\s+|even\s+)?enough\b"
+    r"|\bi\s+paid\s+more\s+than\s+that\b"
+    r"|\b(?:it'?s|house\s+is|property\s+is)\s+worth\s+(?:way\s+|a\s+lot\s+|much\s+)?more\b",
+    re.I,
+)
+
+# Permission-style opener: "May I ask you something?" — invites a free "No"
+# that gets misread as disinterest. Used for coaching feedback.
+_PERMISSION_OPENER_RE = re.compile(
+    r"\b(may|can|could)\s+i\s+ask\s+you\s+(something|a\s+question|a\s+quick\s+question)\b",
+    re.I,
+)
+
+
 def _classify_contact_tone(contact_msgs: list[dict]) -> str:
     """Classify the overall contact tone from their messages."""
     if not contact_msgs:
@@ -272,6 +309,12 @@ _CONTACT_PRICE_WORD_RE = re.compile(
     r"(million|mil)\b",
     re.I,
 )
+# Bare suffixed amounts with no dollar sign — "500k", "500 thousand", "1.2 million".
+# A unit suffix is REQUIRED here (bare "500" is too ambiguous to be a price).
+_CONTACT_PRICE_BARE_RE = re.compile(
+    r"\b(\d[\d,]*(?:\.\d+)?)\s*(k|thousand|grand|million|mil)\b",
+    re.I,
+)
 _WORD_NUMS = {
     "a": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
     "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
@@ -302,6 +345,19 @@ def _parse_contact_price(body: str) -> float | None:
             return num * 1_000_000
         else:
             return num
+
+    # No-$ suffixed form: "close to 500k", "around 500 thousand"
+    bm = _CONTACT_PRICE_BARE_RE.search(body_lower)
+    if bm:
+        try:
+            num = float(bm.group(1).replace(",", ""))
+        except ValueError:
+            return None
+        unit = bm.group(2).lower()
+        value = num * (1_000_000 if unit in ("million", "mil") else 1_000)
+        # Sanity floor — a real asking price, not "5k run" / "10k followers"
+        if value >= 10_000:
+            return value
     return None
 
 
@@ -690,6 +746,88 @@ def _find_first(msgs: list[dict], patterns: list) -> dict | None:
 
 
 
+def coaching_bullets(messages: list[dict]) -> list[str]:
+    """
+    Deterministic coaching observations appended to every ML summary.
+
+    These give reviewers the same kind of "rich feedback" Groq produces:
+    repetition, unanswered questions, weak openers, tone friction — facts a
+    regex can prove from the transcript, phrased as actionable coaching.
+    """
+    agent_msgs   = [m for m in messages if (m.get("sender") or "").lower() not in ("contact", "system", "")]
+    contact_msgs = [m for m in messages if (m.get("sender") or "").lower() == "contact"]
+    bullets: list[str] = []
+
+    # 1. Verbatim duplicate agent message — robotic / copy-paste messaging
+    seen: dict[str, int] = {}
+    for m in agent_msgs:
+        body = re.sub(r"\s+", " ", (m.get("body") or m.get("message") or "").strip().lower())
+        if len(body) < 40:
+            continue
+        seen[body] = seen.get(body, 0) + 1
+    if any(c >= 2 for c in seen.values()):
+        bullets.append(
+            "Texter sent the same message twice verbatim — repeated copy-paste "
+            "reads as robotic; vary the phrasing on the second send"
+        )
+
+    # 2. Conversation ended on an unanswered contact question
+    last_substantive = next(
+        (m for m in reversed(messages)
+         if (m.get("body") or m.get("message") or "").strip()), None,
+    )
+    if last_substantive is not None:
+        sender = (last_substantive.get("sender") or "").lower()
+        body = (last_substantive.get("body") or last_substantive.get("message") or "")
+        if sender == "contact" and "?" in body:
+            bullets.append(
+                f"Conversation ended with the contact's question unanswered: {_q(last_substantive)} — "
+                "a reply (even a closing one) was owed here"
+            )
+
+    # 3. Permission-style opener followed by a "No" the agent talked past
+    perm_idx = next(
+        (i for i, m in enumerate(messages)
+         if (m.get("sender") or "").lower() not in ("contact", "system", "")
+         and _PERMISSION_OPENER_RE.search(m.get("body") or m.get("message") or "")),
+        None,
+    )
+    if perm_idx is not None:
+        after = messages[perm_idx + 1:]
+        contact_said_no = any(
+            (m.get("sender") or "").lower() == "contact" and _is_contact_no(
+                (m.get("body") or m.get("message") or "").strip())
+            for m in after[:2]
+        )
+        agent_continued = any(
+            (m.get("sender") or "").lower() not in ("contact", "system", "")
+            for m in after[1:]
+        )
+        if contact_said_no and agent_continued:
+            bullets.append(
+                "Opener asked permission ('May I ask you something?') and the contact said No — "
+                "continuing past that 'No' reads as ignoring them; the script opener "
+                "(address + opportunity) avoids inviting a free refusal"
+            )
+
+    # 4. Contact showed condescension/mockery — tone friction signal
+    contact_text = " \n ".join(
+        (m.get("body") or m.get("message") or "") for m in contact_msgs
+    )
+    if _CONDESCENSION_RE.search(contact_text):
+        mock_msg = next(
+            (m for m in contact_msgs
+             if _CONDESCENSION_RE.search(m.get("body") or m.get("message") or "")), None,
+        )
+        if mock_msg is not None:
+            bullets.append(
+                f"Contact responded with mockery/condescension: {_q(mock_msg)} — "
+                "dismissive hostility; DO Not Call is an accepted close for this tone"
+            )
+
+    return bullets
+
+
 def build_summary(
     messages: list[dict],
     agent_name: str,
@@ -798,9 +936,23 @@ def build_summary(
                 f"Price inquiry after initial decline — {contact_name} is open to hearing a number (Potential)"
             )
         else:
-            bullets.append(
-                f"Contact showed renewed engagement after initial decline — labeled Potential"
+            # No reversal AFTER the decline — check whether the conversation
+            # actually ENDED on a No (engagement came before the decline).
+            _last_contact = contact_msgs[-1] if contact_msgs else None
+            _ended_on_no = _last_contact is not None and (
+                _is_contact_no((_last_contact.get("body") or _last_contact.get("message") or "").strip())
+                or _BUYER_SIDE_REJECTION_RE.search(
+                    _last_contact.get("body") or _last_contact.get("message") or "")
             )
+            if _ended_on_no:
+                bullets.append(
+                    "Contact engaged mid-conversation but ultimately declined — "
+                    "the conversation ended on a refusal"
+                )
+            else:
+                bullets.append(
+                    "Contact showed renewed engagement after initial decline — labeled Potential"
+                )
 
     # ─────────────────────────────────────────────────────────────────────────
     elif tone == "not_interested":
@@ -878,6 +1030,42 @@ def build_summary(
             f"Texter exchanged {n_agent + n_contact} messages with {contact_name}"
         )
         bullets.append("No compliance issues detected")
+
+    # ── Price-negotiation context (Abv MV) ────────────────────────────────────
+    # A "No" AFTER the contact quoted a price is a price disagreement, not
+    # seller disinterest — surface that distinction whatever the tone branch.
+    _abv = detect_abv_mv_response(messages)
+    if _abv["contact_stated_price"] and _abv["price_msg_index"] is not None:
+        _decline_after_price = any(
+            (m.get("sender") or "").lower() == "contact"
+            and _is_contact_no((m.get("body") or m.get("message") or "").strip())
+            for m in messages[_abv["price_msg_index"] + 1:]
+        )
+        if _decline_after_price:
+            price_msg = messages[_abv["price_msg_index"]]
+            bullets.append(
+                f"Contact quoted an asking price of ${_abv['price_amount']:,.0f}: {_q(price_msg)}"
+            )
+            if _abv["agent_did_referral_close"]:
+                bullets.append(
+                    "Texter used the script's above-market referral close ($1k referral offer)"
+                )
+            buyer_msg = _find_first(contact_msgs, [_BUYER_SIDE_REJECTION_RE])
+            if buyer_msg:
+                bullets.append(
+                    f"Contact rejected the texter's range as too low: {_q(buyer_msg)} — "
+                    "a price disagreement (Abv MV territory), not disinterest in selling"
+                )
+            else:
+                bullets.append(
+                    "The decline came after a price exchange — disagreement on price, "
+                    "not a refusal to sell (Abv MV is an accepted label here)"
+                )
+
+    # ── Coaching observations (duplicates, unanswered questions, tone) ────────
+    for cb in coaching_bullets(messages):
+        if cb not in bullets:
+            bullets.append(cb)
 
     # ── Compliance note ───────────────────────────────────────────────────────
     comp = scores.get("compliance_score", 100)

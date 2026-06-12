@@ -1072,10 +1072,13 @@ def _clean_result(
     if actual_label:
         label_correct = _label_key(real_label) == _label_key(expected_label)
         label_should_be = expected_label
+        # Keep the specific evidence the caller passed — a bare "ML rule matched X"
+        # gives reviewers nothing to verify the flag against.
+        _detail = (label_reason or "").strip()
         if label_correct:
-            label_reason = "ML rule matched the assigned label."
+            label_reason = "ML rule matched the assigned label." + (f" {_detail}" if _detail else "")
         else:
-            label_reason = f"ML rule matched {expected_label}."
+            label_reason = f"ML rule matched {expected_label}." + (f" {_detail}" if _detail else "")
     else:
         label_correct = None
         label_should_be = None
@@ -1103,8 +1106,19 @@ def _clean_result(
 
 def _label_key(label: str | None) -> str:
     normalized = re.sub(r"\s+", " ", (label or "").strip()).lower()
-    if normalized in {"dnc", "do not call"}:
+    if normalized in {"dnc", "do not call", "do not call (dnc)"}:
         return "do not call"
+    # Team synonyms for Not Interested (mirrors label_validator._label_key)
+    if normalized in {"not interested", "verified", "decision maker",
+                      "verified, not interested", "not interested, verified",
+                      "decision maker, not interested", "not interested, decision maker"}:
+        return "not interested"
+    # Compound labels — "Do Not Call, Verified" must key as DNC, not mismatch
+    parts = [p.strip() for p in re.split(r"[,;/|+]", normalized) if p.strip()]
+    if "do not call" in parts or "dnc" in parts:
+        return "do not call"
+    if "not interested" in parts:
+        return "not interested"
     return normalized
 
 
@@ -1936,6 +1950,107 @@ def evaluate(
                 )
                 return None
 
+            # ── Condescension guard (DNC accepted for mocking contacts) ─────
+            # "Do you ask dumb things on purpose?" — no regex opt-out, but the
+            # team accepts DO Not Call for dismissive/mocking tone. If the
+            # texter chose DNC here, confirm it instead of flagging "should be
+            # Not Interested".
+            from . import summary_builder as _sb_tone
+            if (_label_key(_actual_label) == "do not call"
+                    and _sb_tone._CONDESCENSION_RE.search(contact_text)):
+                scores = {
+                    "compliance_score": 100, "sentiment_score": 70,
+                    "professionalism_score": 90, "script_adherence_score": 95,
+                }
+                _dnc_summary = _sb_tone.build_summary(
+                    messages, agent_name, contact_name, scores,
+                    model_used="prefilter_t1_v2",
+                )
+                return PrefilterResult(
+                    tier_hit=1, decision="short_circuit", confidence=0.90,
+                    notes=f"[{funnel_tier}] mocking/condescending contact — DNC label accepted",
+                    predicted_scores=scores,
+                    result=_clean_result(
+                        contact_name,
+                        summary=_dnc_summary,
+                        scores=scores,
+                        funnel_tier=funnel_tier,
+                        funnel_stage="none",
+                        label_assigned=_actual_label,
+                        label_reason=(
+                            "Contact paired the refusal with mocking/condescending "
+                            "language. Dismissive hostility without an explicit opt-out "
+                            "is an accepted Do Not Call scenario — the texter's label "
+                            "stands."
+                        ),
+                        actual_label=_actual_label,
+                    ),
+                )
+
+            # ── Price-negotiation guard (Abv MV scenario) ────────────────────
+            # If the contact quoted a concrete price BEFORE the refusal, the
+            # "No" rejects the agent's number — a price disagreement, not
+            # seller disinterest. "Abv MV"/"Bluffer" are the correct team
+            # labels here and must never be flagged as "should be Not
+            # Interested" (e.g. "$500k to consider selling" → agent range →
+            # "No. I'd buy more at that price").
+            from . import summary_builder as _sb_ni
+            _abv_ctx = _sb_ni.detect_abv_mv_response(messages)
+            _price_before_no = (
+                _abv_ctx["contact_stated_price"]
+                and _abv_ctx["price_msg_index"] is not None
+                and _abv_ctx["price_msg_index"] < first_ni_idx
+            )
+            if _price_before_no:
+                _label_l = (_actual_label or "").lower()
+                _is_price_label = (
+                    "abv mv" in _label_l or "above market" in _label_l
+                    or "bluffer" in _label_l
+                )
+                _is_ni_label = "not interested" in _label_l or _label_key(_actual_label) == "not interested"
+                if _is_price_label:
+                    _price_amt = _abv_ctx["price_amount"] or 0
+                    _buyer_side = _sb_ni._BUYER_SIDE_REJECTION_RE.search(contact_text)
+                    scores = {
+                        "compliance_score": 100, "sentiment_score": 85,
+                        "professionalism_score": 90, "script_adherence_score": 100,
+                    }
+                    _abv_summary = _sb_ni.build_summary(
+                        messages, agent_name, contact_name, scores,
+                        model_used="prefilter_t1_v2",
+                    )
+                    return PrefilterResult(
+                        tier_hit=1, decision="short_circuit", confidence=0.90,
+                        notes=f"[{funnel_tier}] price-disagreement decline (${_price_amt:,.0f} quoted) — '{_actual_label}' accepted",
+                        predicted_scores=scores,
+                        result=_clean_result(
+                            contact_name,
+                            summary=_abv_summary,
+                            scores=scores,
+                            funnel_tier=funnel_tier,
+                            funnel_stage="wide",
+                            label_assigned=_actual_label,
+                            label_reason=(
+                                f"Contact quoted ${_price_amt:,.0f} before declining — the 'No' "
+                                "rejects the agent's price range, not the idea of selling."
+                                + (" The buy-side reply ('I'd buy at that price') confirms the "
+                                   "number was rejected as too low." if _buyer_side else "")
+                                + f" '{_actual_label}' is the correct team label for a "
+                                "price-disagreement decline."
+                            ),
+                            actual_label=_actual_label,
+                        ),
+                    )
+                if not _is_ni_label:
+                    # Price context with an unexpected label — too nuanced for
+                    # regex. Let Groq judge instead of claiming Not Interested.
+                    logger.info(
+                        f"[T1] {contact_name}: NI after stated price with label "
+                        f"'{_actual_label}' — deferring to Groq"
+                    )
+                    return None
+                # Assigned label IS Not Interested → fall through to normal close.
+
             # 0 replies = "gave up" red flag → Groq
             # 1-2 replies = standard rebuttal + close → safe SC
             # >2 replies = too persistent → Groq
@@ -1944,18 +2059,26 @@ def evaluate(
                     "compliance_score": 100, "sentiment_score": 80,
                     "professionalism_score": 90, "script_adherence_score": 100,
                 }
+                from . import summary_builder as _sb_sum
+                _ni_summary = _sb_sum.build_summary(
+                    messages, agent_name, contact_name, scores,
+                    model_used="prefilter_t1_v2",
+                )
                 return PrefilterResult(
                     tier_hit=1, decision="short_circuit", confidence=0.88,
                     notes=f"[{funnel_tier}] not interested — {len(agent_after_ni)} agent msg(s) after refusal",
                     predicted_scores=scores,
                     result=_clean_result(
                         contact_name,
-                        summary=f"{contact_name} declined the offer. Texter sent a professional rebuttal and closed the conversation cleanly.",
+                        summary=_ni_summary,
                         scores=scores,
                         funnel_tier=funnel_tier,
                         funnel_stage="wide",
                         label_assigned="Not Interested",
-                        label_reason="Contact explicitly declined; texter followed up once and closed.",
+                        label_reason=(
+                            f"Contact explicitly declined ({len(agent_after_ni)} rebuttal(s) "
+                            "sent after the refusal, then closed cleanly per script)."
+                        ),
                         actual_label=_actual_label,
                     ),
                 )

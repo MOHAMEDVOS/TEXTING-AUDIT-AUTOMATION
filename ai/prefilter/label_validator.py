@@ -3,7 +3,13 @@ from __future__ import annotations
 
 import re
 
-from ai.prefilter.summary_builder import detect_fu_track, validate_fu_label, detect_abv_mv_response
+from ai.prefilter.summary_builder import (
+    detect_fu_track,
+    validate_fu_label,
+    detect_abv_mv_response,
+    _CONDESCENSION_RE,
+    _BUYER_SIDE_REJECTION_RE,
+)
 from ai.prefilter.tier1_phrases_v2 import _PILLAR_PATTERNS, _PILLAR_THRESHOLD
 
 # Any contact price >= $1M → team labels as Do Not Call (inflated/ABV MV).
@@ -549,8 +555,10 @@ def _label_key(label: str | None) -> str:
                       "decision maker, not interested", "not interested, decision maker",
                       "decision maker not interested"}:
         return "not interested"
-    # Compound labels containing "not interested" as a component
+    # Compound labels — DNC component wins ("Do Not Call, Verified" → DNC)
     parts = [p.strip() for p in re.split(r"[,;/|+]", normalized) if p.strip()]
+    if "do not call" in parts or "dnc" in parts or "do not call (dnc)" in parts:
+        return "do not call"
     if "not interested" in parts:
         return "not interested"
     # "Missed Call", "Undefined", "Stop Responding" are all "Stopped Responding"
@@ -776,6 +784,35 @@ def _expected_label(contact_text: str, messages: list[dict], assigned_label: str
     # Don't override a WN label to NI on regex alone; defer to Groq.
     if assigned_key == "wrong number" and has_ni and not has_wn:
         return None, ""
+
+    # Guard: texter chose DNC for a mocking/condescending contact ("Do you ask
+    # dumb things on purpose?"). No regex opt-out fired, but dismissive hostility
+    # makes DO Not Call an accepted team label — confirm it instead of forcing NI.
+    if assigned_key == "do not call" and _CONDESCENSION_RE.search(contact_text):
+        return assigned_label, (
+            "ML detected mocking/condescending tone from the contact alongside the "
+            "refusal. Dismissive hostility without an explicit opt-out is an accepted "
+            "Do Not Call scenario — the texter's label stands. Coaching note: this "
+            "tone usually follows a rebuttal the contact felt ignored their 'No'."
+        )
+
+    # Guard: texter chose Abv MV / Bluffer and the contact stated a concrete price
+    # before declining. The "No" rejects the agent's number (price disagreement),
+    # NOT the idea of selling — never override these labels to Not Interested.
+    _assigned_norm = _norm(assigned_label)
+    if has_ni and ("abv mv" in _assigned_norm or "above market" in _assigned_norm
+                   or "bluffer" in _assigned_norm):
+        _abv = detect_abv_mv_response(messages)
+        if _abv["contact_stated_price"]:
+            _buyer_side = _BUYER_SIDE_REJECTION_RE.search(contact_text)
+            return assigned_label, (
+                f"ML detected the contact quoted ${_abv['price_amount']:,.0f} before "
+                "declining — the refusal is a price disagreement, not disinterest in "
+                "selling."
+                + (" Contact's buy-side reply ('I'd buy at that price') confirms the "
+                   "number was rejected as too low." if _buyer_side else "")
+                + f" '{assigned_label}' is the correct team label for this scenario."
+            )
 
     # Guard: if agent labeled DNC but no DNC pattern matched, don't override to NI.
     # Contact may have said "No more texts" in a way not yet covered, or context requires Groq.
