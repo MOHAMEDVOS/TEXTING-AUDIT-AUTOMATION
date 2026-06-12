@@ -213,14 +213,16 @@ class SmarterContactAPIBot:
                 contact_name = convo.get("name") or f"Contact_{idx}"
                 labels = [l["title"] for l in (convo.get("labels") or [])]
 
-                # dedup: skip already-audited chats
-                try:
-                    last_msg_content = convo.get("lastMessage", {}).get("content") or ""
-                    if await db.is_chat_audited(self.email, contact_name, last_msg_content):
-                        logger.debug(f"  Skip (already audited): {contact_name}")
-                        return None
-                except Exception as e:
-                    logger.debug(f"  Dedup check failed for {contact_name}: {e}")
+                # dedup: skip already-audited chats (only for "today" runs;
+                # historical date ranges should always re-audit)
+                if self.date_filter == "today":
+                    try:
+                        last_msg_content = convo.get("lastMessage", {}).get("content") or ""
+                        if await db.is_chat_audited(self.email, contact_name, last_msg_content):
+                            logger.debug(f"  Skip (already audited): {contact_name}")
+                            return None
+                    except Exception as e:
+                        logger.debug(f"  Dedup check failed for {contact_name}: {e}")
 
                 # fetch full message thread
                 try:
