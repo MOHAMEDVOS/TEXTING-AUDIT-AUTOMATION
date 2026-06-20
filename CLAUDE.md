@@ -4,7 +4,7 @@
 An advanced, high-performance automated auditing system for SMS/Texting conversations.
 - **Target**: Scrapes SmarterContact conversations (via GraphQL and REST APIs).
 - **Audit**: Evaluates agents against 4 metrics: Compliance, Attitude, Professionalism, and Script Adherence.
-- **Efficiency**: Uses a **3-Tier ML Pre-Filter** (Keywords, kNN Similarity, Logistic Regression) to reduce Groq AI costs by skipping "clean" chats.
+- **Efficiency**: Uses a **4-Tier ML Pre-Filter** (Keywords, kNN Similarity, Logistic Regression, Groq AI fallback) to reduce Groq AI costs by skipping "clean" chats.
 - **Tech Stack**: Python 3.10+, Groq (Llama 3.3 70B), FastAPI, PostgreSQL.
 
 ---
@@ -101,15 +101,22 @@ The system classifies every conversation into a **Funnel** type to apply relevan
 -   **Motivation**: Lead explains *why* they are considering selling.
 -   **Timeline**: Lead states a timeframe for selling.
 
+**Notable Scoring Rules (implemented):**
+-   **Kid-DNC > Wrong Number**: bare "I'm 15" (minor) triggers DNC regardless of WN label.
+-   **Bluffer Guard**: agent stating full value as a stance = negotiation, not bluffing. Prevents false F flags.
+-   **WF Hand-Raise**: validates "Lead, Pushed to client" push label; missing handoff msg = F14 flag (−20 script).
+-   **Condescension + Price-Disagreement guards**: label checks prevent false positives when leads argue price.
+-   **Read-Ack**: "Done" status auto-clears when the account is opened in the dashboard.
+
 ---
 
 ## ML Pre-Filter Pipeline
 
 Reduces Groq API costs by handling "clean" conversations locally.
--   **Tier 1 (Phrase Matching)**: Instant catch for silent contacts or trivial opt-outs.
--   **Tier 2 (kNN Embedding)**: Matches against 911+ past clean conversations (FAISS index).
--   **Tier 3 (Classifier)**: Logistic regression predicts P(flag) and audit scores.
--   **Tier 4 (Groq AI)**: Full audit fallback if all tiers are uncertain.
+-   **Tier 1 (Phrase Matching)**: Instant catch for silent contacts or trivial opt-outs. Currently LIVE.
+-   **Tier 2 (kNN Embedding)**: Matches against 911+ past clean conversations (FAISS index). Shadow mode.
+-   **Tier 3 (Classifier)**: Logistic regression predicts P(flag) and audit scores. Shadow mode.
+-   **Tier 4 (Groq AI)**: Full audit fallback when tiers 1–3 are uncertain or shadow-mode is on.
 
 **Operational Commands:**
 -   **Run Evaluation**: `python scripts/eval_prefilter.py --limit 500`
