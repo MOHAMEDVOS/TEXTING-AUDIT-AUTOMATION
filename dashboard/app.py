@@ -2489,6 +2489,26 @@ async def api_get_assignments(date: str = ""):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@app.get("/api/assignments/dates")
+async def api_assignments_dates():
+    """Return distinct dates that have at least one assignment, newest first."""
+    try:
+        async with app.state.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT assigned_date, COUNT(*) AS count
+                   FROM account_assignments
+                   GROUP BY assigned_date
+                   ORDER BY assigned_date DESC"""
+            )
+        return {
+            "success": True,
+            "data": [{"date": r["assigned_date"].isoformat(), "count": r["count"]} for r in rows],
+        }
+    except Exception as exc:
+        logger.exception("Error in GET /api/assignments/dates")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @app.post("/api/assignments", dependencies=[Depends(require_admin)])
 async def api_post_assignment(body: AssignmentRequest):
     """

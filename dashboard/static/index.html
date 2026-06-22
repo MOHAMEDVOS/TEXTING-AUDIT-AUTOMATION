@@ -188,10 +188,44 @@
     #sb-rail, #sb-content { background: var(--sidebar-bg) !important; }
     main { background: var(--canvas-bg) !important; }
     #vw-empty, #vw-agent, #vw-trends, #vw-detailed, #vw-chat,
+    #vw-assign-history,
     #vw-settings-add, #vw-settings-edit, #vw-settings-assign,
     #vw-settings-add-texter, #vw-settings-tool-access, #vw-settings-labels {
       background: var(--canvas-bg) !important;
     }
+
+    /* ── Assignments History ── */
+    .ah-date-list { display:flex; flex-direction:column; gap:2px; }
+    .ah-date-btn {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:8px 12px; border-radius:8px; border:none; background:transparent;
+      color:var(--text-secondary); font-size:.78rem; font-family:var(--font-text);
+      cursor:pointer; text-align:left; transition:.12s;
+    }
+    .ah-date-btn:hover { background:var(--surface-elevated); color:var(--text-primary); }
+    .ah-date-btn.active {
+      background:var(--brand-bg); color:var(--brand); border:1px solid var(--brand-border);
+    }
+    .ah-badge {
+      font-size:.6rem; font-weight:700; padding:1px 6px; border-radius:999px;
+      background:var(--surface-elevated); color:var(--text-muted); letter-spacing:.01em;
+    }
+    .ah-date-btn.active .ah-badge { background:rgba(0,113,227,.18); color:var(--brand); }
+    .ah-table { width:100%; border-collapse:collapse; font-size:.8rem; }
+    .ah-table th {
+      padding:9px 14px; text-align:left; font-weight:600; color:var(--text-secondary);
+      font-size:.7rem; text-transform:uppercase; letter-spacing:.05em;
+      border-bottom:1px solid var(--surface-border); background:var(--surface-elevated);
+      white-space:nowrap;
+    }
+    .ah-table td {
+      padding:9px 14px; border-bottom:1px solid var(--surface-border);
+      color:var(--text-primary); vertical-align:middle;
+    }
+    .ah-table tr:last-child td { border-bottom:none; }
+    .ah-table tr:hover td { background:var(--surface-elevated); }
+    .ah-unassigned { color:var(--text-muted); font-style:italic; }
+    .lp-item-active { background:var(--brand-bg) !important; color:var(--brand) !important; font-weight:600; }
     #vw-chat > div:first-child { background: var(--surface-subtle) !important; }
     #ch-ai { background: var(--surface) !important; }
     #ch-msgs { background: var(--chat-bg) !important; }
@@ -1781,6 +1815,11 @@
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
             <span class="snav-label">Detailed Dashboard</span>
           </div>
+          <div id="trends-tab-assign-history" class="snav-item" onclick="showTrendsSection('assign-history')"
+               style="display:flex; align-items:center; gap:8px; padding:7px 10px; border-radius:7px; cursor:pointer;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="14" x2="8" y2="14"/><line x1="12" y1="14" x2="16" y2="14"/><line x1="8" y1="18" x2="8" y2="18"/><line x1="12" y1="18" x2="16" y2="18"/></svg>
+            <span class="snav-label">Assignments History</span>
+          </div>
         </div>
       </div>
 
@@ -2770,6 +2809,44 @@
     </div>
 
 
+    <!-- ── View: Assignments History ── -->
+    <div id="vw-assign-history" style="display:none; flex:1; flex-direction:column; overflow:hidden; background:var(--surface);">
+      <!-- Filter bar -->
+      <div style="flex-shrink:0; padding:10px 28px; border-bottom:1px solid var(--surface-border); background:var(--surface-subtle); display:flex; align-items:center; gap:10px;">
+        <div style="position:relative; display:inline-block;">
+          <button class="drp-trigger" id="ah-date-trigger" onclick="toggleAhDatePicker(event)">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <span id="ah-date-trigger-label">Select date</span>
+            <svg class="drp-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="lp-popover" id="ah-date-popover" style="min-width:160px; max-height:280px; overflow-y:auto;">
+            <div style="font-size:.72rem; color:var(--text-muted); padding:8px 10px;">Loading…</div>
+          </div>
+        </div>
+      </div>
+      <!-- Content -->
+      <div style="flex:1; overflow-y:auto; padding:20px 28px;">
+        <div id="ah-empty" style="text-align:center; color:var(--text-muted); font-size:.85rem; padding:48px 0;">
+          Select a date above to view assignments.
+        </div>
+        <div id="ah-table-wrap" style="display:none;">
+          <div id="ah-date-heading" style="font-size:.9rem; font-weight:700; color:var(--text-primary); margin-bottom:14px; letter-spacing:-.02em;"></div>
+          <div style="overflow-x:auto; border:1px solid var(--surface-border); border-radius:10px;">
+            <table class="ah-table">
+              <thead>
+                <tr>
+                  <th>Account</th>
+                  <th>Texter (Agent)</th>
+                </tr>
+              </thead>
+              <tbody id="ah-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
     <!-- ── View: Chat (WhatsApp-style) ── -->
     <div id="vw-chat" style="display:none; flex:1; flex-direction:column; overflow:hidden;">
 
@@ -3070,12 +3147,13 @@ const _VIEW_ENTER = {
   "vw-empty":          { translateX: [0, 0],   translateY: [10, 0], scale: [0.99,  1] },
   "vw-trends":         { translateX: [0, 0],   translateY: [16, 0], scale: [0.984, 1] },
   "vw-detailed":       { translateX: [0, 0],   translateY: [16, 0], scale: [0.984, 1] },
+  "vw-assign-history": { translateX: [0, 0],   translateY: [16, 0], scale: [0.984, 1] },
 };
 let _currentView = null;
 let _viewAnim    = null; // running anime instance
 
 function showView(id) {
-  const allViews = ["vw-empty","vw-agent","vw-chat","vw-settings-add","vw-settings-edit","vw-settings-assign","vw-settings-add-texter","vw-settings-tool-access","vw-settings-labels","vw-trends","vw-detailed"];
+  const allViews = ["vw-empty","vw-agent","vw-chat","vw-settings-add","vw-settings-edit","vw-settings-assign","vw-settings-add-texter","vw-settings-tool-access","vw-settings-labels","vw-trends","vw-detailed","vw-assign-history"];
   const prev     = _currentView;
   _currentView   = id;
 
@@ -4548,13 +4626,15 @@ let _activeTrendsTab = "trend";
 
 function showTrendsSection(tab) {
   _activeTrendsTab = tab;
-  // Update sub-nav active state
-  ["trend", "detailed"].forEach(t => {
+  ["trend", "detailed", "assign-history"].forEach(t => {
     const el = document.getElementById("trends-tab-" + t);
     if (el) el.classList.toggle("snav-active", t === tab);
   });
   if (tab === "trend") {
     showView("vw-trends");
+  } else if (tab === "assign-history") {
+    showView("vw-assign-history");
+    loadAssignHistoryDates();
   } else {
     populateDetailedAgentDropdown();
     showView("vw-detailed");
@@ -5172,6 +5252,7 @@ function toggleTheme() {
 
 // ── Labels Dropdown Picker ───────────────────────────────────────────────────
 let _selectedLabels = [];
+let _allLabelNames  = [];
 
 function toggleLabelsPicker(event) {
   if (event) event.stopPropagation();
@@ -5200,9 +5281,19 @@ async function loadLabelsDropdown() {
     }
     
     const labelNames = labels.map(l => l.name);
+    _allLabelNames  = labelNames;
     _selectedLabels = _selectedLabels.filter(name => labelNames.includes(name));
 
-    popover.innerHTML = labels.map(l => {
+    const allChecked = _allLabelNames.length > 0 && _selectedLabels.length === _allLabelNames.length;
+    const selectAllRow = `
+      <div class="lp-item lp-select-all" onclick="toggleSelectAll(event)">
+        <input type="checkbox" id="lp-chk-all" ${allChecked ? "checked" : ""} onclick="event.stopPropagation(); toggleSelectAll(event)">
+        <span style="user-select:none; font-weight:600;">Select All</span>
+      </div>
+      <div style="border-top:1px solid var(--surface-border); margin:2px 0;"></div>
+    `;
+
+    popover.innerHTML = selectAllRow + labels.map(l => {
       const checked = _selectedLabels.includes(l.name) ? "checked" : "";
       return `
         <div class="lp-item" onclick="toggleLabelItem(event, '${esc(l.name)}')">
@@ -5217,6 +5308,22 @@ async function loadLabelsDropdown() {
   }
 }
 
+function toggleSelectAll(event) {
+  if (event) event.stopPropagation();
+  const chkAll    = document.getElementById("lp-chk-all");
+  const allSelected = _allLabelNames.length > 0 && _selectedLabels.length === _allLabelNames.length;
+  if (allSelected) {
+    _selectedLabels = [];
+    _allLabelNames.forEach(n => { const c = document.getElementById(`lp-chk-${n}`); if (c) c.checked = false; });
+    if (chkAll) chkAll.checked = false;
+  } else {
+    _selectedLabels = [..._allLabelNames];
+    _allLabelNames.forEach(n => { const c = document.getElementById(`lp-chk-${n}`); if (c) c.checked = true; });
+    if (chkAll) chkAll.checked = true;
+  }
+  updateLabelsButtonLabel();
+}
+
 function toggleLabelItem(event, name) {
   if (event) event.stopPropagation();
   const chk = document.getElementById(`lp-chk-${name}`);
@@ -5228,6 +5335,8 @@ function toggleLabelItem(event, name) {
     _selectedLabels.push(name);
     if (chk) chk.checked = true;
   }
+  const chkAll = document.getElementById("lp-chk-all");
+  if (chkAll) chkAll.checked = _allLabelNames.length > 0 && _selectedLabels.length === _allLabelNames.length;
   updateLabelsButtonLabel();
 }
 
@@ -5243,6 +5352,156 @@ function updateLabelsButtonLabel() {
   } else {
     label.textContent = `${_selectedLabels.length} Labels`;
   }
+}
+
+
+// ── Assignments History ───────────────────────────────────────────────────────
+let _ahSelectedDate = null;
+let _ahDatesSet     = new Set();   // ISO strings that have assignments
+let _ahCalYear      = null;
+let _ahCalMonth     = null;        // 0-based month index
+
+function toggleAhDatePicker(event) {
+  if (event) event.stopPropagation();
+  const popover = document.getElementById("ah-date-popover");
+  const trigger = document.getElementById("ah-date-trigger");
+  if (!popover) return;
+  const isShow = popover.classList.toggle("show");
+  if (trigger) trigger.classList.toggle("open", isShow);
+  if (isShow) _renderAhCal();
+}
+
+async function loadAssignHistoryDates() {
+  try {
+    const res  = await fetch("/api/assignments/dates");
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || "Failed");
+    const dates = data.data || [];
+    _ahDatesSet = new Set(dates.map(d => d.date));
+    // Start calendar on the most recent month with data
+    if (dates.length) {
+      const latest = new Date(dates[0].date + "T00:00:00");
+      _ahCalYear  = latest.getFullYear();
+      _ahCalMonth = latest.getMonth();
+      // Auto-load the most recent date
+      if (!_ahSelectedDate) _ahPickDate(dates[0].date);
+    }
+  } catch (e) {
+    const popover = document.getElementById("ah-date-popover");
+    if (popover) popover.innerHTML = `<div style="padding:12px; font-size:.75rem; color:var(--danger);">Error loading dates</div>`;
+  }
+}
+
+function _renderAhCal() {
+  const popover = document.getElementById("ah-date-popover");
+  if (!popover) return;
+
+  const today = new Date();
+  const year  = _ahCalYear  ?? today.getFullYear();
+  const month = _ahCalMonth ?? today.getMonth();
+
+  const monthLabel = new Date(year, month, 1).toLocaleDateString("en-US", { month:"long", year:"numeric" });
+
+  // Build day grid
+  const firstDay  = new Date(year, month, 1).getDay(); // 0=Sun
+  const daysInMo  = new Date(year, month + 1, 0).getDate();
+  const todayISO  = today.toISOString().slice(0, 10);
+
+  let days = "";
+  for (let i = 0; i < firstDay; i++) days += `<div class="drp-day drp-day-empty"></div>`;
+  for (let d = 1; d <= daysInMo; d++) {
+    const iso  = `${year}-${String(month + 1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    const hasData  = _ahDatesSet.has(iso);
+    const isToday  = iso === todayISO;
+    const isSel    = iso === _ahSelectedDate;
+    let cls = "drp-day";
+    if (!hasData) cls += " drp-day-disabled";
+    if (isToday)  cls += " drp-day-today";
+    if (isSel)    cls += " drp-day-selected";
+    const click = hasData ? `onclick="_ahPickDate('${iso}')"` : "";
+    days += `<div class="${cls}" ${click}>${d}</div>`;
+  }
+
+  popover.innerHTML = `
+    <div style="padding:10px 12px; min-width:220px;">
+      <div class="drp-cal-header">
+        <button class="drp-cal-nav" onclick="_ahNavMonth(-1)">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <span class="drp-cal-title">${monthLabel}</span>
+        <button class="drp-cal-nav" onclick="_ahNavMonth(1)">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>
+      <div class="drp-weekdays">
+        <div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
+      </div>
+      <div class="drp-days">${days}</div>
+    </div>`;
+}
+
+function _ahNavMonth(delta) {
+  const today = new Date();
+  let y = _ahCalYear  ?? today.getFullYear();
+  let m = _ahCalMonth ?? today.getMonth();
+  m += delta;
+  if (m < 0)  { m += 12; y--; }
+  if (m > 11) { m -= 12; y++; }
+  _ahCalYear  = y;
+  _ahCalMonth = m;
+  _renderAhCal();
+}
+
+async function _ahPickDate(date) {
+  _ahSelectedDate = date;
+  // Update trigger label
+  const trigLabel = document.getElementById("ah-date-trigger-label");
+  if (trigLabel) trigLabel.textContent = _fmtAssignDate(date);
+  // Close picker
+  const popover = document.getElementById("ah-date-popover");
+  const trigger = document.getElementById("ah-date-trigger");
+  if (popover) popover.classList.remove("show");
+  if (trigger) trigger.classList.remove("open");
+
+  // Load table
+  const wrap    = document.getElementById("ah-table-wrap");
+  const empty   = document.getElementById("ah-empty");
+  const heading = document.getElementById("ah-date-heading");
+  const tbody   = document.getElementById("ah-tbody");
+  if (!wrap || !empty || !tbody) return;
+
+  wrap.style.display  = "none";
+  empty.style.display = "block";
+  empty.textContent   = "Loading…";
+
+  try {
+    const res  = await fetch(`/api/assignments?date=${date}`);
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || "Failed");
+    const rows = data.data || [];
+    if (heading) heading.textContent = _fmtAssignDateLong(date);
+    tbody.innerHTML = rows.map(r => {
+      const account = esc(r.account_name || r.account_email || "—");
+      const texter  = r.agent_name
+        ? `<span style="font-weight:600;">${esc(r.agent_name)}</span>`
+        : `<span class="ah-unassigned">Unassigned</span>`;
+      return `<tr><td>${account}</td><td>${texter}</td></tr>`;
+    }).join("");
+    empty.style.display = "none";
+    wrap.style.display  = "block";
+  } catch (e) {
+    empty.textContent   = `Error: ${esc(String(e))}`;
+    empty.style.display = "block";
+  }
+}
+
+function _fmtAssignDate(iso) {
+  const d = new Date(iso + "T00:00:00");
+  return d.toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" });
+}
+function _fmtAssignDateLong(iso) {
+  const d = new Date(iso + "T00:00:00");
+  return d.toLocaleDateString("en-US", { weekday:"long", month:"long", day:"numeric", year:"numeric" });
 }
 
 
@@ -6498,6 +6757,13 @@ document.addEventListener("mousedown", (e) => {
     const trigger = document.getElementById("lp-trigger");
     if (popover) popover.classList.remove("show");
     if (trigger) trigger.classList.remove("open");
+  }
+
+  const ahTrigger = document.getElementById("ah-date-trigger");
+  const ahPopover = document.getElementById("ah-date-popover");
+  if (ahTrigger && ahPopover && !ahTrigger.contains(e.target) && !ahPopover.contains(e.target)) {
+    ahPopover.classList.remove("show");
+    ahTrigger.classList.remove("open");
   }
 });
 
