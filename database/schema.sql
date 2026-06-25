@@ -301,6 +301,30 @@ CREATE INDEX IF NOT EXISTS idx_flagged_reviews_agent ON flagged_conversation_rev
 -- Values: 'groq' | 'prefilter_t1' | 'prefilter_t2' | 'prefilter_t3' | 'prefilter_t4' | 'groq_override'
 ALTER TABLE conversation_scores ADD COLUMN IF NOT EXISTS source TEXT;
 
+-- ── Phase 1: per-flag explainability (additive, backward-compatible) ─────────
+-- flag_details mirrors red_flags but carries rich, rule-assigned metadata per
+-- flag: {flag_id, flag_text, severity, confidence, confidence_tier, evidence,
+-- explanation, coaching, source, origin}. red_flags (list[str]) stays the
+-- canonical identity layer — flag_details is keyed by flag_text and is NULL on
+-- legacy rows (UI falls back to plain strings).
+ALTER TABLE conversation_scores ADD COLUMN IF NOT EXISTS flag_details   JSONB;
+ALTER TABLE conversation_scores ADD COLUMN IF NOT EXISTS prompt_version TEXT;
+-- Note: conversation_scores.model_used already stores the model id (model version).
+
+-- Needs-Review queue: GIN index supports the containment query
+--   flag_details @> '[{"confidence_tier":"needs_review"}]'
+CREATE INDEX IF NOT EXISTS idx_conv_scores_flag_details
+    ON conversation_scores USING GIN(flag_details);
+
+-- ── Phase 1: structured flag feedback (supports Phase 3 learning) ────────────
+ALTER TABLE flag_feedback ADD COLUMN IF NOT EXISTS flag_id         TEXT;
+ALTER TABLE flag_feedback ADD COLUMN IF NOT EXISTS confidence      DOUBLE PRECISION;
+ALTER TABLE flag_feedback ADD COLUMN IF NOT EXISTS confidence_tier TEXT;
+ALTER TABLE flag_feedback ADD COLUMN IF NOT EXISTS prompt_version  TEXT;
+-- correctness: 'correct' | 'incorrect' | 'partial' | 'unclear' (default 'incorrect'
+-- preserves today's behaviour where any feedback row = a rejected flag).
+ALTER TABLE flag_feedback ADD COLUMN IF NOT EXISTS correctness     TEXT DEFAULT 'incorrect';
+
 -- ── tool_access (dashboard login allowlist) ───────────────────────────────────
 CREATE TABLE IF NOT EXISTS tool_access (
     id        SERIAL PRIMARY KEY,

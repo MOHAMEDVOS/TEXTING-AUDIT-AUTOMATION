@@ -7,6 +7,12 @@ from __future__ import annotations
 
 import re
 
+# Bump this whenever the scoring rules / RED_FLAGS / funnel logic change.
+# Stored on every conversation_scores row (prompt_version) so feedback and
+# audits can be tied back to the exact rule set that produced them.
+# Format: YYYY-MM-DD.N  (N = revision within the day)
+PROMPT_VERSION = "2026-06-24.1"
+
 SYSTEM_PROMPT = """You are an expert Quality Assurance Auditor for a real estate wholesaling SMS outreach team.
 Your job is to read SMS transcripts between an Agent and a Lead and grade the Agent's performance using strict, deterministic rules.
 

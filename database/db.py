@@ -284,6 +284,20 @@ class Database:
 
     async def save_conversation_score(self, conversation_id: int, score_data: dict):
         """Insert a conversation_scores row for the given conversation."""
+        import json as _json
+        from ai.prefilter._guards import build_flag_details
+        from ai.prompts import PROMPT_VERSION
+
+        # Phase 1: persist rule-assigned flag_details. Use what the caller
+        # provides, else build from red_flags (no messages here → metadata
+        # without evidence, which is still useful).
+        flag_details = score_data.get("flag_details")
+        if flag_details is None:
+            flag_details = build_flag_details(
+                score_data.get("red_flags") or [], [],
+                source=score_data.get("source"),
+            )
+
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """INSERT INTO conversation_scores
@@ -291,8 +305,9 @@ class Database:
                         professionalism_score, script_adherence_score,
                         funnel_stage, pillars_gathered, rebuttals_used,
                         label_assigned, label_correct, label_should_be, label_reason,
-                        red_flags, actions_triggered, summary, model_used)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)""",
+                        red_flags, actions_triggered, summary, model_used,
+                        flag_details, prompt_version)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::jsonb,$18)""",
                 conversation_id,
                 score_data.get("compliance_score"),
                 score_data.get("sentiment_score"),
@@ -309,6 +324,8 @@ class Database:
                 score_data.get("actions_triggered") or [],
                 score_data.get("summary"),
                 score_data.get("model_used"),
+                _json.dumps(flag_details or []),
+                score_data.get("prompt_version") or PROMPT_VERSION,
             )
 
     async def get_conversation_messages(self, conversation_id: int) -> list[dict]:

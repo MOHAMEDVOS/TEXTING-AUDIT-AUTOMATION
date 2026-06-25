@@ -15,6 +15,8 @@ import psycopg2
 from config.settings import DATABASE_URL, get_now
 from ai.analyzer import analyze_conversation
 from ai.prefilter.label_validator import _label_key as _lk
+from ai.prefilter._guards import build_flag_details
+from ai.prompts import PROMPT_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -203,6 +205,20 @@ def _is_allowed_label_name(label: str) -> bool:
     return (label or "").strip().lower() in _ALLOWED_LABELS
 
 
+def _source_from_model(model_used: str | None) -> str:
+    """Map a result's model_used string to a conversation_scores.source value."""
+    m = model_used or ""
+    if m.startswith("prefilter_t1"):
+        return "prefilter_t1"
+    if m.startswith("prefilter_t2"):
+        return "prefilter_t2"
+    if m.startswith("prefilter_t3"):
+        return "prefilter_t3"
+    if m.startswith("prefilter_t4"):
+        return "prefilter_t4"
+    return "groq"
+
+
 async def score_agent_conversations(
     agent_id: int,
     agent_name: str,
@@ -315,6 +331,11 @@ async def score_agent_conversations(
                 if _cr:
                     result["red_flags"] = _filter_flags(result["red_flags"], _cr)
 
+            # Stash the parsed messages so the post-processing step can build
+            # rule-assigned flag_details (evidence pinpointing) once all flag
+            # mutations (wrong-label injection, second filter) are complete.
+            result["_parsed_messages"] = parsed
+
             score = result.get("compliance_score")
             flags = len(result.get("red_flags") or [])
             funnel = result.get("funnel_stage_reached") or "?"
@@ -381,6 +402,18 @@ async def score_agent_conversations(
             if _cr:
                 r["red_flags"] = _filter_flags(r["red_flags"], _cr)
 
+    # ── Phase 1: build rule-assigned flag_details for the FINAL flag set ─────
+    # Runs after every flag mutation (suppression, wrong-label injection,
+    # second filter) so details attach only to surviving flags. Deterministic
+    # and local — zero extra token cost.
+    for r in per_convo:
+        _parsed = r.pop("_parsed_messages", None) or []
+        _src = _source_from_model(r.get("model_used"))
+        # build_flag_details handles every flag (wrong-label, canonical,
+        # dynamic-remap, generic) — never drops one, never duplicates.
+        r["flag_details"] = build_flag_details(r.get("red_flags") or [], _parsed, source=_src)
+        r["prompt_version"] = PROMPT_VERSION
+
     # ── Red flags: count conversations with ≥1 flag (not total mistakes) ────
     # Each flagged conversation counts as 1, regardless of how many issues it has.
     # Per-conversation details still preserve all individual flags for drill-down.
@@ -431,8 +464,10 @@ async def score_agent_conversations(
                 "label_should_be": r.get("label_should_be"),
                 "label_reason": r.get("label_reason"),
                 "red_flags": r.get("red_flags", []),
+                "flag_details": r.get("flag_details", []),
                 "summary": r.get("summary", ""),
                 "model_used": r.get("model_used"),
+                "prompt_version": r.get("prompt_version"),
             }
             for r in per_convo
         ],
@@ -581,8 +616,9 @@ async def score_agent_conversations(
                                     professionalism_score, script_adherence_score,
                                     funnel_stage, pillars_gathered, rebuttals_used,
                                     label_assigned, label_correct, label_should_be, label_reason,
-                                    red_flags, actions_triggered, summary, model_used, source)
-                               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14,$15,$16,$17)""",
+                                    red_flags, actions_triggered, summary, model_used, source,
+                                    flag_details, prompt_version)
+                               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14,$15,$16,$17,$18::jsonb,$19)""",
                             conv_id,
                             r.get("compliance_score"),
                             r.get("sentiment_score"),
@@ -600,6 +636,8 @@ async def score_agent_conversations(
                             r.get("summary"),
                             r.get("model_used"),
                             source,
+                            json.dumps(r.get("flag_details") or []),
+                            r.get("prompt_version") or PROMPT_VERSION,
                         )
                     except Exception as _e:
                         logger.error(f"[Scorer] Failed to write conversation_scores for conv_id={conv_id}: {_e}")

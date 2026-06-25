@@ -900,7 +900,8 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
                           script_adherence_score, funnel_stage, pillars_gathered,
                           rebuttals_used, label_assigned, label_correct,
                           label_should_be, label_reason, red_flags, summary, model_used,
-                          COALESCE(source, 'groq') AS source
+                          COALESCE(source, 'groq') AS source,
+                          flag_details, prompt_version
                    FROM conversation_scores
                    WHERE conversation_id = ANY($1::int[])
                    ORDER BY conversation_id, id DESC""",
@@ -919,7 +920,7 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
         if score_row:
             raw = dict(score_row)
             # Normalize JSONB fields
-            for field in ("pillars_gathered", "rebuttals_used", "red_flags"):
+            for field in ("pillars_gathered", "rebuttals_used", "red_flags", "flag_details"):
                 val = raw.get(field) or []
                 if isinstance(val, str):
                     try:
@@ -942,8 +943,10 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
                 "label_should_be":     raw.get("label_should_be"),
                 "label_reason":        raw.get("label_reason"),
                 "red_flags":           raw.get("red_flags", []),
+                "flag_details":        raw.get("flag_details", []),
                 "summary":             raw.get("summary", ""),
                 "model_used":          raw.get("model_used"),
+                "prompt_version":      raw.get("prompt_version"),
                 "source":              raw.get("source"),
             }
 
@@ -1162,6 +1165,12 @@ class RedFlagFeedbackRequest(BaseModel):
     reason:          str = ""
     category:        str = ""
     conversation_id: int | None = None
+    # Phase 1: structured feedback (all optional — UI may send what it knows)
+    flag_id:         str = ""
+    confidence:      float | None = None
+    confidence_tier: str = ""
+    prompt_version:  str = ""
+    correctness:     str = "incorrect"   # correct | incorrect | partial | unclear
 
 
 class FlagReviewRequest(BaseModel):
@@ -1920,6 +1929,17 @@ async def api_ai_status():
           }
         }
     """
+    from config.settings import PREFILTER_DISABLE_GROQ
+    if PREFILTER_DISABLE_GROQ:
+        # ML-only mode: Groq is decommissioned — no key pool to report.
+        return {"success": True, "data": {
+            "mode": "ml-only",
+            "groq_disabled": True,
+            "total_keys": 0,
+            "available_keys": 0,
+            "cooling_keys": 0,
+            "providers": {},
+        }}
     try:
         from ai.analyzer import get_pool_status
         return {"success": True, "data": get_pool_status()}
@@ -2226,14 +2246,21 @@ async def api_redflag_invalid(body: RedFlagFeedbackRequest):
                 if conv_id_row:
                     conv_id = conv_id_row["id"]
 
-            # 2. Record the human feedback
+            # 2. Record the human feedback (with Phase 1 structured fields)
             await conn.execute(
                 """INSERT INTO flag_feedback
-                   (agent_id, agent_name, contact_name, red_flag, evidence, reason, category, conversation_id)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8)""",
+                   (agent_id, agent_name, contact_name, red_flag, evidence, reason,
+                    category, conversation_id, flag_id, confidence, confidence_tier,
+                    prompt_version, correctness)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)""",
                 body.agent_id, body.agent_name, body.contact_name,
                 flag_str, body.evidence.strip(),
                 body.reason.strip(), body.category.strip(), conv_id,
+                (body.flag_id or "").strip() or None,
+                body.confidence,
+                (body.confidence_tier or "").strip() or None,
+                (body.prompt_version or "").strip() or None,
+                (body.correctness or "incorrect").strip(),
             )
 
             # 3. Remove flag from conversation_scores for this agent+contact
@@ -2390,6 +2417,77 @@ async def api_conversation_flag_reviewed(body: FlagReviewRequest):
     except Exception:
         logger.exception("Error in /api/conversation/flag-reviewed")
         raise HTTPException(status_code=500, detail="internal error")
+
+
+@app.get("/api/review-queue")
+async def api_review_queue(agent_id: int | None = None,
+                          flag_id: str | None = None,
+                          limit: int = 200):
+    """
+    Phase 1 Needs-Review queue: conversations whose latest score carries at
+    least one flag in the 'needs_review' confidence tier (fragile/low-confidence
+    flags — esp. F7/F13/F15). One record per conversation with its needs_review
+    flag_details attached.
+    """
+    import json as _json
+    limit = max(1, min(int(limit or 200), 1000))
+    params: list = []
+    where = ["latest.flag_details @> '[{\"confidence_tier\":\"needs_review\"}]'::jsonb"]
+    if agent_id is not None:
+        params.append(agent_id)
+        where.append(f"c.agent_id = ${len(params)}")
+    sql = f"""
+        WITH latest AS (
+            SELECT DISTINCT ON (cs.conversation_id)
+                   cs.conversation_id, cs.flag_details, cs.prompt_version,
+                   COALESCE(cs.source, 'groq') AS source
+            FROM conversation_scores cs
+            WHERE cs.flag_details IS NOT NULL
+            ORDER BY cs.conversation_id, cs.id DESC
+        )
+        SELECT c.agent_id, a.name AS agent_name, ct.name AS contact_name,
+               c.id AS conversation_id, c.audit_date,
+               latest.flag_details, latest.prompt_version, latest.source
+        FROM latest
+        JOIN conversations c ON c.id = latest.conversation_id
+        JOIN contacts ct     ON ct.id = c.contact_id
+        JOIN accounts a      ON a.id = c.agent_id
+        WHERE {' AND '.join(where)}
+        ORDER BY c.audit_date DESC, c.id DESC
+        LIMIT {limit}
+    """
+    try:
+        async with app.state.pool.acquire() as conn:
+            rows = await conn.fetch(sql, *params)
+
+        flag_filter = (flag_id or "").strip().upper() or None
+        out = []
+        for r in rows:
+            fd = r["flag_details"] or []
+            if isinstance(fd, str):
+                try:
+                    fd = _json.loads(fd)
+                except Exception:
+                    fd = []
+            needs = [d for d in fd if d.get("confidence_tier") == "needs_review"]
+            if flag_filter:
+                needs = [d for d in needs if (d.get("flag_id") or "").upper() == flag_filter]
+            if not needs:
+                continue
+            out.append({
+                "agent_id":        r["agent_id"],
+                "agent_name":      r["agent_name"],
+                "contact_name":    r["contact_name"],
+                "conversation_id": r["conversation_id"],
+                "audit_date":      r["audit_date"].isoformat() if r["audit_date"] else None,
+                "source":          r["source"],
+                "prompt_version":  r["prompt_version"],
+                "flags":           needs,
+            })
+        return {"success": True, "count": len(out), "items": out}
+    except Exception as exc:
+        logger.exception("Error in /api/review-queue")
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 # â"€â"€ Account Assignments â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€

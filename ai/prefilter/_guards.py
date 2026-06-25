@@ -31,7 +31,300 @@ WHITELIST_FLAG_OUTPUTS = [
     "Agent kept pushing after above-market price instead of referral close.",
     # FLAG 14 — address denial
     "Contact denied knowing the address after providing property details. Agent should have asked clarifying questions (parcel number, correct address) instead of closing the conversation. Label should be Potential or Undefined, not Bluffer.",
+    # FLAG 16 — no handoff after a valid lead push (label_validator.NO_HANDOFF_FLAG)
+    "No handoff message sent after lead push.",
 ]
+
+# ── Phase 1: stable flag IDs + rule-assigned metadata ────────────────────────
+# The whitelist text is the canonical identity used across the pipeline. These
+# maps bolt explainability metadata onto each flag WITHOUT changing red_flags
+# (which stays a list[str]). Keyed by exact whitelist text.
+
+FLAG_ID_MAP: dict[str, str] = {
+    "Continued texting after explicit opt-out.":                                  "F1",
+    "Used threatening, profane, or deceptive language.":                          "F2",
+    "Stated a specific dollar offer.":                                            "F3",
+    "Gave up after first no with zero rebuttal.":                                 "F4",
+    "Continued original pitch after wrong number.":                              "F5",
+    "Agreed to call without pre-qualifying.":                                     "F6",
+    "Revealed or promised 6+ month timeline.":                                    "F7",
+    "Sent incoherent message or wrong name.":                                     "F8",
+    "Ended conversation after lead showed interest.":                             "F9",
+    "Pushed to close with zero property info.":                                   "F10",
+    "Did not escalate after all 4 pillars gathered.":                             "F11",
+    "Skipped $1k referral close after high price.":                               "F12",
+    "Agent re-asked for asking price after owner already stated it.":             "F13",
+    "Agent kept pushing after above-market price instead of referral close.":     "F15",
+    "Contact denied knowing the address after providing property details. Agent should have asked clarifying questions (parcel number, correct address) instead of closing the conversation. Label should be Potential or Undefined, not Bluffer.": "F14",
+    "No handoff message sent after lead push.":                                    "F16",
+}
+
+# Severity is a fixed business attribute of the flag — never model-decided.
+SEVERITY_MAP: dict[str, str] = {
+    "F1": "critical", "F2": "high",   "F3": "critical", "F4": "high",
+    "F5": "high",     "F6": "medium", "F7": "medium",   "F8": "high",
+    "F9": "high",     "F10": "medium","F11": "medium",  "F12": "medium",
+    "F13": "low",     "F14": "medium","F15": "medium", "F16": "medium",
+}
+
+# Rule-assigned confidence by detection strength (no model confidence available).
+#   regex-verified compliance → 0.90 | guard-verified flow → 0.80
+#   model-judgment-only       → 0.60 | fragile regex (F13)  → 0.40
+CONFIDENCE_MAP: dict[str, float] = {
+    "F1": 0.90, "F2": 0.90, "F3": 0.90, "F4": 0.80, "F5": 0.80,
+    "F6": 0.60, "F7": 0.60, "F8": 0.60, "F9": 0.60, "F10": 0.60,
+    "F11": 0.60, "F12": 0.60, "F13": 0.40, "F14": 0.60, "F15": 0.60,
+    "F16": 0.85,
+}
+
+# Context-heavy / fragile flags routed to Needs-Review more aggressively
+# (needs_review whenever confidence < 0.75 instead of the default < 0.55).
+REVIEW_BIAS: set[str] = {"F7", "F13", "F15"}
+
+WRONG_LABEL_FLAG_ID = "WRONG_LABEL"
+SEVERITY_MAP[WRONG_LABEL_FLAG_ID] = "medium"
+CONFIDENCE_MAP[WRONG_LABEL_FLAG_ID] = 0.70
+
+DEFAULT_COACHING: dict[str, str] = {
+    "F1": "Reinforce that any opt-out (stop/remove me) means stop immediately — no further messages.",
+    "F2": "Review professional tone standards; the agent must stay polite regardless of the lead.",
+    "F3": "Coach the agent to give a cash range, never a firm single-number offer over text.",
+    "F4": "Send at least one scripted rebuttal (Future / Other Properties / $1k Referral) before exiting a soft no.",
+    "F5": "On a wrong number, apologise and pivot to a referral ask — stop the original pitch.",
+    "F6": "Gather at least one pillar before agreeing to a scheduled call.",
+    "F7": "Confirm the lead's actual timeline before introducing a 6-month future window.",
+    "F8": "Proofread before sending; verify the contact's correct name.",
+    "F9": "Close an engaged lead with a handoff message instead of going silent.",
+    "F10": "Collect basic property info before pushing for a call.",
+    "F11": "When all pillars are gathered, escalate with a clear call-to-action.",
+    "F12": "On a high/above-market price, use the $1k referral close before ending.",
+    "F13": "Acknowledge the price the owner already stated — don't re-ask for it.",
+    "F14": "On a push label, always send a handoff message (partner/team will reach out).",
+    "F15": "On an above-market price, switch to the referral close rather than continuing to push.",
+    "F16": "A pushed lead must be closed with a handoff message — coach the agent to always tell the lead the team will reach out.",
+    WRONG_LABEL_FLAG_ID: "Re-label the conversation per the audit; review the labelling rule that was missed.",
+}
+
+EXPLAIN_TEMPLATE: dict[str, str] = {
+    "F1": "The lead used explicit opt-out language and the agent kept messaging.",
+    "F2": "An agent message contained threatening, profane, or deceptive language.",
+    "F3": "The agent stated a specific firm dollar offer instead of a range.",
+    "F4": "The lead gave a soft 'no' and the agent stopped without any rebuttal.",
+    "F5": "The lead said wrong number and the agent continued the original pitch.",
+    "F6": "The agent agreed to a call before gathering any qualifying pillar.",
+    "F7": "The agent introduced a 6+ month timeline before confirming a shorter one.",
+    "F8": "An agent message was incoherent or used the wrong contact name.",
+    "F9": "The lead showed interest and the agent went silent without a handoff.",
+    "F10": "The agent pushed to close with zero property information gathered.",
+    "F11": "All four pillars were gathered but the agent did not escalate to a call.",
+    "F12": "The lead gave a high price and the agent ended without the $1k referral close.",
+    "F13": "The owner already stated an asking price and the agent re-asked for it.",
+    "F14": "A push label was assigned but no handoff message was sent.",
+    "F15": "The lead's price was above market and the agent kept pushing instead of the referral close.",
+    "F16": "The lead was pushed (hand raise) but the agent never sent a handoff message.",
+    WRONG_LABEL_FLAG_ID: "The audit found the assigned label does not match the conversation.",
+}
+
+
+def flag_id_for(text: str) -> str:
+    """Return the stable F-code for a whitelist flag string ('' if unknown)."""
+    return FLAG_ID_MAP.get((text or "").strip(), "")
+
+
+def confidence_tier(flag_id: str, confidence: float) -> str:
+    """Map a confidence score to a tier, with a stricter bar for fragile flags."""
+    bar = 0.75 if flag_id in REVIEW_BIAS else 0.55
+    if confidence < bar:
+        return "needs_review"
+    if confidence < 0.80:
+        return "medium"
+    return "high"
+
+
+def _msg_fields(m: dict) -> tuple[str, str]:
+    """Return (sender_lower, body) for a parsed message dict."""
+    sender = (m.get("sender") or "").strip().lower()
+    body = (m.get("message") or m.get("body") or "").strip()
+    return sender, body
+
+
+def _ev(m: dict, idx: int) -> dict:
+    """Build one evidence entry from a message + its index."""
+    sender = (m.get("sender") or "").strip() or "Unknown"
+    body = (m.get("message") or m.get("body") or "").strip()
+    quote = body if len(body) <= 240 else body[:237] + "..."
+    return {"seq": m.get("seq", idx), "sender": sender, "quote": quote}
+
+
+def extract_evidence(flag_id: str, messages: list[dict]) -> list[dict]:
+    """
+    Re-match the detector that fires a flag to pinpoint the offending message(s).
+
+    Reuses the existing module regexes/guards. For model-judgment-only flags
+    that have no deterministic detector (F6/F8/F9/F10/F11/F12), returns [] —
+    the UI then falls back to the full transcript.
+    """
+    msgs = messages or []
+
+    def _first_contact(rx) -> list[dict]:
+        for i, m in enumerate(msgs):
+            s, b = _msg_fields(m)
+            if s in ("contact", "lead") and rx.search(b):
+                return [_ev(m, i)]
+        return []
+
+    def _first_agent(rx) -> list[dict]:
+        for i, m in enumerate(msgs):
+            s, b = _msg_fields(m)
+            if s and s not in ("contact", "lead") and rx.search(b):
+                return [_ev(m, i)]
+        return []
+
+    def _contact_then_next_agent(rx) -> list[dict]:
+        for i, m in enumerate(msgs):
+            s, b = _msg_fields(m)
+            if s in ("contact", "lead") and rx.search(b):
+                out = [_ev(m, i)]
+                for j in range(i + 1, len(msgs)):
+                    s2, _ = _msg_fields(msgs[j])
+                    if s2 and s2 not in ("contact", "lead"):
+                        out.append(_ev(msgs[j], j))
+                        break
+                return out
+        return []
+
+    if flag_id == "F1":
+        return _contact_then_next_agent(OPTOUT_TEXT_RE)
+    if flag_id == "F2":
+        return _first_agent(PROFANITY_RE)
+    if flag_id == "F3":
+        return _first_agent(DOLLAR_OFFER_RE)
+    if flag_id == "F4":
+        ev = _first_contact(SOFT_NO_RE)
+        # add the agent's final message (the weak exit) if present
+        for j in range(len(msgs) - 1, -1, -1):
+            s, _ = _msg_fields(msgs[j])
+            if s and s not in ("contact", "lead"):
+                ev = ev + [_ev(msgs[j], j)]
+                break
+        return ev
+    if flag_id == "F5":
+        return _contact_then_next_agent(WRONG_NUMBER_RE)
+    if flag_id == "F7":
+        return _first_agent(TIMELINE_RE)
+    if flag_id == "F13":
+        return _first_agent(PILLAR_FLAG_RE)
+    if flag_id == "F15":
+        return _first_contact(DNC_JOKE_PRICE_RE)
+    # F6, F8, F9, F10, F11, F12, F14, WRONG_LABEL: no clean single-message detector
+    return []
+
+
+# Dynamic / prefilter flag families → nearest canonical F-code (substring).
+# The prefilter and label_validator emit flag phrasings that are NOT in the
+# 15-string whitelist (e.g. "Re-asked closing timeline same day...", dynamic
+# above-market price flags). These map them to the nearest family so they still
+# get a severity + tier + routing; the original text stays as the explanation.
+_DYNAMIC_REMAP: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\bre-?asked\b", re.I),                          "F13"),
+    (re.compile(r"inflated price|above[\s-]?market", re.I),       "F15"),
+    (re.compile(r"\bno handoff\b", re.I),                         "F14"),
+    (re.compile(r"missed pillars?", re.I),                        "F11"),
+    (re.compile(r"opt[\s-]?out|unsubscribe|stop\s+text", re.I),   "F1"),
+]
+
+
+def _remap_dynamic_flag(text: str) -> str:
+    for rx, fid in _DYNAMIC_REMAP:
+        if rx.search(text or ""):
+            return fid
+    return ""
+
+
+def _detail_for(fid: str, text: str, messages, source, *, canonical: bool) -> dict:
+    conf = CONFIDENCE_MAP.get(fid, 0.60)
+    return {
+        "flag_id": fid,
+        "flag_text": text.strip(),
+        "severity": SEVERITY_MAP.get(fid, "medium"),
+        "confidence": conf,
+        "confidence_tier": confidence_tier(fid, conf),
+        "evidence": extract_evidence(fid, messages),
+        # Canonical flags use the curated template; remapped/dynamic flags keep
+        # their own (more specific) text as the explanation.
+        "explanation": EXPLAIN_TEMPLATE.get(fid, "") if canonical else text.strip(),
+        "coaching": DEFAULT_COACHING.get(fid, ""),
+        "source": source or "groq",
+        "origin": "deterministic",
+    }
+
+
+def _detail_wrong_label(text: str, source) -> dict:
+    """Wrong-label detail — flag_text is the EXACT original string so the
+    dashboard's flag_details lookup matches (prefilter wrong-label flags may
+    carry suffixes like \"(contact said: 'six million')\")."""
+    fid = WRONG_LABEL_FLAG_ID
+    conf = CONFIDENCE_MAP[fid]
+    return {
+        "flag_id": fid,
+        "flag_text": text.strip(),
+        "severity": SEVERITY_MAP[fid],
+        "confidence": conf,
+        "confidence_tier": confidence_tier(fid, conf),
+        "evidence": [],
+        "explanation": text.strip(),   # the string already explains itself
+        "coaching": DEFAULT_COACHING[fid],
+        "source": source or "groq",
+        "origin": "deterministic",
+    }
+
+
+def _detail_generic(text: str, source) -> dict:
+    """Catch-all so NO flag is ever dropped from flag_details."""
+    conf = 0.60
+    return {
+        "flag_id": "OTHER",
+        "flag_text": text.strip(),
+        "severity": "medium",
+        "confidence": conf,
+        "confidence_tier": "medium",
+        "evidence": [],
+        "explanation": text.strip(),
+        "coaching": "Review this flag against the conversation transcript.",
+        "source": source or "groq",
+        "origin": "deterministic",
+    }
+
+
+def build_flag_details(flags, messages, source=None) -> list[dict]:
+    """
+    Build rich, rule-assigned flag_details for a list of red-flag strings.
+    EVERY flag produces exactly one detail object (never dropped); flag_text
+    always equals the original string so the dashboard can match it. Pure /
+    deterministic — no model or API calls, zero extra token cost.
+
+    Resolution order per flag: wrong-label → exact whitelist (canonical) →
+    dynamic family remap → generic 'OTHER'.
+    """
+    out: list[dict] = []
+    for text in flags or []:
+        if not isinstance(text, str) or not text.strip():
+            continue
+        t = text.strip()
+        if t.lower().startswith("wrong label:"):
+            out.append(_detail_wrong_label(t, source))
+            continue
+        fid = flag_id_for(t)
+        if fid:
+            out.append(_detail_for(fid, t, messages, source, canonical=True))
+            continue
+        fid = _remap_dynamic_flag(t)
+        if fid:
+            out.append(_detail_for(fid, t, messages, source, canonical=False))
+            continue
+        out.append(_detail_generic(t, source))
+    return out
+
 
 # ── Regex constants ──────────────────────────────────────────────────────────
 

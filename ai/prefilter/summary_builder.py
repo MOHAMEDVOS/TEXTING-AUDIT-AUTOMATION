@@ -750,6 +750,102 @@ def classify_agent_messages(messages: list[dict]) -> dict:
     return counts
 
 
+# ── Deterministic AGENT tone / professionalism scoring ───────────────────────
+# Replaces the old hardcoded constants in Tier 4 (sentiment=88, professionalism=90).
+# Scores the AGENT's own behaviour ONLY — a hostile lead never lowers these.
+
+_GREETING_RE = re.compile(
+    r"\b(hi|hello|hey|good\s+(morning|afternoon|evening))\b", re.I,
+)
+_POLITE_RE = re.compile(
+    r"\b(please|thank(?:s| you)?|appreciate|no\s+worries|happy\s+to|glad\s+to|"
+    r"of\s+course|absolutely|my\s+pleasure|sounds\s+good|will\s+do)\b", re.I,
+)
+_EMPATHY_RE = re.compile(
+    r"\b(sorry\s+to\s+hear|i\s+understand|totally\s+get|no\s+problem|"
+    r"take\s+your\s+time|completely\s+understand|i\s+hear\s+you|that\s+makes\s+sense)\b",
+    re.I,
+)
+_F2_PROFANITY = "Used threatening, profane, or deceptive language."
+_F8_INCOHERENT = "Sent incoherent message or wrong name."
+
+
+def _agent_bodies(agent_msgs: list[dict]) -> list[str]:
+    out = [(m.get("body") or m.get("message") or "").strip() for m in agent_msgs]
+    return [b for b in out if b]
+
+
+def _is_shout(text: str) -> bool:
+    """True for ALL-CAPS shouting (>70% uppercase letters over a non-trivial msg)."""
+    letters = [c for c in text if c.isalpha()]
+    if len(letters) < 12:
+        return False
+    upper = sum(1 for c in letters if c.isupper())
+    return (upper / len(letters)) > 0.70
+
+
+def score_agent_sentiment(
+    agent_msgs: list[dict],
+    flags: list[str],
+    msg_cls: dict,
+) -> int:
+    """Deterministic AGENT warmth/tone score (0-100). Grades the agent's words
+    only — lead hostility never lowers it."""
+    bodies = _agent_bodies(agent_msgs)
+    if not bodies:
+        return 80
+    text = " ".join(bodies).lower()
+    score = 84.0
+    # ── Warmth markers ──
+    if _GREETING_RE.search(bodies[0]):
+        score += 3
+    if _POLITE_RE.search(text):
+        score += 5
+    if _EMPATHY_RE.search(text):
+        score += 4
+    # ── Effort = warmth through genuine engagement ──
+    if msg_cls.get("rebuttals", 0) >= 1:
+        score += 3
+    if msg_cls.get("pillar_questions", 0) >= 1:
+        score += 2
+    if msg_cls.get("follow_ups", 0) >= 1:
+        score += 1
+    # ── Agent-side negatives ──
+    if _F2_PROFANITY in flags:
+        score -= 45
+    avg_len = sum(len(b) for b in bodies) / len(bodies)
+    if avg_len < 18 and not _GREETING_RE.search(text) and not _POLITE_RE.search(text):
+        score -= 9   # curt / robotic openers, no human touch
+    if msg_cls.get("rebuttal_count_exceeded"):
+        score -= 5   # overly pushy past the 3-rebuttal script cap
+    if any(_is_shout(b) for b in bodies):
+        score -= 6
+    return max(0, min(100, round(score)))
+
+
+def score_agent_professionalism(agent_msgs: list[dict], flags: list[str]) -> int:
+    """Deterministic AGENT professionalism/conduct score (0-100). Penalizes only
+    the agent's own incoherence, profanity, shouting, and sloppiness."""
+    bodies = _agent_bodies(agent_msgs)
+    if not bodies:
+        return 88
+    score = 92.0
+    if _F8_INCOHERENT in flags:
+        score -= 35
+    if _F2_PROFANITY in flags:
+        score -= 45
+    if any(_is_shout(b) for b in bodies):
+        score -= 8
+    if any(re.search(r"[!?]{3,}", b) for b in bodies):
+        score -= 4   # excessive punctuation
+    if sum(1 for b in bodies if len(b) < 5) >= 2:
+        score -= 5   # fragmented one-word spam
+    avg_len = sum(len(b) for b in bodies) / len(bodies)
+    if avg_len >= 30 and score >= 90:
+        score += 2   # clean, complete messaging
+    return max(0, min(100, round(score)))
+
+
 def _count_rebuttals(agent_msgs: list[dict], contact_msgs: list[dict]) -> int:
     """Legacy shim — kept for callers that pass separate lists.
     Use classify_agent_messages(all_messages) for accurate results."""
@@ -1220,28 +1316,39 @@ def detect_label(
 
 
 def detect_funnel_stage(messages: list[dict]) -> str:
-    """Detect approximate funnel stage from conversation content."""
+    """Detect approximate funnel stage from conversation content.
+
+    Stage is driven primarily by the number of pillars the LEAD actually
+    answered (not topic keywords the agent merely asked about). Any genuine
+    contact engagement reaches at least the top of the funnel; non-engagement
+    tones (silent / hostile / wrong number / sold) carry no funnel progression.
+    """
     agent_msgs   = [m for m in messages if (m.get("sender") or "").lower() != "contact"]
     contact_msgs = [m for m in messages if (m.get("sender") or "").lower() == "contact"]
 
     if not contact_msgs:
-        return "none"
+        # One-sided outreach: the agent has at least opened the funnel.
+        return "initial_contact" if agent_msgs else "none"
 
     tone = _classify_contact_tone(contact_msgs)
-    if tone in ("silent", "hostile", "wrong_number", "emoji_only"):
+    # Tones with no real funnel progression.
+    if tone in ("silent", "hostile", "wrong_number", "emoji_only", "already_sold"):
         return "none"
 
-    if tone in ("interested", "maybe"):
-        # Count pillars the LEAD actually answered — not topic keywords the
-        # agent merely asked about (that inflated the funnel stage).
-        pillar_hits = len(detect_gathered_pillars(messages))
-        if pillar_hits >= 3:
-            return "mid_funnel"
-        if pillar_hits >= 1:
-            return "wide_funnel"
-        return "initial_contact"
+    # Pillars the LEAD positively answered drive the stage.
+    pillar_hits = len(detect_gathered_pillars(messages))
+    if pillar_hits >= 4:
+        return "narrow_funnel"
+    if pillar_hits >= 3:
+        return "mid_funnel"
+    if pillar_hits >= 1:
+        return "wide_funnel"
 
-    return "none"
+    # Engaged but no pillars yet — a hand raise sits at the wide top of funnel;
+    # a brief/soft reply is still initial contact.
+    if tone in ("interested", "maybe", "potential"):
+        return "wide_funnel"
+    return "initial_contact"
 
 
 def _get_snippet(msg: dict, max_len: int = 50) -> str:

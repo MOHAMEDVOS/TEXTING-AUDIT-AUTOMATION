@@ -453,6 +453,13 @@ def _call_groq_reflect(clusters: list[dict]) -> list[dict]:
 
     Returns list of rule dicts with keys: rule_text, category, source_flags
     """
+    from config.settings import PREFILTER_DISABLE_GROQ
+    if PREFILTER_DISABLE_GROQ:
+        # ML-only mode: Groq is decommissioned and is not trusted to synthesize
+        # rules. Rule learning from clusters is paused until a deterministic
+        # synthesizer replaces this path.
+        logger.info("[DreamWorker] ML-only mode — skipping Groq rule synthesis")
+        return []
     try:
         from ai.analyzer import _pool
 

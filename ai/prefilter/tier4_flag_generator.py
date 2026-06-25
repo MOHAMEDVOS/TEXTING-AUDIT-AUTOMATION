@@ -47,6 +47,8 @@ from ai.prefilter.summary_builder import (
     detect_funnel_stage,
     classify_agent_messages,
     detect_abv_mv_response,
+    score_agent_sentiment,
+    score_agent_professionalism,
 )
 from ai.prefilter.pillar_detection import detect_gathered_pillars
 
@@ -231,13 +233,21 @@ def generate(
     agent_name: str,
     contact_name: str,
     assigned_labels: list[str] | None = None,
+    funnel_tier: str = "NF",
 ) -> dict:
     """
     Run the deterministic T4 flag generator.
 
+    funnel_tier (WF/MF/NF) is used by the label validator — a Wide-Funnel push
+    only needs a hand raise, so the tier must be known to avoid false
+    wrong-label flags.
+
     Returns a complete result dict matching the analyzer schema.
     """
     assigned_labels = assigned_labels or []
+    funnel_tier = (funnel_tier or "NF").upper().strip()
+    if funnel_tier not in ("WF", "MF", "NF"):
+        funnel_tier = "NF"
 
     agent_msgs = [
         m for m in messages
@@ -355,6 +365,22 @@ def generate(
             # If agent's last message is short and doesn't continue the conversation
             if len(last_body) < 30 and not any(w in last_body for w in ["?", "call", "schedule", "when"]):
                 raw_flags.append("Ended conversation after lead showed interest.")
+
+    # ── FLAG 16: No handoff message sent after a valid lead push ──────
+    # A pushed lead (label "Lead/Lead Pushed/Pushed to client/...") whose
+    # contact raised a hand MUST be closed with a handoff. Missing handoff =
+    # script violation. Reuses label_validator's push + hand-raise detection.
+    try:
+        from ai.prefilter.label_validator import (
+            _is_push_label, _contact_raised_hand, NO_HANDOFF_FLAG,
+        )
+        _assigned_str = ", ".join(assigned_labels) if assigned_labels else ""
+        if (_is_push_label(_assigned_str)
+                and not agent_handed_off
+                and _contact_raised_hand(messages)):
+            raw_flags.append(NO_HANDOFF_FLAG)
+    except Exception as _e:
+        logger.debug("[T4] no-handoff check skipped: %r", _e)
 
     # ── Shared vars (used by FLAG 10, 11, 12, and result builder) ─────
     agent_text = " ".join(
@@ -492,17 +518,19 @@ def generate(
         logger.debug("[T4] learned-flag suppression skipped: %r", e)
 
     # ── Build scores ────────────────────────────────────────────────
-    # Calibrated to match Groq's typical score distribution:
-    # Clean conversations: ~90-95 range; flagged: ~70-85 range
+    # Compliance + script move with flags; sentiment + professionalism are now
+    # REAL deterministic measures of the agent's tone and conduct (previously
+    # hardcoded constants of 88 / 90).
     n_flags = len(final_flags)
     compliance = max(70, 95 - (n_flags * 12))
-    sentiment = 88
-    professionalism = 90
+    sentiment = score_agent_sentiment(agent_msgs, final_flags, _msg_cls)
+    professionalism = score_agent_professionalism(agent_msgs, final_flags)
     script = max(75, 95 - (n_flags * 8))
 
     if not contact_msgs:
-        sentiment = 82
-        script = 92
+        # One-sided outreach (no replies yet) — keep script lenient and cap
+        # compliance; sentiment/professionalism already handled per-agent.
+        script = max(script, 92)
         compliance = min(compliance, 95)
 
     scores = {
@@ -516,13 +544,27 @@ def generate(
     label_name, label_reason = detect_label(messages, contact_name)
     funnel_stage = detect_funnel_stage(messages)
 
-    # Check assigned label correctness
+    # Check assigned label correctness via the deterministic label validator
+    # (covers Wrong Number, Sold, ABV MV, Push, FU drip — not just DNC). The
+    # validator is conservative: it returns label_correct=None to defer when it
+    # cannot decide, so we never manufacture a wrong-label flag on ambiguity.
     label_correct = True
     label_should_be = None
     if assigned_labels:
         assigned_str = ", ".join(assigned_labels)
-        # Simple correctness: we only flag DNC mismatches (most common error)
-        if contact_has_explicit_opt_out(messages) or contact_has_dnc_joke_price(messages):
+        try:
+            from ai.prefilter.label_validator import validate_label
+            vr = validate_label(messages, assigned_str, funnel_tier)
+            if vr.get("label_correct") is False:
+                should = (vr.get("label_should_be") or "").strip()
+                if should and should.lower().strip() != assigned_str.lower().strip():
+                    label_correct = False
+                    label_should_be = should
+                    label_reason = vr.get("label_reason") or label_reason
+        except Exception as _e:
+            logger.debug("[T4] validate_label skipped: %r", _e)
+        # Explicit opt-out / joke-price always force DO Not Call (safety net)
+        if label_correct and (contact_has_explicit_opt_out(messages) or contact_has_dnc_joke_price(messages)):
             has_dnc = any("not call" in l.lower() or "dnc" in l.lower() for l in assigned_labels)
             if not has_dnc:
                 label_correct = False

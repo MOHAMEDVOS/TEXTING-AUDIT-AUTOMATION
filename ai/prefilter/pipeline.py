@@ -114,7 +114,50 @@ def run_prefilter(
         _try_semantic_capture(conversation_id, messages, decision.result)
         return decision.result
 
+    # Decision was "escalate" (T1 suspicious, or all tiers passed + T4 off).
+    # ML-only mode: never hand off to Groq — finalize with terminal T4 instead.
+    if settings.PREFILTER_DISABLE_GROQ:
+        terminal = _force_terminal_t4(messages, agent_name, contact_name, ft, assigned_labels)
+        if terminal is not None:
+            logger.info(
+                f"[Prefilter] {contact_name}: ML-ONLY terminal T4 "
+                f"(would have escalated at tier {decision.tier_hit}) — Groq disabled"
+            )
+            _try_semantic_capture(conversation_id, messages, terminal.result)
+            return terminal.result
+        logger.warning(
+            f"[Prefilter] {contact_name}: ML-only terminal T4 produced no result — "
+            f"returning None (analyzer will apply a Groq-free default)"
+        )
+
     return None
+
+
+def _force_terminal_t4(
+    messages: list[dict],
+    agent_name: str,
+    contact_name: str,
+    funnel_tier: str,
+    assigned_labels: list[str] | None,
+) -> Optional[PrefilterResult]:
+    """Run the deterministic Tier 4 generator as a guaranteed terminal result
+    (used by ML-only mode so a would-be Groq escalation stays local). Never raises."""
+    try:
+        from . import tier4_flag_generator
+        t4_result = tier4_flag_generator.generate(
+            messages, agent_name, contact_name,
+            assigned_labels=assigned_labels, funnel_tier=funnel_tier,
+        )
+        return PrefilterResult(
+            tier_hit=4,
+            decision="short_circuit",
+            confidence=0.60,
+            result=t4_result,
+            notes="t4-terminal-ml-only",
+        )
+    except Exception as e:
+        logger.warning(f"[Prefilter] terminal T4 failed for {contact_name}: {e}")
+        return None
 
 
 def _try_semantic_capture(
@@ -179,6 +222,7 @@ def _run_tiers(
             t4_result = tier4_flag_generator.generate(
                 messages, agent_name, contact_name,
                 assigned_labels=assigned_labels,
+                funnel_tier=funnel_tier,
             )
             return PrefilterResult(
                 tier_hit=4,

@@ -2677,6 +2677,17 @@ function renderChatMessages(msgs, convo) {
   setTimeout(() => { el.scrollTop = el.scrollHeight; }, 60);
 }
 
+function confBadge(tier, conf) {
+  const map = {
+    high:         ["#059669", "rgba(5,150,105,.14)",  "High"],
+    medium:       ["#D97706", "rgba(217,119,6,.14)",  "Medium"],
+    needs_review: ["#DC2626", "rgba(220,38,38,.16)",  "Needs Review"],
+  };
+  const [col, bg, lbl] = map[tier] || ["#64748B", "rgba(100,116,139,.14)", "—"];
+  const pct = (conf != null && conf !== "") ? ` ${Math.round(conf * 100)}%` : "";
+  return `<span style="display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:99px;background:${bg};border:1px solid ${col}44;color:${col};font-size:.56rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;flex-shrink:0;">${lbl}${pct}</span>`;
+}
+
 function renderAiAnalysis(a, invalidatedFlags) {
   const el = document.getElementById("ch-ai");
   const invalidatedSet = new Set((invalidatedFlags || []).map(f => f.trim()));
@@ -2721,6 +2732,8 @@ function renderAiAnalysis(a, invalidatedFlags) {
 
   const flags   = a.red_flags || [];
   const pillars = a.pillars_gathered || [];
+  const fdMap   = {};
+  (a.flag_details || []).forEach(d => { if (d && d.flag_text) fdMap[String(d.flag_text).trim()] = d; });
 
   el.innerHTML = `
     <div style="padding:.6rem 1.1rem;background:var(--surface-subtle);border-bottom:1px solid var(--surface-border);display:flex;align-items:center;gap:8px;">
@@ -2755,12 +2768,28 @@ function renderAiAnalysis(a, invalidatedFlags) {
           <div style="font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--danger);margin-bottom:5px;">Red Flags</div>
           ${flags.map(f => {
             const isInvalid = invalidatedSet.has(f.trim());
-            return `<div class="rf-row${isInvalid ? " rf-invalidated" : ""}" style="display:flex;align-items:flex-start;gap:6px;margin-top:4px;">
-              <span class="rf-text" style="font-size:.72rem;color:var(--danger);opacity:.85;line-height:1.45;flex:1;">· ${esc(f)}</span>
-              <button class="btn-not-valid${isInvalid ? " rf-done" : ""}"
-                data-flag="${esc(f)}"
-                onclick="openNotValidModal(this)"
-                ${isInvalid ? "disabled" : ""}>${isInvalid ? "✓ Invalid" : "Not Valid"}</button>
+            const d = fdMap[String(f).trim()] || null;
+            const badge = d ? confBadge(d.confidence_tier, d.confidence) : "";
+            const expl = (d && d.explanation) ? `<div style="margin-top:3px;font-size:.64rem;color:var(--text-secondary);line-height:1.4;font-style:italic;">${esc(d.explanation)}</div>` : "";
+            const evid = (d && d.evidence && d.evidence.length) ? `
+              <div style="margin-top:4px;display:flex;flex-direction:column;gap:3px;">
+                ${d.evidence.map(e => `<div style="font-size:.64rem;color:var(--text-muted);line-height:1.4;padding:3px 7px;background:var(--surface-subtle);border-left:2px solid ${String(e.sender||'').toLowerCase().includes('agent')?'#7C3AED':'#0891B2'};border-radius:0 4px 4px 0;"><strong style="color:var(--text-secondary);">${esc(e.sender)}:</strong> ${esc(e.quote)}</div>`).join("")}
+              </div>` : "";
+            const coach = (d && d.coaching) ? `<div style="margin-top:4px;font-size:.63rem;color:#38BDF8;line-height:1.4;"><strong>Coach:</strong> ${esc(d.coaching)}</div>` : "";
+            return `<div class="rf-row${isInvalid ? " rf-invalidated" : ""}" style="display:block;margin-top:7px;padding-top:6px;border-top:1px solid rgba(239,68,68,.12);">
+              <div style="display:flex;align-items:flex-start;gap:6px;">
+                <span class="rf-text" style="font-size:.72rem;color:var(--danger);opacity:.9;line-height:1.45;flex:1;">${d && d.flag_id ? `<strong style="opacity:.7;">[${esc(d.flag_id)}]</strong> ` : "· "}${esc(f)}</span>
+                ${badge}
+                <button class="btn-not-valid${isInvalid ? " rf-done" : ""}"
+                  data-flag="${esc(f)}"
+                  data-flag-id="${d ? esc(d.flag_id || "") : ""}"
+                  data-confidence="${d && d.confidence != null ? d.confidence : ""}"
+                  data-confidence-tier="${d ? esc(d.confidence_tier || "") : ""}"
+                  data-prompt-version="${esc(a.prompt_version || "")}"
+                  onclick="openNotValidModal(this)"
+                  ${isInvalid ? "disabled" : ""}>${isInvalid ? "✓ Invalid" : "Not Valid"}</button>
+              </div>
+              ${expl}${evid}${coach}
             </div>`;
           }).join("")}
         </div>` : ""}
@@ -3690,7 +3719,14 @@ function _showUnassignedBlock(blockedNames, reason = "texter") {
 let _nvmCtx = {};
 
 function openNotValidModal(btn) {
-  _nvmCtx = { btn, flag: btn.dataset.flag };
+  _nvmCtx = {
+    btn,
+    flag:            btn.dataset.flag,
+    flag_id:         btn.dataset.flagId || "",
+    confidence:      btn.dataset.confidence !== "" ? parseFloat(btn.dataset.confidence) : null,
+    confidence_tier: btn.dataset.confidenceTier || "",
+    prompt_version:  btn.dataset.promptVersion || "",
+  };
   document.getElementById("nvm-flag-text").textContent = _nvmCtx.flag;
 
   const overlay = document.getElementById("notValidModal");
@@ -3717,6 +3753,11 @@ async function submitNotValid() {
     reason:          "",
     category:        "",
     conversation_id: currentConversationId,
+    flag_id:         _nvmCtx.flag_id || "",
+    confidence:      _nvmCtx.confidence,
+    confidence_tier: _nvmCtx.confidence_tier || "",
+    prompt_version:  _nvmCtx.prompt_version || "",
+    correctness:     "incorrect",
   };
 
   try {

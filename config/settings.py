@@ -100,6 +100,12 @@ PREFILTER_T2_LIVE       = os.getenv("PREFILTER_T2_LIVE", "false").lower() == "tr
 PREFILTER_T3_LIVE       = os.getenv("PREFILTER_T3_LIVE", "false").lower() == "true"
 PREFILTER_T4_LIVE       = os.getenv("PREFILTER_T4_LIVE", "true").lower() == "true"
 
+# ML-only mode (DEFAULT): the prefilter NEVER escalates to Groq. Every
+# conversation that no tier short-circuits is finalized by the terminal Tier 4
+# deterministic generator instead. Groq is fully decommissioned. Reversible —
+# set PREFILTER_DISABLE_GROQ=false to restore the Groq escalation path.
+PREFILTER_DISABLE_GROQ  = os.getenv("PREFILTER_DISABLE_GROQ", "true").lower() == "true"
+
 # Tier 2 confidence: cosine-similarity threshold + min cluster size.
 PREFILTER_T2_SIM_THRESHOLD = float(os.getenv("PREFILTER_T2_SIM_THRESHOLD", "0.85"))
 PREFILTER_T2_MIN_NEIGHBORS = int(os.getenv("PREFILTER_T2_MIN_NEIGHBORS", "3"))

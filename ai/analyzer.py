@@ -18,7 +18,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from config.settings import GROQ_MODEL, PROJECT_ROOT
+from config.settings import GROQ_MODEL, PROJECT_ROOT, PREFILTER_DISABLE_GROQ
 from config.rate_limiter import get_rate_limiter, groq_key_bucket
 from ai.prompts import get_system_prompt, format_for_analysis
 from ai.providers.base import (
@@ -460,10 +460,17 @@ class KeyPoolManager:
             cur.close()
             conn.close()
         except Exception as e:
-            raise ValueError(f"Could not load Groq keys from database: {e}") from e
+            # ML-only mode: Groq is optional. A DB/key error must not crash the
+            # system — leave the pool empty and let the (guarded) callers no-op.
+            logger.warning(f"[Pool] Could not load Groq keys (Groq disabled): {e}")
+            return
 
         if not key_list:
-            raise ValueError("No Groq API keys found in the api_keys table")
+            logger.warning(
+                "[Pool] No Groq keys in api_keys table — Groq pool empty "
+                "(expected in ML-only mode)"
+            )
+            return
 
         from ai.providers.groq_provider import GroqProvider
 
@@ -705,6 +712,16 @@ def analyze_conversation(
             return prefilter_result
     except Exception as e:
         logger.warning(f"[Analyzer] Prefilter failed for {contact_name}: {e}")
+
+    # ── ML-only mode: Groq is disabled — never reach the Groq pool ──────
+    # run_prefilter already returns a terminal T4 result in this mode; getting
+    # here means an edge case (prefilter disabled, no messages, or T4 errored).
+    # Produce a deterministic result instead of calling Groq.
+    if PREFILTER_DISABLE_GROQ:
+        result = _ml_only_fallback(messages, agent_name, contact_name, assigned_labels)
+        if conversation_id is not None:
+            result.setdefault("conversation_id", conversation_id)
+        return result
 
     system_prompt, user_content = _build_single_analysis_payload(
         messages,
@@ -1399,6 +1416,31 @@ def _finalize_batch_results(
 
     _pool.mark_success(pk)
     return out
+
+
+# ── ML-only fallback ──────────────────────────────────────────────────────────
+
+def _ml_only_fallback(
+    messages: list[dict],
+    agent_name: str,
+    contact_name: str,
+    assigned_labels: list[str] | None,
+) -> dict:
+    """Groq-free terminal result for ML-only mode. Runs the deterministic Tier 4
+    generator directly; if that fails, returns an empty (skipped) result. Never
+    calls Groq."""
+    try:
+        from ai.prefilter import tier4_flag_generator
+        result = tier4_flag_generator.generate(
+            messages, agent_name, contact_name, assigned_labels=assigned_labels or [],
+        )
+        if isinstance(result, dict):
+            result.setdefault("model_used", "prefilter_t4")
+            result.setdefault("contact_name", contact_name)
+            return result
+    except Exception as e:
+        logger.warning(f"[Analyzer] ML-only T4 fallback failed for {contact_name}: {e}")
+    return _empty_result("ML-only mode: no deterministic result available", contact_name)
 
 
 # ── Empty result ──────────────────────────────────────────────────────────────
