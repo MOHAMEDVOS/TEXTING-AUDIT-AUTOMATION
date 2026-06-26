@@ -39,8 +39,8 @@ def _env_int(name: str, default: int) -> int:
 
 
 # Thresholds (minutes) and Script-Adherence penalties — env-overridable.
-YELLOW_MIN = _env_int("RESPONSE_TIME_YELLOW_MIN", 7)
-RED_MIN = _env_int("RESPONSE_TIME_RED_MIN", 10)
+YELLOW_MIN = _env_int("RESPONSE_TIME_YELLOW_MIN", 10)
+RED_MIN = _env_int("RESPONSE_TIME_RED_MIN", 20)
 SCRIPT_PENALTY_YELLOW = _env_int("RESPONSE_TIME_PENALTY_YELLOW", 8)
 SCRIPT_PENALTY_RED = _env_int("RESPONSE_TIME_PENALTY_RED", 15)
 
