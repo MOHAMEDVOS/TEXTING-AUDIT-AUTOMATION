@@ -664,6 +664,15 @@
     .ci-correct.ok  { color: var(--success); }
     .ci-correct.bad { color: var(--danger); }
     .ci-funnel { font-size: .67rem; color: var(--text-muted); }
+    .ci-flag-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+    .ci-flag-chip {
+      font-size: .63rem; font-weight: 600;
+      padding: 2px 8px; border-radius: 6px;
+      background: rgba(234,179,8,.08); border: 1px solid rgba(234,179,8,.18);
+      color: #CA8A04; white-space: nowrap;
+    }
+    .ci-flag-chip-crit { background: rgba(220,38,38,.08); border-color: rgba(220,38,38,.2); color: #EF4444; }
+    .ci-flag-chip-high { background: rgba(234,88,12,.08); border-color: rgba(234,88,12,.2); color: #F97316; }
     .ci-preview {
       font-size: .73rem; color: var(--text-muted); line-height: 1.4;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -3738,6 +3747,34 @@ function isWrongLabelFlag(f) {
   return String(f || "").trim().toLowerCase().startsWith("wrong label:");
 }
 
+function fmtFunnel(raw) {
+  if (!raw) return "";
+  const s = String(raw).toLowerCase().replace(/_/g, " ").trim().replace(/\s*funnel\s*$/, "").trim();
+  const abbr = { wf: "Wide", mf: "Middle", nf: "Narrow" };
+  const word = abbr[s.replace(/\s/g, "")] || (s.charAt(0).toUpperCase() + s.slice(1));
+  return word + " funnel";
+}
+
+const FLAG_SHORT = {
+  "Continued texting after explicit opt-out.":                                                                                                                                                                                                       { label: "Opt-out",      tier: "crit" },
+  "Used threatening, profane, or deceptive language.":                                                                                                                                                                                              { label: "Language",     tier: "high" },
+  "Stated a specific dollar offer.":                                                                                                                                                                                                                 { label: "$ Offer",      tier: "crit" },
+  "Gave up after first no with zero rebuttal.":                                                                                                                                                                                                      { label: "Gave up",      tier: "high" },
+  "Continued original pitch after wrong number.":                                                                                                                                                                                                    { label: "Wrong #",      tier: "high" },
+  "Agreed to call without pre-qualifying.":                                                                                                                                                                                                          { label: "Unq. call",    tier: "med"  },
+  "Revealed or promised 6+ month timeline.":                                                                                                                                                                                                         { label: "6mo+ TL",      tier: "med"  },
+  "Sent incoherent message or wrong name.":                                                                                                                                                                                                          { label: "Incoherent",   tier: "high" },
+  "Ended conversation after lead showed interest.":                                                                                                                                                                                                  { label: "Dropped lead", tier: "high" },
+  "Pushed to close with zero property info.":                                                                                                                                                                                                        { label: "No pillars",   tier: "med"  },
+  "Did not escalate after all 4 pillars gathered.":                                                                                                                                                                                                  { label: "No escalate",  tier: "med"  },
+  "Skipped $1k referral close after high price.":                                                                                                                                                                                                    { label: "No referral",  tier: "med"  },
+  "Agent re-asked for asking price after owner already stated it.":                                                                                                                                                                                  { label: "Re-asked $",   tier: "med"  },
+  "Agent kept pushing after above-market price instead of referral close.":                                                                                                                                                                          { label: "Kept pushing", tier: "med"  },
+  "Contact denied knowing the address after providing property details. Agent should have asked clarifying questions (parcel number, correct address) instead of closing the conversation. Label should be Potential or Undefined, not Bluffer.":    { label: "Address",      tier: "med"  },
+  "No handoff message sent after lead push.":                                                                                                                                                                                                        { label: "No handoff",   tier: "med"  },
+  "Slow response time to an engaged lead.":                                                                                                                                                                                                          { label: "Slow reply",   tier: "med"  },
+};
+
 function wrongLabelFlagText(a) {
   if (!a || a.label_correct !== false) return null;
   const wrong = (a.label_assigned || "").trim();
@@ -4033,19 +4070,25 @@ function renderConvoList() {
       ? `<span class="tag ${labelTagClass(labelText)}">${esc(labelText)}</span>`
       : `<span class="tag tag-gray">—</span>`;
 
-    // Label correctness — compact inline verdict
+    // Label correctness — only show when wrong; silence = correct
     let correctHtml = "";
     if (a.label_correct != null) {
-      const sameLabel = (a.label_assigned || "") === (a.label_should_be || "");
       const labelActive = labelWrongActive(a, c.invalidated_flags);
-      correctHtml = (!labelActive && (a.label_correct === true || sameLabel))
-        ? `<span class="ci-correct ok">✓ label correct</span>`
-        : (labelActive
-          ? `<span class="ci-correct bad">✗ should be ${esc(a.label_should_be || "?")}</span>`
-          : "");
-    } else if (method === "ML" && a.label_assigned) {
-      correctHtml = `<span class="ci-funnel">ML label</span>`;
+      if (labelActive) correctHtml = `<span class="ci-correct bad">✗ Wrong label</span>`;
     }
+
+    // Flag-type chips — brief 1-2 word label per active flag
+    const activeRedFlags = (a.red_flags || []).filter(f => !isWrongLabelFlag(f));
+    const flagChipsHtml = activeRedFlags.length ? (() => {
+      const chips = activeRedFlags.map(f => {
+        const meta = FLAG_SHORT[f.trim()];
+        const lbl  = meta ? meta.label : "Flag";
+        const cls  = meta && meta.tier === "crit" ? " ci-flag-chip-crit"
+                   : meta && meta.tier === "high" ? " ci-flag-chip-high" : "";
+        return `<span class="ci-flag-chip${cls}">${esc(lbl)}</span>`;
+      });
+      return `<div class="ci-flag-chips">${chips.join("")}</div>`;
+    })() : "";
 
     // Last message preview
     const lastMsg = msgs.length ? msgs[msgs.length - 1] : null;
@@ -4078,15 +4121,15 @@ function renderConvoList() {
         <div class="ci-body">
           <div class="ci-head">
             <span class="ci-name">${esc(c.contact_name)}</span>
-            ${flags > 0 ? `<span class="ci-flag">&#9873; ${flags} issue${flags > 1 ? "s" : ""}</span>` : ""}
             ${unreadBadge}
             ${flaggedReviewBadgeHtml(c)}
           </div>
           <div class="ci-meta">
             ${labelHtml}
             ${correctHtml}
-            ${a.funnel_stage_reached ? `<span class="ci-funnel">· ${esc(a.funnel_stage_reached)} funnel</span>` : ""}
+            ${fmtFunnel(a.funnel_stage_reached) ? `<span class="ci-funnel">· ${esc(fmtFunnel(a.funnel_stage_reached))}</span>` : ""}
           </div>
+          ${flagChipsHtml}
           ${preview ? `<div class="ci-preview">${esc(preview)}</div>` : ""}
           ${datesHtml}
         </div>
@@ -4250,6 +4293,20 @@ function renderChatMessages(msgs, convo) {
   setTimeout(() => { el.scrollTop = el.scrollHeight; }, 60);
 }
 
+// Severity chip — amber/yellow = moderate, red = needs attention.
+function sevBadge(sev) {
+  const map = {
+    critical: ["#DC2626", "rgba(220,38,38,.16)", "Critical"],
+    high:     ["#DC2626", "rgba(220,38,38,.14)", "Needs Attention"],
+    medium:   ["#D97706", "rgba(217,119,6,.14)", "Moderate"],
+    low:      ["#64748B", "rgba(100,116,139,.14)", "Low"],
+  };
+  const e = map[String(sev || "").toLowerCase()];
+  if (!e) return "";
+  const [col, bg, lbl] = e;
+  return `<span title="Severity" style="display:inline-flex;align-items:center;padding:1px 7px;border-radius:99px;background:${bg};border:1px solid ${col}44;color:${col};font-size:.56rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;flex-shrink:0;">${lbl}</span>`;
+}
+
 function renderAiAnalysis(a, invalidatedFlags) {
   const el = document.getElementById("ch-ai");
   const invalidatedSet = new Set((invalidatedFlags || []).map(f => f.trim()));
@@ -4298,6 +4355,8 @@ function renderAiAnalysis(a, invalidatedFlags) {
 
   const flags   = (a.red_flags || []).filter(f => !isWrongLabelFlag(f));
   const pillars = a.pillars_gathered || [];
+  const fdMap   = {};
+  (a.flag_details || []).forEach(d => { if (d && d.flag_text) fdMap[String(d.flag_text).trim()] = d; });
 
   el.innerHTML = `
     <div style="padding:.6rem 1.1rem;background:var(--surface-subtle);border-bottom:1px solid var(--surface-border);display:flex;align-items:center;gap:8px;">
@@ -4332,12 +4391,19 @@ function renderAiAnalysis(a, invalidatedFlags) {
           <div style="font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--danger);margin-bottom:5px;">Red Flags</div>
           ${flags.map(f => {
             const isInvalid = invalidatedSet.has(f.trim());
-            return `<div class="rf-row${isInvalid ? " rf-invalidated" : ""}" style="display:flex;align-items:flex-start;gap:6px;margin-top:4px;">
-              <span class="rf-text" style="font-size:.72rem;color:var(--danger);opacity:.85;line-height:1.45;flex:1;">· ${esc(f)}</span>
-              <button class="btn-not-valid${isInvalid ? " rf-done" : ""}"
-                data-flag="${esc(f)}"
-                onclick="openNotValidModal(this)"
-                ${isInvalid ? "disabled" : ""}>${isInvalid ? "✓ Invalid" : "Not Valid"}</button>
+            const d    = fdMap[String(f).trim()] || null;
+            const sev  = d ? sevBadge(d.severity) : "";
+            const expl = (d && d.explanation) ? `<div style="margin-top:3px;font-size:.64rem;color:var(--text-secondary);line-height:1.4;font-style:italic;">${esc(d.explanation)}</div>` : "";
+            return `<div class="rf-row${isInvalid ? " rf-invalidated" : ""}" style="display:block;margin-top:7px;padding-top:6px;border-top:1px solid rgba(239,68,68,.12);">
+              <div style="display:flex;align-items:flex-start;gap:6px;">
+                <span class="rf-text" style="font-size:.72rem;color:var(--danger);opacity:.85;line-height:1.45;flex:1;">· ${esc(f)}</span>
+                ${sev}
+                <button class="btn-not-valid${isInvalid ? " rf-done" : ""}"
+                  data-flag="${esc(f)}"
+                  onclick="openNotValidModal(this)"
+                  ${isInvalid ? "disabled" : ""}>${isInvalid ? "✓ Invalid" : "Not Valid"}</button>
+              </div>
+              ${expl}
             </div>`;
           }).join("")}
         </div>` : ""}

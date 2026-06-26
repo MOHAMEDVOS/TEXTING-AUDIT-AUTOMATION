@@ -33,6 +33,8 @@ WHITELIST_FLAG_OUTPUTS = [
     "Contact denied knowing the address after providing property details. Agent should have asked clarifying questions (parcel number, correct address) instead of closing the conversation. Label should be Potential or Undefined, not Bluffer.",
     # FLAG 16 — no handoff after a valid lead push (label_validator.NO_HANDOFF_FLAG)
     "No handoff message sent after lead push.",
+    # FLAG 17 — slow agent response to an engaged lead (ai.response_time)
+    "Slow response time to an engaged lead.",
 ]
 
 # ── Phase 1: stable flag IDs + rule-assigned metadata ────────────────────────
@@ -57,6 +59,7 @@ FLAG_ID_MAP: dict[str, str] = {
     "Agent kept pushing after above-market price instead of referral close.":     "F15",
     "Contact denied knowing the address after providing property details. Agent should have asked clarifying questions (parcel number, correct address) instead of closing the conversation. Label should be Potential or Undefined, not Bluffer.": "F14",
     "No handoff message sent after lead push.":                                    "F16",
+    "Slow response time to an engaged lead.":                                       "F17",
 }
 
 # Severity is a fixed business attribute of the flag — never model-decided.
@@ -65,6 +68,9 @@ SEVERITY_MAP: dict[str, str] = {
     "F5": "high",     "F6": "medium", "F7": "medium",   "F8": "high",
     "F9": "high",     "F10": "medium","F11": "medium",  "F12": "medium",
     "F13": "low",     "F14": "medium","F15": "medium", "F16": "medium",
+    # F17 default = medium (yellow). Overridden to "high" (red) per-case in the
+    # scorer when the worst gap exceeds the red threshold.
+    "F17": "medium",
 }
 
 # Rule-assigned confidence by detection strength (no model confidence available).
@@ -74,7 +80,7 @@ CONFIDENCE_MAP: dict[str, float] = {
     "F1": 0.90, "F2": 0.90, "F3": 0.90, "F4": 0.80, "F5": 0.80,
     "F6": 0.60, "F7": 0.60, "F8": 0.60, "F9": 0.60, "F10": 0.60,
     "F11": 0.60, "F12": 0.60, "F13": 0.40, "F14": 0.60, "F15": 0.60,
-    "F16": 0.85,
+    "F16": 0.85, "F17": 0.90,
 }
 
 # Context-heavy / fragile flags routed to Needs-Review more aggressively
@@ -102,6 +108,7 @@ DEFAULT_COACHING: dict[str, str] = {
     "F14": "On a push label, always send a handoff message (partner/team will reach out).",
     "F15": "On an above-market price, switch to the referral close rather than continuing to push.",
     "F16": "A pushed lead must be closed with a handoff message — coach the agent to always tell the lead the team will reach out.",
+    "F17": "Reply to engaged leads within 7 minutes; over 10 minutes needs immediate attention.",
     WRONG_LABEL_FLAG_ID: "Re-label the conversation per the audit; review the labelling rule that was missed.",
 }
 
@@ -122,6 +129,7 @@ EXPLAIN_TEMPLATE: dict[str, str] = {
     "F14": "A push label was assigned but no handoff message was sent.",
     "F15": "The lead's price was above market and the agent kept pushing instead of the referral close.",
     "F16": "The lead was pushed (hand raise) but the agent never sent a handoff message.",
+    "F17": "The agent took longer than the response-time threshold to reply to the lead.",
     WRONG_LABEL_FLAG_ID: "The audit found the assigned label does not match the conversation.",
 }
 

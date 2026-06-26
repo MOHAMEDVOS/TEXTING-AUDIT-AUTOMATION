@@ -78,6 +78,7 @@ def _build_transcript(messages: list[dict], agent_name: str) -> tuple[str, list[
             "message": content,
             "time": time_str,
             "date": date_str,
+            "timestamp": created,   # raw ISO (UTC, seconds) — exact gap math
         })
 
     lines, last_date = [], None

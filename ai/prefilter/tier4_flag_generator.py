@@ -375,7 +375,8 @@ def generate(
             _is_push_label, _contact_raised_hand, NO_HANDOFF_FLAG,
         )
         _assigned_str = ", ".join(assigned_labels) if assigned_labels else ""
-        if (_is_push_label(_assigned_str)
+        if (funnel_tier != "WF"
+                and _is_push_label(_assigned_str)
                 and not agent_handed_off
                 and _contact_raised_hand(messages)):
             raw_flags.append(NO_HANDOFF_FLAG)

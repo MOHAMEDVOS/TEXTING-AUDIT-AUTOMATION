@@ -242,13 +242,14 @@ WIDE FUNNEL JOB: Send warm, conversational follow-ups. Identify hand-raises. Tha
  - NEVER flag: "no clear next steps" or "no call to action" — WF does not require a CTA.
  - NEVER flag: "agent did not attempt to close" — closing is not a WF task.
  - NEVER flag: "script_adherence" issues for pillar order, pillar count, or escalation to call.
- - The ONLY valid red flags for WF accounts: explicit opt-out ignored, aggressive/deceptive language, wrong name used, incoherent message, F14 (no handoff after a valid lead push), or SLA breach (if <ACCOUNT_GUIDELINES> defines one).
+ - The ONLY valid red flags for WF accounts: explicit opt-out ignored, aggressive/deceptive language, wrong name used, incoherent message, or SLA breach (if <ACCOUNT_GUIDELINES> defines one).
+ - NEVER flag F16 / F14 "No handoff message sent after lead push." in Wide Funnel — handoff is NOT required in WF.
 
 WF PUSH RULE (HAND RAISE = PUSHABLE LEAD):
  - In wide funnel, a hand raise ALONE fully qualifies a lead for pushing. A hand raise is ANY contact reply that is not a hard no: "How much", "How much are you offering", "Make an offer", "Did you have an offer?", "What price were you thinking", "Yes I have", "Are you interested?", or ANY question back.
  - When the lead raised a hand, the labels "Lead", "Lead Pushed", "Pushed to client" (and compounds like "Lead, Pushed to client") are CORRECT. Set label_correct=true.
  - NEVER set label_should_be to "Potential", "Undefined", or "Stopped Responding" for a hand-raised lead carrying a push label. NEVER call a push label "premature" or "too early to classify" — wide funnel requires ZERO pillars to push.
- - HANDOFF REQUIRED AFTER PUSH: when the label is a push label and the lead raised a hand, the agent MUST close with a handoff message (e.g. "I'll have my partner touch base soon to go over the next steps. Looking forward to working together!"). If no agent message contains a handoff (partner/team/someone will reach out / touch base / go over next steps) → raise flag F14 "No handoff message sent after lead push." and reduce script_adherence accordingly. The label itself STAYS correct.
+ - PUSH LABEL IN WF: when the label is a push label and the lead raised a hand, the label is CORRECT. No handoff message is required in Wide Funnel — do NOT flag missing handoff. The label stays correct and no script penalty applies.
 
  - Expected labels: WL drip, AP drip, HL drip, Stopped Responding, Not Interested. "Potential" only when 3+ clear pillars are present. "Lead", "Lead Pushed", "Pushed to client" whenever the lead raised a hand.
  - "Undefined" label is acceptable when conversation is too early to classify — never flag it as wrong unless a clear label is obvious.

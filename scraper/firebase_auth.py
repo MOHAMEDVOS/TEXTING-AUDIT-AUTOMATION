@@ -4,6 +4,7 @@ Firebase REST Authentication for SmarterContact HTTP client.
 Handles sign-in, token refresh, and auto-expiry management.
 No browser required — pure HTTP via Firebase REST API.
 """
+import os
 import time
 import logging
 import httpx
@@ -11,7 +12,7 @@ from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
-FIREBASE_API_KEY      = "AIzaSyApHXR2TXACsV0X0vZPVROvW6YZL9ylW38"
+FIREBASE_API_KEY      = os.environ["FIREBASE_API_KEY"]
 SIGN_IN_URL           = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={FIREBASE_API_KEY}"
 REFRESH_URL           = f"https://securetoken.googleapis.com/v1/token?key={FIREBASE_API_KEY}"
 TOKEN_BUFFER_SECONDS  = 120   # refresh 2 min before expiry

@@ -2688,6 +2688,21 @@ function confBadge(tier, conf) {
   return `<span style="display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:99px;background:${bg};border:1px solid ${col}44;color:${col};font-size:.56rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;flex-shrink:0;">${lbl}${pct}</span>`;
 }
 
+// Severity chip — amber/yellow = moderate, red = needs attention. Data already
+// lives on every flag detail; this surfaces it visually.
+function sevBadge(sev) {
+  const map = {
+    critical: ["#DC2626", "rgba(220,38,38,.16)", "Critical"],
+    high:     ["#DC2626", "rgba(220,38,38,.14)", "High"],
+    medium:   ["#D97706", "rgba(217,119,6,.14)", "Moderate"],
+    low:      ["#64748B", "rgba(100,116,139,.14)", "Low"],
+  };
+  const e = map[String(sev || "").toLowerCase()];
+  if (!e) return "";
+  const [col, bg, lbl] = e;
+  return `<span title="Severity" style="display:inline-flex;align-items:center;padding:1px 7px;border-radius:99px;background:${bg};border:1px solid ${col}44;color:${col};font-size:.56rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;flex-shrink:0;">${lbl}</span>`;
+}
+
 function renderAiAnalysis(a, invalidatedFlags) {
   const el = document.getElementById("ch-ai");
   const invalidatedSet = new Set((invalidatedFlags || []).map(f => f.trim()));
@@ -2769,6 +2784,7 @@ function renderAiAnalysis(a, invalidatedFlags) {
           ${flags.map(f => {
             const isInvalid = invalidatedSet.has(f.trim());
             const d = fdMap[String(f).trim()] || null;
+            const sev   = d ? sevBadge(d.severity) : "";
             const badge = d ? confBadge(d.confidence_tier, d.confidence) : "";
             const expl = (d && d.explanation) ? `<div style="margin-top:3px;font-size:.64rem;color:var(--text-secondary);line-height:1.4;font-style:italic;">${esc(d.explanation)}</div>` : "";
             const evid = (d && d.evidence && d.evidence.length) ? `
@@ -2778,8 +2794,8 @@ function renderAiAnalysis(a, invalidatedFlags) {
             const coach = (d && d.coaching) ? `<div style="margin-top:4px;font-size:.63rem;color:#38BDF8;line-height:1.4;"><strong>Coach:</strong> ${esc(d.coaching)}</div>` : "";
             return `<div class="rf-row${isInvalid ? " rf-invalidated" : ""}" style="display:block;margin-top:7px;padding-top:6px;border-top:1px solid rgba(239,68,68,.12);">
               <div style="display:flex;align-items:flex-start;gap:6px;">
-                <span class="rf-text" style="font-size:.72rem;color:var(--danger);opacity:.9;line-height:1.45;flex:1;">${d && d.flag_id ? `<strong style="opacity:.7;">[${esc(d.flag_id)}]</strong> ` : "· "}${esc(f)}</span>
-                ${badge}
+                <span class="rf-text" style="font-size:.72rem;color:var(--danger);opacity:.9;line-height:1.45;flex:1;">· ${esc(f)}</span>
+                ${sev}${badge}
                 <button class="btn-not-valid${isInvalid ? " rf-done" : ""}"
                   data-flag="${esc(f)}"
                   data-flag-id="${d ? esc(d.flag_id || "") : ""}"

@@ -9,6 +9,7 @@ Usage:
 """
 import asyncio
 import argparse
+import ctypes
 import json
 import logging
 import os
@@ -19,7 +20,7 @@ from pathlib import Path
 # Set console window title on Windows
 if sys.platform == "win32":
     title = os.environ.get("PYTITLE", "TEXTING Scraper")
-    os.system(f"title {title}")
+    ctypes.windll.kernel32.SetConsoleTitleW(title)
 
     # Silence the noisy "RuntimeError: Event loop is closed" raised by
     # asyncio's _ProactorBasePipeTransport.__del__ during interpreter shutdown.

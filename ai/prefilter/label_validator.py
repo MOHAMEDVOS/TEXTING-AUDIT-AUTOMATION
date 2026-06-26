@@ -970,7 +970,10 @@ def validate_push_label(messages: list[dict], assigned_label: str, funnel_tier: 
     contact_text = "\n".join(contact_bodies)
 
     def _with_handoff_check(result: dict) -> dict:
-        """Attach the missing-handoff flag to a valid push result."""
+        """Attach the missing-handoff flag to a valid push result.
+        Wide-funnel accounts are exempt — WF workflow does not require a handoff message."""
+        if funnel_tier == "WF":
+            return result
         if result.get("label_correct") and not _agent_sent_handoff(messages):
             result["red_flags"] = [NO_HANDOFF_FLAG]
             result["label_reason"] += (

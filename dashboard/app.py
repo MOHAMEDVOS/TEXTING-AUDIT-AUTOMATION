@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import os
+import re as _re
 import subprocess
 import sys
 import threading
@@ -29,6 +30,7 @@ import asyncpg
 from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from urllib.parse import quote as _url_quote
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
@@ -162,6 +164,12 @@ async def lifespan(app):
     # Load texter roster from DB into memory
     await _load_agent_roster_from_db()
     logger.info(f"Loaded {len(AGENT_ROSTER)} texters from database")
+
+    if not _ADMIN_TOKEN:
+        logger.warning(
+            "ADMIN_TOKEN not set — mutating routes are protected by session auth only "
+            "(no extra admin-token gate). Set ADMIN_TOKEN in .env for an additional layer."
+        )
 
     # Seed tool_access allowlist from env var (runs once when table is empty)
     await _seed_tool_access(app.state.pool)
@@ -924,8 +932,7 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
                 val = raw.get(field) or []
                 if isinstance(val, str):
                     try:
-                        import json as _json
-                        val = _json.loads(val)
+                        val = json.loads(val)
                     except Exception:
                         val = []
                 raw[field] = val
@@ -1102,7 +1109,6 @@ _ALLOWED_DATE_FILTERS = {
     "last_30_days", "last_year", "all_time", "custom",
 }
 # ISO date: YYYY-MM-DD. Used to validate custom-range args before subprocess.
-import re as _re
 _ISO_DATE_RE = _re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _ALL_LABEL_FILTER_VALUES = {"all", "all label", "all labels", "all lable", "all lables"}
 
@@ -1255,8 +1261,7 @@ async def _save_trend_snapshot(agent_name: str) -> None:
             try:
                 flags_raw = score_row["red_flags"] or []
                 if isinstance(flags_raw, str):
-                    import json as _json
-                    flags_raw = _json.loads(flags_raw)
+                    flags_raw = json.loads(flags_raw)
                 total_issues = len(flags_raw)
             except Exception as _e:
                 logger.debug("swallowed: %r", _e)
@@ -1265,8 +1270,7 @@ async def _save_trend_snapshot(agent_name: str) -> None:
             try:
                 details = score_row["details"] or {}
                 if isinstance(details, str):
-                    import json as _json
-                    details = _json.loads(details)
+                    details = json.loads(details)
                 pc = details.get("per_conversation", [])
                 conversations_analyzed = len(pc)
                 if total_issues == 0:
@@ -1351,7 +1355,7 @@ async def auth_google(request: Request):
 @app.get("/auth/callback")
 async def auth_callback(request: Request, code: str = "", state: str = "", error: str = ""):
     if error:
-        return RedirectResponse(f"/login?error={error}")
+        return RedirectResponse(f"/login?error={_url_quote(error)}")
 
     expected = request.session.pop("oauth_state", None)
     if not expected or state != expected:
@@ -2429,7 +2433,6 @@ async def api_review_queue(agent_id: int | None = None,
     flags — esp. F7/F13/F15). One record per conversation with its needs_review
     flag_details attached.
     """
-    import json as _json
     limit = max(1, min(int(limit or 200), 1000))
     params: list = []
     where = ["latest.flag_details @> '[{\"confidence_tier\":\"needs_review\"}]'::jsonb"]
@@ -2466,7 +2469,7 @@ async def api_review_queue(agent_id: int | None = None,
             fd = r["flag_details"] or []
             if isinstance(fd, str):
                 try:
-                    fd = _json.loads(fd)
+                    fd = json.loads(fd)
                 except Exception:
                     fd = []
             needs = [d for d in fd if d.get("confidence_tier") == "needs_review"]
@@ -3002,8 +3005,7 @@ async def api_detailed_dashboard(
             rf = r.get("red_flags") or []
             if isinstance(rf, str):
                 try:
-                    import json as _json
-                    rf = _json.loads(rf)
+                    rf = json.loads(rf)
                 except Exception:
                     rf = []
             r["red_flags"] = rf
@@ -3084,8 +3086,7 @@ async def api_conversation_messages(conversation_id: int):
                 val = analysis.get(field) or []
                 if isinstance(val, str):
                     try:
-                        import json as _json
-                        val = _json.loads(val)
+                        val = json.loads(val)
                     except Exception:
                         val = []
                 analysis[field] = val

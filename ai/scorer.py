@@ -16,6 +16,7 @@ from config.settings import DATABASE_URL, get_now
 from ai.analyzer import analyze_conversation
 from ai.prefilter.label_validator import _label_key as _lk
 from ai.prefilter._guards import build_flag_details
+from ai.response_time import check_response_time, FLAG_TEXT as RESPONSE_TIME_FLAG
 from ai.prompts import PROMPT_VERSION
 
 logger = logging.getLogger(__name__)
@@ -331,6 +332,21 @@ async def score_agent_conversations(
                 if _cr:
                     result["red_flags"] = _filter_flags(result["red_flags"], _cr)
 
+            # ── F17: slow agent response time (deterministic, label-gated) ──
+            # Runs after analysis regardless of which tier produced the result,
+            # so a "clean"/short-circuited convo is still checked. Deducting
+            # here feeds the script_adherence aggregation below.
+            _rt = check_response_time(parsed, labels)
+            if _rt:
+                rflags = list(result.get("red_flags") or [])
+                if RESPONSE_TIME_FLAG not in rflags:
+                    rflags.append(RESPONSE_TIME_FLAG)
+                    result["red_flags"] = rflags
+                    sa = result.get("script_adherence_score")
+                    if isinstance(sa, (int, float)):
+                        result["script_adherence_score"] = max(0.0, sa - _rt["script_penalty"])
+                    result["_resp_time"] = _rt
+
             # Stash the parsed messages so the post-processing step can build
             # rule-assigned flag_details (evidence pinpointing) once all flag
             # mutations (wrong-label injection, second filter) are complete.
@@ -412,6 +428,27 @@ async def score_agent_conversations(
         # build_flag_details handles every flag (wrong-label, canonical,
         # dynamic-remap, generic) — never drops one, never duplicates.
         r["flag_details"] = build_flag_details(r.get("red_flags") or [], _parsed, source=_src)
+        # F17 carries a dynamic severity (yellow/red) and elapsed minutes that the
+        # static SEVERITY_MAP can't express — patch its detail from the stash.
+        _rt = r.pop("_resp_time", None)
+        if _rt:
+            thr = 10 if _rt["severity"] == "high" else 7
+            for d in r["flag_details"]:
+                if d.get("flag_id") == "F17":
+                    d["severity"] = _rt["severity"]
+                    d["explanation"] = (
+                        f"Agent took {_rt['minutes']} min to reply to the lead "
+                        f"(over the {thr}-min threshold)."
+                    )
+                    ev = []
+                    for i, m in enumerate(_rt.get("evidence") or []):
+                        sender = (m.get("sender") or "").strip() or "Unknown"
+                        body = (m.get("message") or m.get("body") or "").strip()
+                        quote = body if len(body) <= 240 else body[:237] + "..."
+                        ev.append({"seq": m.get("seq", i), "sender": sender, "quote": quote})
+                    if ev:
+                        d["evidence"] = ev
+                    break
         r["prompt_version"] = PROMPT_VERSION
 
     # ── Red flags: count conversations with ≥1 flag (not total mistakes) ────
