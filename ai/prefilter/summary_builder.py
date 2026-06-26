@@ -175,6 +175,12 @@ def _classify_contact_tone(contact_msgs: list[dict]) -> str:
     if any(p.search(all_text) for p in _WRONG_NUMBER_PATTERNS):
         return "wrong_number"
     if any(p.search(all_text) for p in _SOLD_PATTERNS):
+        # Reversal: contact said "Sold" (original property) but later re-engaged
+        # with a NEW property — pivot the tone to potential, not already_sold.
+        later_texts = msg_texts[1:] if len(msg_texts) > 1 else []
+        later_joined = " ".join(later_texts)
+        if later_texts and any(p.search(later_joined) for p in _POSITIVE_PATTERNS):
+            return "potential"
         return "already_sold"
 
     # Reversal check: if any later message is a positive/price-inquiry signal,

@@ -801,6 +801,11 @@ _REVERSAL_ENGAGEMENT_RE = re.compile(
     r"|few\s+(weeks|months)"
     r"|end\s+of\s+(the\s+)?(month|year)"
     r"|next\s+(week|month|year)"
+    r"|next\s+\d+\s+months?\b"          # "next 6 months"
+    r"|\bin\s+20\d{2}\b"                # "in 2027" — future year = selling timeline
+    # ── Future selling intent: contact volunteering a NEW property ────────────
+    r"|i'?ll?\s+(be\s+)?selling\b"      # "I'll be selling 1710 boone street"
+    r"|i'?m\s+the\s+owner\b"            # "im the owner" — confirms ownership of new property
     # ── Motivation sharing: contact explaining why they'd sell ────────────────
     r"|divorce|inherit|estate|probate|relocat|moving|downsize"
     r"|behind\s+on|foreclos|retir|need\s+to\s+sell|want\s+to\s+sell|ready\s+to\s+sell"

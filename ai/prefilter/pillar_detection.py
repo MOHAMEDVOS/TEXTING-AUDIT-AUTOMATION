@@ -59,8 +59,10 @@ _TIMELINE_RE = re.compile(
     r"\b(?:asap|right\s+away|soon|urgent\w*|couple\s+(?:of\s+)?(?:weeks|months)"
     r"|few\s+(?:weeks|months)|end\s+of\s+(?:the\s+)?(?:month|year|summer|spring)"
     r"|next\s+(?:week|month|year|spring|summer|fall|winter)"
+    r"|next\s+\d+\s+months?"           # "next 6 months", "next 3 months"
     r"|this\s+(?:week|month|year|spring|summer|fall|winter)"
     r"|within\s+(?:a\s+)?(?:week|month|year|\d)"
+    r"|in\s+20\d{2}"                   # "in 2027", "in 2026" — future year
     r"|no\s+rush|whenever|eventually|not\s+in\s+a\s+hurry|down\s+the\s+road"
     r"|moving\s+(?:out|away|soon)|need\s+to\s+(?:move|be\s+out)\s+(?:by|in|next))\b",
     re.I,
