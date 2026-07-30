@@ -184,15 +184,19 @@ class Database:
 
         audit_date = extracted_at.date() if hasattr(extracted_at, "date") else date.today()
 
-        # Get the texter name for this agent from account_assignments (latest assignment)
-        # If not found, fall back to the agent name from result
+        # Get the texter name for this agent from account_assignments.
+        # Use the assignment that was active ON the audit date (assigned_date <= audit_date),
+        # not the latest assignment overall — fixes the cross-date texter mismatch bug.
+        # If no assignment exists on or before the audit date, fall back to the agent name.
         texter_name = result.get("agent_name", "Unknown")
         async with self.pool.acquire() as conn:
             assignment = await conn.fetchrow(
                 """SELECT agent_name FROM account_assignments
                    WHERE account_email = (SELECT email FROM accounts WHERE id = $1)
+                     AND assigned_date <= $2
                    ORDER BY assigned_date DESC LIMIT 1""",
                 agent_id,
+                audit_date,
             )
             if assignment:
                 texter_name = assignment["agent_name"]

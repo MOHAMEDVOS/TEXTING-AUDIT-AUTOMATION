@@ -2687,9 +2687,25 @@
           <!-- Left: name + meta -->
           <div>
             <div id="ag-name" style="font-size:1.25rem; font-weight:700; color:var(--text-primary); letter-spacing:-.025em; line-height:1.2;"></div>
-            <div style="display:flex; align-items:center; gap:10px; margin-top:4px;">
-              <span id="ag-email" style="font-size:.75rem; color:var(--text-secondary);"></span>
-              <span id="ag-date"  style="font-size:.72rem; color:var(--text-muted);"></span>
+            <div style="display:flex; align-items:center; gap:8px; margin-top:6px; flex-wrap:wrap;">
+              <!-- Account email badge — always loud and clear -->
+              <span id="ag-email-badge"
+                style="display:inline-flex; align-items:center; gap:5px;
+                       background:var(--brand-bg,rgba(37,99,235,.08));
+                       border:1px solid var(--brand-border,rgba(37,99,235,.25));
+                       color:var(--brand,#2563EB);
+                       font-size:.78rem; font-weight:600;
+                       padding:3px 10px; border-radius:980px;
+                       letter-spacing:-0.01em; white-space:nowrap;">
+                <!-- mail icon -->
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="2" y="4" width="20" height="16" rx="2"/>
+                  <polyline points="2,4 12,13 22,4"/>
+                </svg>
+                <span id="ag-email"></span>
+              </span>
+              <span id="ag-date" style="font-size:.72rem; color:var(--text-muted);"></span>
             </div>
           </div>
           <!-- Right: action buttons -->
@@ -2869,8 +2885,9 @@
         <span style="width:1px; height:16px; background:var(--surface-border);"></span>
         <div id="ch-av" class="av av-sm av-c">C</div>
         <div style="flex:1; min-width:0;">
-          <div id="ch-name"  style="font-size:.875rem; font-weight:600; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></div>
-          <div id="ch-label" style="font-size:.63rem; color:var(--text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></div>
+          <div id="ch-name" style="font-size:.875rem; font-weight:600; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></div>
+          <!-- Account + texter name pills -->
+          <div id="ch-label" style="display:flex; align-items:center; gap:5px; margin-top:4px; flex-wrap:wrap;"></div>
         </div>
         <div id="ch-score" style="flex-shrink:0;"></div>
       </div>
@@ -3607,8 +3624,11 @@ async function selectAgent(id, { forceReload = false } = {}) {
   }
   showView("vw-agent");
 
-  document.getElementById("ag-name").textContent  = _getAssignedTexter(agent.email) || agent.name || "—";
-  document.getElementById("ag-email").textContent = agent.email || "";
+  document.getElementById("ag-name").textContent  = agent.name || "—";
+  const emailEl = document.getElementById("ag-email");
+  const badgeEl = document.getElementById("ag-email-badge");
+  if (emailEl) emailEl.textContent = agent.email || "No email on file";
+  if (badgeEl) badgeEl.style.display = "inline-flex"; // always shown
   document.getElementById("ag-date").textContent  = agent.audit_date ? `· ${agent.audit_date.slice(0, 10)}` : "";
   renderAgentScores(agent);
   updateRunButton();
@@ -4128,6 +4148,7 @@ function renderConvoList() {
             ${labelHtml}
             ${correctHtml}
             ${fmtFunnel(a.funnel_stage_reached) ? `<span class="ci-funnel">· ${esc(fmtFunnel(a.funnel_stage_reached))}</span>` : ""}
+            ${c.texter_name ? `<span style="font-size:.65rem;font-weight:600;color:var(--accent);background:rgba(99,102,241,.13);border:1px solid rgba(99,102,241,.25);padding:1px 7px;border-radius:99px;flex-shrink:0;">👤 ${esc(c.texter_name)}</span>` : ""}
           </div>
           ${flagChipsHtml}
           ${preview ? `<div class="ci-preview">${esc(preview)}</div>` : ""}
@@ -4171,7 +4192,6 @@ function selectConversation(index) {
   currentConversationId = convo.conversation_id || null;
   const a       = convo.analysis || {};
   const msgs    = convo.parsed_messages || [];
-  const labels  = (convo.assigned_labels || []).join(", ") || "No label";
 
   const svs   = [a.compliance, a.sentiment, a.professionalism, a.script_adherence].filter(x => x != null);
   const score = svs.length ? svs.reduce((s, v) => s + v, 0) / svs.length : null;
@@ -4180,7 +4200,28 @@ function selectConversation(index) {
   chAv.textContent = fmtInit(contact);
   chAv.className = `av av-sm ${agentAv(contact)}`;
   document.getElementById("ch-name").textContent  = contact;
-  document.getElementById("ch-label").textContent = `${selectedAgent?.name || ""} · ${labels}`;
+  // Build account + texter pills
+  const chLabel = document.getElementById("ch-label");
+  if (chLabel) {
+    const accountName  = selectedAgent?.name || "";
+    const texterName   = convo.texter_name && convo.texter_name !== accountName ? convo.texter_name : "";
+    const accountPill  = accountName
+      ? `<span style="display:inline-flex;align-items:center;padding:2px 9px;border-radius:980px;
+                      background:var(--surface-subtle);border:1px solid var(--surface-border);
+                      font-size:.7rem;font-weight:600;color:var(--text-secondary);white-space:nowrap;letter-spacing:-.01em;">
+           ${esc(accountName)}
+         </span>`
+      : "";
+    const texterPill = texterName
+      ? `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:980px;
+                      background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.25);
+                      font-size:.7rem;font-weight:600;color:#7c3aed;white-space:nowrap;letter-spacing:-.01em;">
+           <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+           ${esc(texterName)}
+         </span>`
+      : "";
+    chLabel.innerHTML = accountPill + texterPill;
+  }
   document.getElementById("ch-score").innerHTML   = score != null
     ? `<span class="pill ${pillClass(score)}">${fmtScore(score)}</span>`
     : "";
@@ -4831,7 +4872,7 @@ function renderDetailedResults(rows, filters = {}) {
     const labels   = (row.assigned_labels || []).join(", ") || "";
     const texter   = row.texter_name || "";
     const preview  = row.preview_snippet ? row.preview_snippet.slice(0, 90) + (row.preview_snippet.length > 90 ? "…" : "") : "No messages";
-    const date     = row.audit_date || "";
+    const date     = row.convo_date || row.audit_date || "";
     const issues   = row.issue_count || 0;
     const score    = row.compliance_score != null ? row.compliance_score.toFixed(1) : "—";
     const issueBadge = issues > 0
@@ -4882,6 +4923,7 @@ async function openDetailedConversation(conversationId) {
       assigned_labels:   d.assigned_labels || [],
       parsed_messages:   d.parsed_messages || [],
       invalidated_flags: d.invalidated_flags || [],
+      texter_name:       d.texter_name || "",
       analysis: {
         compliance:        a.compliance_score,
         sentiment:         a.sentiment_score,
@@ -4900,6 +4942,17 @@ async function openDetailedConversation(conversationId) {
         source:            a.source,
       },
     };
+
+    // Stamp selectedAgent with the real account info from the DB so the
+    // email badge always shows correctly — even when opened directly from
+    // the Detailed Dashboard without going through the sidebar first.
+    if (!selectedAgent || selectedAgent.email !== d.account_email) {
+      selectedAgent = {
+        ...(selectedAgent || {}),
+        name:  d.account_name  || selectedAgent?.name  || "",
+        email: d.account_email || selectedAgent?.email || "",
+      };
+    }
 
     // Override agentConvos[0] with our synthetic convo and open index 0
     agentConvos = [syntheticConvo];
@@ -5345,15 +5398,19 @@ async function loadLabelsDropdown() {
       updateLabelsButtonLabel();
       return;
     }
-    
+
     const labelNames = labels.map(l => l.name);
     _allLabelNames  = labelNames;
+    // Preserve selections that still exist; discard any that were removed.
     _selectedLabels = _selectedLabels.filter(name => labelNames.includes(name));
 
     const allChecked = _allLabelNames.length > 0 && _selectedLabels.length === _allLabelNames.length;
+
+    // Render using data-attributes only — no inline onclick handlers.
+    // A single delegated listener (attached below) handles all clicks.
     const selectAllRow = `
-      <div class="lp-item lp-select-all" onclick="toggleSelectAll(event)">
-        <input type="checkbox" id="lp-chk-all" ${allChecked ? "checked" : ""} onclick="event.stopPropagation(); toggleSelectAll(event)">
+      <div class="lp-item lp-select-all" data-select-all="1">
+        <input type="checkbox" id="lp-chk-all" ${allChecked ? "checked" : ""} data-select-all="1">
         <span style="user-select:none; font-weight:600;">Select All</span>
       </div>
       <div style="border-top:1px solid var(--surface-border); margin:2px 0;"></div>
@@ -5361,49 +5418,79 @@ async function loadLabelsDropdown() {
 
     popover.innerHTML = selectAllRow + labels.map(l => {
       const checked = _selectedLabels.includes(l.name) ? "checked" : "";
+      // Store the original name in a data attribute; no esc() in the JS arg.
       return `
-        <div class="lp-item" onclick="toggleLabelItem(event, '${esc(l.name)}')">
-          <input type="checkbox" id="lp-chk-${esc(l.name)}" ${checked} onclick="event.stopPropagation(); toggleLabelItem(event, '${esc(l.name)}')">
+        <div class="lp-item" data-label-name="${esc(l.name)}">
+          <input type="checkbox" id="lp-chk-${esc(l.name)}" ${checked} data-label-name="${esc(l.name)}">
           <span style="user-select:none;">${esc(l.name)}</span>
         </div>
       `;
     }).join("");
+
+    _initLabelPopoverEvents(popover);
     updateLabelsButtonLabel();
   } catch (err) {
     popover.innerHTML = `<div style="font-size:.7rem; color:var(--danger); padding:8px;">Error: ${esc(String(err))}</div>`;
   }
 }
 
-function toggleSelectAll(event) {
-  if (event) event.stopPropagation();
-  const chkAll    = document.getElementById("lp-chk-all");
-  const allSelected = _allLabelNames.length > 0 && _selectedLabels.length === _allLabelNames.length;
-  if (allSelected) {
-    _selectedLabels = [];
-    _allLabelNames.forEach(n => { const c = document.getElementById(`lp-chk-${n}`); if (c) c.checked = false; });
-    if (chkAll) chkAll.checked = false;
-  } else {
-    _selectedLabels = [..._allLabelNames];
-    _allLabelNames.forEach(n => { const c = document.getElementById(`lp-chk-${n}`); if (c) c.checked = true; });
-    if (chkAll) chkAll.checked = true;
-  }
-  updateLabelsButtonLabel();
+/**
+ * Attach a single delegated click listener on the popover.
+ * Called every time loadLabelsDropdown() re-renders the popover HTML.
+ * Using event.preventDefault() on checkboxes lets us fully own the
+ * checked state — the browser never natively toggles the checkbox,
+ * so there is no double-toggle or state race.
+ */
+function _initLabelPopoverEvents(popover) {
+  // Clone the node to remove any previously-attached listeners.
+  const fresh = popover.cloneNode(true);
+  popover.parentNode.replaceChild(fresh, popover);
+
+  fresh.addEventListener("click", function(e) {
+    // Prevent checkbox native toggle — we manage state ourselves.
+    if (e.target.type === "checkbox") e.preventDefault();
+    e.stopPropagation();
+
+    // Determine what was clicked: walk up to the .lp-item row.
+    const row = e.target.closest(".lp-item");
+    if (!row) return;
+
+    if (row.dataset.selectAll === "1") {
+      // "Select All" row
+      const allSelected = _allLabelNames.length > 0 && _selectedLabels.length === _allLabelNames.length;
+      if (allSelected) {
+        _selectedLabels = [];
+      } else {
+        _selectedLabels = [..._allLabelNames];
+      }
+      _syncLabelCheckboxes(fresh);
+    } else {
+      // Individual label row
+      const name = row.dataset.labelName;
+      if (!name) return;
+      const idx = _selectedLabels.indexOf(name);
+      if (idx > -1) {
+        _selectedLabels.splice(idx, 1);
+      } else {
+        _selectedLabels.push(name);
+      }
+      _syncLabelCheckboxes(fresh);
+    }
+
+    updateLabelsButtonLabel();
+  });
 }
 
-function toggleLabelItem(event, name) {
-  if (event) event.stopPropagation();
-  const chk = document.getElementById(`lp-chk-${name}`);
-  const idx = _selectedLabels.indexOf(name);
-  if (idx > -1) {
-    _selectedLabels.splice(idx, 1);
-    if (chk) chk.checked = false;
-  } else {
-    _selectedLabels.push(name);
-    if (chk) chk.checked = true;
-  }
-  const chkAll = document.getElementById("lp-chk-all");
-  if (chkAll) chkAll.checked = _allLabelNames.length > 0 && _selectedLabels.length === _allLabelNames.length;
-  updateLabelsButtonLabel();
+/** Sync all checkbox DOM states to match _selectedLabels / _allLabelNames. */
+function _syncLabelCheckboxes(popover) {
+  const chkAll = popover.querySelector("#lp-chk-all");
+  const allSelected = _allLabelNames.length > 0 && _selectedLabels.length === _allLabelNames.length;
+  if (chkAll) chkAll.checked = allSelected;
+
+  _allLabelNames.forEach(name => {
+    const chk = popover.querySelector(`[data-label-name="${CSS.escape(name)}"] input[type="checkbox"]`);
+    if (chk) chk.checked = _selectedLabels.includes(name);
+  });
 }
 
 function updateLabelsButtonLabel() {
@@ -5619,17 +5706,16 @@ function _getAssignedTexter(agentEmail) {
 
 // Returns assigned Groq key id for an account email today, or null
 function _getAssignedGroqKey(agentEmail) {
-  return todayAssignments[_normEmail(agentEmail)]?.groq_key_id || null;
+  return null;
 }
 
 // Return missing requirement for today's run, or null when ready.
 function _getRunBlockReason(agent) {
   if (!_getAssignedTexter(agent.email)) return "texter";
-  if (!_getAssignedGroqKey(agent.email)) return "groq";
   return null;
 }
 
-// Check if account has both texter + Groq key assigned today.
+// Check if account has texter assigned today.
 function _canRunAgent(agent) {
   return _getRunBlockReason(agent) === null;
 }
@@ -6110,28 +6196,16 @@ async function loadAssignments() {
     const groqOptions = GROQ_KEYS.map(k => `<option value="${esc(String(k.id))}">${esc(k.label)}</option>`).join("");
     listEl.style.display = "grid";
 
-    // Split into fully assigned, partially assigned, and none assigned
-    const full       = rows.filter(r => !!r.agent_name && !!r.groq_key_id);
-    const partial    = rows.filter(r => (!!r.agent_name && !r.groq_key_id) || (!r.agent_name && !!r.groq_key_id));
-    const none       = rows.filter(r => !r.agent_name && !r.groq_key_id);
+    // Split into assigned and unassigned accounts
+    const full = rows.filter(r => !!r.agent_name);
+    const none = rows.filter(r => !r.agent_name);
 
     function cardHtml(r) {
       const hasTexter = !!r.agent_name;
-      const hasKey    = !!r.groq_key_id;
-      const status    = (hasTexter && hasKey) ? "full" : ((hasTexter || hasKey) ? "partial" : "none");
-      const borderColor =
-        status === "full"    ? "rgba(37,99,235,.35)" :
-        status === "partial" ? "rgba(245,158,11,.35)" :
-                               "rgba(255,255,255,.07)";
-      const bgColor =
-        status === "full"    ? "rgba(37,99,235,.07)" :
-        status === "partial" ? "rgba(245,158,11,.08)" :
-                               "var(--surface-subtle)";
-      const dotColor =
-        status === "full"    ? "#22c55e" :
-        status === "partial" ? "#f59e0b" :
-                               "#ef4444";
-      // Use real name if available, fallback to email prefix
+      const status    = hasTexter ? "full" : "none";
+      const borderColor = status === "full" ? "rgba(37,99,235,.35)" : "rgba(255,255,255,.07)";
+      const bgColor     = status === "full" ? "rgba(37,99,235,.07)" : "var(--surface-subtle)";
+      const dotColor   = status === "full" ? "#22c55e" : "#ef4444";
       const displayName = r.account_name || (r.account_email || "").split("@")[0];
       return `
         <div style="display:flex;flex-direction:column;gap:7px;padding:12px 14px;border-radius:10px;border:1px solid ${borderColor};background:${bgColor};transition:border-color .18s;" data-email="${esc(r.account_email)}">
@@ -6148,21 +6222,13 @@ async function loadAssignments() {
             <svg class="searchable-select-arrow" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
             <div class="searchable-select-dropdown"></div>
           </div>
-          <div class="searchable-select-container" data-type="groq">
-            <input type="text" class="searchable-select-input groq-key-select" placeholder="— select Groq key —"
-              onfocus="showSearchableDropdown(this)" oninput="filterSearchableDropdown(this)" onblur="setTimeout(()=>hideSearchableDropdown(this), 250)">
-            <svg class="searchable-select-arrow" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
-            <div class="searchable-select-dropdown"></div>
-          </div>
         </div>`;
     }
 
     listEl.innerHTML = [
-      full.length    ? `<div style="grid-column:1/-1;font-size:.68rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#22c55e;padding:4px 0 2px;">Assigned (${full.length})</div>` : "",
+      full.length ? `<div style="grid-column:1/-1;font-size:.68rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#22c55e;padding:4px 0 2px;">Assigned (${full.length})</div>` : "",
       ...full.map(cardHtml),
-      partial.length ? `<div style="grid-column:1/-1;font-size:.68rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#f59e0b;padding:12px 0 2px;margin-top:4px;">Partial (${partial.length})</div>` : "",
-      ...partial.map(cardHtml),
-      none.length    ? `<div style="grid-column:1/-1;font-size:.68rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--text-muted);padding:12px 0 2px;margin-top:4px;">Unassigned (${none.length})</div>` : "",
+      none.length ? `<div style="grid-column:1/-1;font-size:.68rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--text-muted);padding:12px 0 2px;margin-top:4px;">Unassigned (${none.length})</div>` : "",
       ...none.map(cardHtml),
     ].join("");
 
@@ -6175,13 +6241,7 @@ async function loadAssignments() {
         sel.setAttribute("data-value", r.agent_name || "");
         sel.value = r.agent_name || "";
       }
-      const groqSel = row.querySelector(".groq-key-select");
-      if (groqSel && r.groq_key_id) {
-        groqSel.setAttribute("data-value", String(r.groq_key_id));
-        const key = GROQ_KEYS.find(k => String(k.id) === String(r.groq_key_id));
-        groqSel.value = key ? key.label : "";
-      }
-      _onAssignChange(sel || groqSel, false);
+      _onAssignChange(sel, false);
     });
 
     // Populate the history account dropdown
@@ -6196,58 +6256,25 @@ async function loadAssignments() {
 }
 
 function _onAssignChange(sel, isUserChange = true) {
-  const card = sel.closest("[data-email]");
+  const card = sel ? sel.closest("[data-email]") : null;
   if (!card) return;
   if (isUserChange) card.classList.add("is-dirty");
   const texterSel = card.querySelector(".assign-select");
-  const groqSel = card.querySelector(".groq-key-select");
-
   const texterVal = texterSel ? (texterSel.getAttribute("data-value") || "") : "";
-  const groqVal   = groqSel   ? (groqSel.getAttribute("data-value")   || "") : "";
 
-  // Auto-assign Groq key if texter was changed
-  if (isUserChange && sel.classList.contains("assign-select")) {
-    if (texterVal) {
-      // Only auto-assign if Groq key is not already set (respect manual overrides)
-      if (!groqVal && GROQ_KEYS.length > 0) {
-        const allCards = Array.from(document.querySelectorAll("#assign-list [data-email]"));
-        const cardIdx = allCards.indexOf(card);
-        if (cardIdx >= 0) {
-          const key = GROQ_KEYS[cardIdx % GROQ_KEYS.length];
-          groqSel.setAttribute("data-value", String(key.id));
-          groqSel.value = key.label;
-        }
-      }
-    } else {
-      // If texter unassigned, clear Groq key as per user request
-      groqSel.setAttribute("data-value", "");
-      groqSel.value = "";
-    }
-  }
+  const hasTexter = !!texterVal;
+  const status = hasTexter ? "full" : "none";
+  const borderColor = status === "full" ? "rgba(37,99,235,.35)" : "rgba(255,255,255,.07)";
+  const bgColor = status === "full" ? "rgba(37,99,235,.07)" : "var(--surface-subtle)";
 
-  const hasTexter = !!texterSel?.getAttribute("data-value");
-  const hasKey = !!groqSel?.getAttribute("data-value");
-  const status = (hasTexter && hasKey) ? "full" : ((hasTexter || hasKey) ? "partial" : "none");
-  const borderColor =
-    status === "full" ? "rgba(37,99,235,.35)" :
-    status === "partial" ? "rgba(245,158,11,.35)" :
-    "rgba(255,255,255,.07)";
-  const bgColor =
-    status === "full" ? "rgba(37,99,235,.07)" :
-    status === "partial" ? "rgba(245,158,11,.08)" :
-    "var(--surface-subtle)";
-  card.style.borderColor  = borderColor;
-  card.style.background   = bgColor;
+  card.style.borderColor = borderColor;
+  card.style.background  = bgColor;
   if (texterSel) {
-    texterSel.style.borderColor = status === "full" ? "rgba(37,99,235,.3)" : (status === "partial" ? "rgba(245,158,11,.3)" : "rgba(255,255,255,.08)");
+    texterSel.style.borderColor = status === "full" ? "rgba(37,99,235,.3)" : "rgba(255,255,255,.08)";
     texterSel.style.color = (hasTexter ? "var(--text-primary)" : "var(--text-muted)");
   }
-  if (groqSel) {
-    groqSel.style.borderColor = status === "full" ? "rgba(37,99,235,.3)" : (status === "partial" ? "rgba(245,158,11,.3)" : "rgba(255,255,255,.08)");
-    groqSel.style.color = (hasKey ? "var(--text-primary)" : "var(--text-muted)");
-  }
   const dot = card.querySelector("span[style*='border-radius:50%']");
-  if (dot) dot.style.background = status === "full" ? "#22c55e" : (status === "partial" ? "#f59e0b" : "#ef4444");
+  if (dot) dot.style.background = status === "full" ? "#22c55e" : "#ef4444";
 }
 
 async function copyLatestAssignments(btn) {
@@ -6301,23 +6328,17 @@ async function saveAssignments() {
   const date   = dateEl ? dateEl.value : _todayISO();
   const msgEl  = document.getElementById("assign-msg");
 
-  // Save ALL cards that have any assignment value (not just dirty ones)
-  // This handles the race-condition where is-dirty may not be set if
-  // the blur fires before the dropdown option onclick registers.
   const allCards = document.querySelectorAll("#assign-list [data-email]");
   const rows = Array.from(allCards).filter(card => {
-    const sel     = card.querySelector(".assign-select");
-    const groqSel = card.querySelector(".groq-key-select");
+    const sel       = card.querySelector(".assign-select");
     const agentName = sel ? (sel.getAttribute("data-value") || "") : "";
-    const groqKeyId = groqSel ? (groqSel.getAttribute("data-value") || "") : "";
-    // Include if: has both (full assignment), or is dirty (any user change including unassign)
-    return (agentName && groqKeyId) || card.classList.contains("is-dirty");
+    return agentName || card.classList.contains("is-dirty");
   });
 
   if (rows.length === 0) {
     if (msgEl) {
       msgEl.style.color = "var(--text-muted)";
-      msgEl.textContent = "Nothing to save — select a texter and Groq key first";
+      msgEl.textContent = "Nothing to save — select a texter first";
       setTimeout(() => { if (msgEl) msgEl.textContent = ""; }, 3000);
     }
     return;
@@ -6327,13 +6348,8 @@ async function saveAssignments() {
   for (const row of rows) {
     const email     = row.dataset.email;
     const sel       = row.querySelector(".assign-select");
-    const groqSel   = row.querySelector(".groq-key-select");
     const agentName = sel ? (sel.getAttribute("data-value") || "") : "";
-    const groqKeyId = groqSel ? (groqSel.getAttribute("data-value") || "") : "";
 
-    // Allow saving if agentName is empty (treated as unassign)
-    // But if agentName is present, groqKeyId MUST be present (partial assignment error)
-    if (agentName && !groqKeyId) { errors++; continue; }
     try {
       const res = await fetch("/api/assignments", {
         method:  "POST",
@@ -6341,7 +6357,6 @@ async function saveAssignments() {
         body:    JSON.stringify({
           account_email: email,
           agent_name:    agentName,
-          groq_key_id:   groqKeyId ? parseInt(groqKeyId) : null,
           assigned_date: date,
         }),
       });
@@ -6362,7 +6377,7 @@ async function saveAssignments() {
       msgEl.textContent = `✓ Saved ${saved} assignment${saved !== 1 ? "s" : ""}`;
     } else {
       msgEl.style.color = "#dc2626";
-      msgEl.textContent = `Saved ${saved}, ${errors} error${errors !== 1 ? "s" : ""}${errors > 0 ? " — check Groq key" : ""}`;
+      msgEl.textContent = `Saved ${saved}, ${errors} error${errors !== 1 ? "s" : ""}`;
     }
     setTimeout(() => { if (msgEl) msgEl.textContent = ""; }, 4000);
     // Keep assignment cache in sync

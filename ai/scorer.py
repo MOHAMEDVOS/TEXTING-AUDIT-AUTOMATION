@@ -432,7 +432,7 @@ async def score_agent_conversations(
         # static SEVERITY_MAP can't express — patch its detail from the stash.
         _rt = r.pop("_resp_time", None)
         if _rt:
-            thr = 10 if _rt["severity"] == "high" else 7
+            thr = _rt.get("threshold_min", 10)
             for d in r["flag_details"]:
                 if d.get("flag_id") == "F17":
                     d["severity"] = _rt["severity"]

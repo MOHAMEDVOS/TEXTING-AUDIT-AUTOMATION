@@ -838,9 +838,24 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
 
         # Load all conversations for this agent, newest first
         conv_rows = await conn.fetch(
-            """SELECT c.id, c.extracted_at, c.audit_date, c.convo_date, c.assigned_labels, ct.name AS contact_name
+            """SELECT c.id, c.extracted_at, c.audit_date, c.convo_date, c.assigned_labels,
+                      COALESCE(aa.agent_name, c.texter_name) AS texter_name,
+                      ct.name AS contact_name
                FROM conversations c
                JOIN contacts ct ON ct.id = c.contact_id
+               -- Resolve texter against the conversation's own date (convo_date),
+               -- not audit_date (when the scrape ran). convo_date is 'MM/DD/YYYY' text.
+               LEFT JOIN LATERAL (
+                   SELECT agent_name FROM account_assignments
+                   WHERE account_email = (SELECT email FROM accounts WHERE id = c.agent_id)
+                     AND assigned_date <= CASE
+                           WHEN c.convo_date <> ''
+                           THEN TO_DATE(c.convo_date, 'MM/DD/YYYY')
+                           ELSE c.audit_date
+                         END
+                   ORDER BY assigned_date DESC
+                   LIMIT 1
+               ) aa ON TRUE
                WHERE c.agent_id = $1 AND c.is_archived = FALSE
                ORDER BY c.extracted_at DESC, c.id DESC""",
             agent_id,
@@ -961,6 +976,7 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
             "contact_name":      contact,
             "audit_date":        str(conv["audit_date"]) if conv["audit_date"] else None,
             "convo_date":        (conv["convo_date"] or None),
+            "texter_name":       conv["texter_name"] or None,
             "parsed_messages":   parsed_messages,
             "assigned_labels":   list(conv["assigned_labels"] or []),
             "analysis":          analysis,
@@ -1771,14 +1787,6 @@ async def api_run(body: RunRequest):
                     "Go to Settings → Daily Assignments."
                 ),
             )
-        if not assignment["groq_key_id"] or not assignment["api_key"]:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "No Groq key assigned for today. "
-                    "Go to Settings → Daily Assignments."
-                ),
-            )
 
         RUN_STATUS_DIR.mkdir(parents=True, exist_ok=True)
         status_path = _new_run_status_path(agent_name)
@@ -1815,11 +1823,19 @@ async def api_run(body: RunRequest):
         if label_filter:
             cmd.extend(["--labels", label_filter])
 
+        # Construct clean environment (keys and values must be strings for subprocess.Popen)
+        sub_env = {**os.environ}
+        for k, v in extra_env.items():
+            if v is not None:
+                sub_env[k] = str(v)
+            elif k in sub_env:
+                del sub_env[k]
+
         proc = subprocess.Popen(
             cmd,
             cwd=str(PROJECT_ROOT),
             creationflags=subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0,
-            env={**os.environ, **extra_env},
+            env=sub_env,
         )
         running_processes[agent_name] = proc
         running_pinned_keys[agent_name] = assignment["api_key"]
@@ -2624,44 +2640,32 @@ async def api_post_assignment(body: AssignmentRequest):
     if not email or not date:
         raise HTTPException(status_code=400, detail="account_email and assigned_date are required")
 
+    # Validate date format first
+    try:
+        from datetime import date as _date
+        date_obj = _date.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="assigned_date must be YYYY-MM-DD")
+
     # If agent_name is empty, we treat this as an "unassign" action
     if not agent_name:
         async with app.state.pool.acquire() as conn:
             await conn.execute(
-                "DELETE FROM account_assignments WHERE account_email = $1 AND assigned_date = $2::date",
-                email, date
+                "DELETE FROM account_assignments WHERE account_email = $1 AND assigned_date = $2",
+                email, date_obj
             )
         return {"status": "ok", "message": "Assignment removed"}
-
-    if groq_key_id is None:
-        raise HTTPException(status_code=400, detail="groq_key_id is required")
 
     if agent_name not in AGENT_ROSTER:
         raise HTTPException(status_code=400, detail=f"'{agent_name}' is not in the agent roster")
 
-    # Validate date format
-    try:
-        from datetime import datetime as _dt
-        _dt.strptime(date, "%Y-%m-%d")
-    except ValueError:
-        raise HTTPException(status_code=400, detail="assigned_date must be YYYY-MM-DD")
-
-    # Validate account exists in accounts table + key belongs to shared groq pool.
+    # Validate account exists in accounts table.
     async with app.state.pool.acquire() as conn:
         acct = await conn.fetchrow(
             "SELECT id FROM accounts WHERE LOWER(email) = LOWER($1)", email
         )
-        key_row = await conn.fetchrow(
-            """SELECT id FROM api_keys
-               WHERE id = $1
-                 AND provider = 'groq'
-                 AND agent_name IS NULL""",
-            groq_key_id,
-        )
     if not acct:
         raise HTTPException(status_code=404, detail=f"Account '{email}' not found in database")
-    if not key_row:
-        raise HTTPException(status_code=400, detail=f"groq_key_id '{groq_key_id}' is not a valid shared Groq key")
 
     try:
         async with app.state.pool.acquire() as conn:
@@ -2676,7 +2680,7 @@ async def api_post_assignment(body: AssignmentRequest):
                        assigned_at=CURRENT_TIMESTAMP""",
                 email, agent_name, groq_key_id, date_obj,
             )
-        logger.info(f"Assignment saved: {email} -> {agent_name} (groq_key_id={groq_key_id}) on {date}")
+        logger.info(f"Assignment saved: {email} -> {agent_name} on {date}")
         return {"success": True}
     except Exception as exc:
         logger.exception("Error in POST /api/assignments")
@@ -2935,46 +2939,64 @@ async def api_detailed_dashboard(
                   )""" if flagged_only else ""
 
     _DETAILED_SQL = """
-                SELECT
-                    c.id             AS conversation_id,
-                    ct.name          AS contact_name,
-                    c.assigned_labels,
-                    c.audit_date,
-                    c.texter_name,
-                    cs.compliance_score,
-                    cs.sentiment_score,
-                    cs.professionalism_score,
-                    cs.script_adherence_score,
-                    cs.red_flags,
-                    cs.label_correct,
-                    cs.label_assigned,
-                    cs.label_should_be,
-                    (
-                      jsonb_array_length(cs.red_flags::jsonb)
-                      + CASE WHEN cs.label_correct = false
-                               AND cs.label_assigned IS DISTINCT FROM cs.label_should_be
-                             THEN 1 ELSE 0 END
-                    ) AS issue_count,
-                    (
-                        SELECT m.body FROM messages m
-                        WHERE m.conversation_id = c.id
-                          AND m.sender = 'agent'
-                        ORDER BY m.seq ASC, m.id ASC
+                SELECT *
+                FROM (
+                    SELECT DISTINCT ON (ct.name, c.convo_date, c.audit_date)
+                        c.id             AS conversation_id,
+                        ct.name          AS contact_name,
+                        c.assigned_labels,
+                        c.audit_date,
+                        c.convo_date,
+                        COALESCE(aa.agent_name, c.texter_name) AS texter_name,
+                        cs.compliance_score,
+                        cs.sentiment_score,
+                        cs.professionalism_score,
+                        cs.script_adherence_score,
+                        cs.red_flags,
+                        cs.label_correct,
+                        cs.label_assigned,
+                        cs.label_should_be,
+                        (
+                          jsonb_array_length(cs.red_flags::jsonb)
+                          + CASE WHEN cs.label_correct = false
+                                   AND cs.label_assigned IS DISTINCT FROM cs.label_should_be
+                                 THEN 1 ELSE 0 END
+                        ) AS issue_count,
+                        (
+                            SELECT m.body FROM messages m
+                            WHERE m.conversation_id = c.id
+                              AND m.sender = 'agent'
+                            ORDER BY m.seq ASC, m.id ASC
+                            LIMIT 1
+                        ) AS preview_snippet
+                    FROM conversations c
+                    JOIN contacts ct ON ct.id = c.contact_id
+                    JOIN LATERAL (
+                        SELECT * FROM conversation_scores cs2
+                        WHERE cs2.conversation_id = c.id
+                        ORDER BY cs2.id DESC
                         LIMIT 1
-                    ) AS preview_snippet
-                FROM conversations c
-                JOIN contacts ct ON ct.id = c.contact_id
-                JOIN LATERAL (
-                    SELECT * FROM conversation_scores cs2
-                    WHERE cs2.conversation_id = c.id
-                    ORDER BY cs2.id DESC
-                    LIMIT 1
-                ) cs ON TRUE
-                WHERE {texter_clause}
-                  AND c.audit_date BETWEEN $1 AND $2
-                  {contact_clause}
-                  {flagged_clause}
-                ORDER BY c.audit_date DESC, c.id DESC
+                    ) cs ON TRUE
+                    -- Resolve texter against conversation date, not scrape date
+                    LEFT JOIN LATERAL (
+                        SELECT agent_name FROM account_assignments
+                        WHERE account_email = (SELECT email FROM accounts WHERE id = c.agent_id)
+                          AND assigned_date <= CASE
+                                WHEN c.convo_date <> ''
+                                THEN TO_DATE(c.convo_date, 'MM/DD/YYYY')
+                                ELSE c.audit_date
+                              END
+                        ORDER BY assigned_date DESC
+                        LIMIT 1
+                    ) aa ON TRUE
+                    WHERE {texter_clause}
+                      AND c.audit_date BETWEEN $1 AND $2
+                      {contact_clause}
+                      {flagged_clause}
+                    -- DISTINCT ON keeps the row with the highest id (most recent scrape) per contact+date
+                    ORDER BY ct.name, c.convo_date, c.audit_date, c.id DESC
+                ) deduped
+                ORDER BY audit_date DESC, conversation_id DESC
                 """
 
     contact_search = contact_name.strip()
@@ -3037,11 +3059,24 @@ async def api_conversation_messages(conversation_id: int):
             # Basic conversation info
             conv_row = await conn.fetchrow(
                 """SELECT c.id, ct.name AS contact_name, c.assigned_labels,
-                          c.texter_name, c.audit_date,
-                          a.id AS agent_id
+                          c.audit_date, c.convo_date,
+                          COALESCE(aa.agent_name, c.texter_name) AS texter_name,
+                          a.id AS agent_id, a.email AS account_email, a.name AS account_name
                    FROM conversations c
                    JOIN contacts ct ON ct.id = c.contact_id
                    JOIN accounts a ON a.id = c.agent_id
+                   -- Resolve texter against conversation date, not scrape date
+                   LEFT JOIN LATERAL (
+                       SELECT agent_name FROM account_assignments
+                       WHERE account_email = a.email
+                         AND assigned_date <= CASE
+                               WHEN c.convo_date <> ''
+                               THEN TO_DATE(c.convo_date, 'MM/DD/YYYY')
+                               ELSE c.audit_date
+                             END
+                       ORDER BY assigned_date DESC
+                       LIMIT 1
+                   ) aa ON TRUE
                    WHERE c.id = $1""",
                 conversation_id,
             )
@@ -3098,6 +3133,8 @@ async def api_conversation_messages(conversation_id: int):
                 "conversation_id":   conversation_id,
                 "assigned_labels":   list(conv_row["assigned_labels"] or []),
                 "texter_name":       conv_row["texter_name"],
+                "account_email":     conv_row["account_email"],
+                "account_name":      conv_row["account_name"],
                 "audit_date":        str(conv_row["audit_date"]) if conv_row["audit_date"] else None,
                 "parsed_messages":   [dict(m) for m in msg_rows],
                 "analysis":          analysis,

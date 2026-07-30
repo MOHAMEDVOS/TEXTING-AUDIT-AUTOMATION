@@ -1,31 +1,25 @@
 """
 Deterministic response-time audit (Flag F17).
 
-Measures how long the AGENT took to reply to the LEAD/owner and flags slow
-replies — but only on "live" conversations (labels: Lead, Potential, HL, WL,
-AP, Undefined). Pure / deterministic: no ML or API calls, zero token cost.
+Measures how long the AGENT took to reply to the LEAD/owner during business hours
+(8:00 AM – 8:00 PM EST) and flags slow replies on live conversations:
+  - Yellow Alert (> 10 min): Medium severity, -8 pts Script Adherence penalty
+  - Red Alert (> 15 min): High severity, -15 pts Script Adherence penalty
+  - Critical Delay (> 25 min): High severity, -25 pts Script Adherence penalty
 
-Locked decisions (see plan):
-  - Wall-clock within a session, but gaps over MAX_GAP_MIN are ignored as
-    session breaks (overnight / next-day), so a 12-hour overnight pause never
-    flags as a "slow response".
-  - RECENCY WINDOW: only replies on the current day (or up to WINDOW_DAYS
-    before it, anchored to the real current date via get_now) are scored.
-    Old conversations are out of scope — response-time coaching is about how
-    fast agents reply *now*, not a weeks-old backlog.
-  - Completed replies only — a trailing unanswered lead message is ignored.
-  - One flag, dynamic severity: > YELLOW_MIN -> medium (yellow),
-    > RED_MIN -> high (red). The worst gap within the cap wins.
-  - Deducts from Script Adherence only.
+Pure / deterministic: no ML or API calls, zero token cost.
 """
 from __future__ import annotations
 
 import os
 import re
-from datetime import timedelta
+import logging
+from datetime import datetime, timedelta
+import pytz
 
-from config.settings import get_now
 from database.db import _parse_msg_datetime
+
+logger = logging.getLogger(__name__)
 
 # Canonical flag text — MUST match the F17 entry in ai/prefilter/_guards.py.
 FLAG_TEXT = "Slow response time to an engaged lead."
@@ -40,20 +34,16 @@ def _env_int(name: str, default: int) -> int:
 
 # Thresholds (minutes) and Script-Adherence penalties — env-overridable.
 YELLOW_MIN = _env_int("RESPONSE_TIME_YELLOW_MIN", 10)
-RED_MIN = _env_int("RESPONSE_TIME_RED_MIN", 20)
+RED_MIN = _env_int("RESPONSE_TIME_RED_MIN", 15)
+CRITICAL_MIN = _env_int("RESPONSE_TIME_CRITICAL_MIN", 25)
+
 SCRIPT_PENALTY_YELLOW = _env_int("RESPONSE_TIME_PENALTY_YELLOW", 8)
 SCRIPT_PENALTY_RED = _env_int("RESPONSE_TIME_PENALTY_RED", 15)
+SCRIPT_PENALTY_CRITICAL = _env_int("RESPONSE_TIME_PENALTY_CRITICAL", 25)
 
-# Session-break cap: gaps longer than this (minutes) are NOT a slow response —
-# they're an overnight / next-day / lead-resurfaced-hours-later pause and are
-# ignored. A real "slow reply" happens inside an active back-and-forth.
-MAX_GAP_MIN = _env_int("RESPONSE_TIME_MAX_GAP_MIN", 60)
-
-# Recency window: how many calendar days BEFORE today are still in scope.
-#   0 = today only | 1 = today + yesterday (default) | 2 = today + 2 prior days
-# Anchored to the real current date (get_now), so months-old conversations are
-# never scored for response time.
-WINDOW_DAYS = _env_int("RESPONSE_TIME_WINDOW_DAYS", 1)
+# Business hours limits (EST)
+BUSINESS_START_HOUR = _env_int("BUSINESS_START_HOUR", 8)   # 8:00 AM
+BUSINESS_END_HOUR = _env_int("BUSINESS_END_HOUR", 20)     # 8:00 PM
 
 # Conversation labels that get response-time auditing.
 TARGET_LABELS = {"lead", "potential", "hl", "wl", "ap", "undefined"}
@@ -71,9 +61,47 @@ def _labels_match(assigned_labels) -> bool:
 
 
 def _is_agent(sender: str | None) -> bool:
-    """Contact/lead messages use sender == 'Contact'; everything else is the
-    agent (the scraper stores the agent's first name as the sender)."""
+    """Contact/lead messages use sender == 'Contact'; everything else is the agent."""
     return (sender or "").strip().lower() != "contact"
+
+
+def _business_minutes_between(dt1: datetime, dt2: datetime) -> float:
+    """
+    Calculate active business minutes between dt1 and dt2 during 8:00 AM - 8:00 PM EST.
+    Overnight hours (8 PM to 8 AM next day) are excluded so overnight pauses don't skew stats,
+    while long daytime delays (> 25 min) are strictly measured.
+    """
+    if not dt1 or not dt2 or dt2 <= dt1:
+        return 0.0
+
+    est = pytz.timezone("US/Eastern")
+    if dt1.tzinfo is None:
+        dt1 = est.localize(dt1)
+    else:
+        dt1 = dt1.astimezone(est)
+
+    if dt2.tzinfo is None:
+        dt2 = est.localize(dt2)
+    else:
+        dt2 = dt2.astimezone(est)
+
+    total_seconds = 0.0
+    curr_date = dt1.date()
+    end_date = dt2.date()
+
+    while curr_date <= end_date:
+        b_start = est.localize(datetime(curr_date.year, curr_date.month, curr_date.day, BUSINESS_START_HOUR, 0, 0))
+        b_end = est.localize(datetime(curr_date.year, curr_date.month, curr_date.day, BUSINESS_END_HOUR, 0, 0))
+
+        t0 = max(dt1, b_start) if curr_date == dt1.date() else b_start
+        t1 = min(dt2, b_end) if curr_date == end_date else b_end
+
+        if t1 > t0:
+            total_seconds += (t1 - t0).total_seconds()
+
+        curr_date += timedelta(days=1)
+
+    return total_seconds / 60.0
 
 
 def check_response_time(parsed_messages, assigned_labels) -> dict | None:
@@ -83,19 +111,16 @@ def check_response_time(parsed_messages, assigned_labels) -> dict | None:
 
     On a hit:
         {
-          "severity": "medium" | "high",   # yellow | red
-          "minutes":  int,                  # worst completed gap, rounded
+          "severity": "medium" | "high",
+          "threshold_tag": "yellow" | "red" | "critical",
+          "threshold_min": 10 | 15 | 25,
+          "minutes": int,
           "evidence": [lead_msg, agent_msg],
           "script_penalty": int,
         }
     """
     if not _labels_match(assigned_labels):
         return None
-
-    # Recency window — only score replies on the current day or up to
-    # WINDOW_DAYS before it. Compared on date() so a naive scraped datetime and
-    # the tz-aware get_now() never clash.
-    window_start = (get_now() - timedelta(days=WINDOW_DAYS)).date()
 
     worst_minutes = -1.0
     worst_evidence = None
@@ -108,43 +133,44 @@ def check_response_time(parsed_messages, assigned_labels) -> dict | None:
         dt = _parse_msg_datetime(msg)
 
         if _is_agent(msg.get("sender")):
-            # Agent reply closes any open lead gap. Skip replies that landed
-            # before the recency window — old convos are out of scope.
-            if (
-                pending_open
-                and pending_dt is not None
-                and dt is not None
-                and dt.date() >= window_start
-            ):
-                gap = (dt - pending_dt).total_seconds() / 60.0
-                # Ignore session-break gaps (overnight / multi-day): they aren't
-                # a response-time issue. Keep the worst gap within the cap.
-                if 0 <= gap <= MAX_GAP_MIN and gap > worst_minutes:
+            if pending_open and pending_dt is not None and dt is not None:
+                gap = _business_minutes_between(pending_dt, dt)
+                if gap > worst_minutes:
                     worst_minutes = gap
                     worst_evidence = [pending_msg, msg]
             pending_open = False
             pending_dt = None
             pending_msg = None
         else:
-            # Lead message: start the clock only on the FIRST of a burst, so a
-            # run of consecutive lead messages reflects the true wait time.
             if not pending_open:
                 pending_open = True
                 pending_dt = dt
                 pending_msg = msg
-    # A trailing unanswered lead message is intentionally ignored.
 
     if worst_evidence is None or worst_minutes <= YELLOW_MIN:
         return None
 
     minutes = int(round(worst_minutes))
-    if worst_minutes > RED_MIN:
-        severity, penalty = "high", SCRIPT_PENALTY_RED
+    if worst_minutes > CRITICAL_MIN:
+        severity = "high"
+        penalty = SCRIPT_PENALTY_CRITICAL
+        threshold_tag = "critical"
+        threshold_min = CRITICAL_MIN
+    elif worst_minutes > RED_MIN:
+        severity = "high"
+        penalty = SCRIPT_PENALTY_RED
+        threshold_tag = "red"
+        threshold_min = RED_MIN
     else:
-        severity, penalty = "medium", SCRIPT_PENALTY_YELLOW
+        severity = "medium"
+        penalty = SCRIPT_PENALTY_YELLOW
+        threshold_tag = "yellow"
+        threshold_min = YELLOW_MIN
 
     return {
         "severity": severity,
+        "threshold_tag": threshold_tag,
+        "threshold_min": threshold_min,
         "minutes": minutes,
         "evidence": worst_evidence,
         "script_penalty": penalty,

@@ -670,6 +670,36 @@ def label_requires_ai(assigned_labels: list[str] | None) -> tuple[bool, str | No
     return False, None
 
 
+# Labels that are vague / catch-all and should be de-prioritised when a more
+# specific label is also present in the same conversation.
+_VAGUE_LABELS = {
+    "undefined", "stop responding", "stopped responding", "missed call", "fu3",
+}
+
+
+def _pick_primary_label(assigned_labels: list[str] | None) -> str:
+    """Return the single best label string to use for ML validation.
+
+    When a texter assigns multiple labels (e.g. ["Undefined", "Not Interested"]),
+    we should evaluate the most *specific* one — not blindly take index [0].
+
+    Priority:
+      1. First label whose normalised form is NOT in _VAGUE_LABELS.
+      2. Fall back to the first label if every label is vague.
+      3. Return "" if the list is empty.
+
+    The full joined string ("Undefined, Not Interested") is still stored as
+    label_assigned; this helper only controls WHICH label the ML validates.
+    """
+    if not assigned_labels:
+        return ""
+    for lbl in assigned_labels:
+        if _norm(lbl) not in _VAGUE_LABELS:
+            return lbl.strip()
+    # All labels are vague — return the first one anyway
+    return assigned_labels[0].strip()
+
+
 _POSITIVE_ENGAGEMENT = [
     re.compile(r"\byes\b.{0,20}\b(absolutely|definitely|sure|of\s+course|please|okay|ok)\b", re.I),
     # "absolutely"/"definitely" only when NOT followed by "not" — "Definitely not" is still NI

@@ -2306,7 +2306,7 @@ async function selectAgent(id) {
   }
   showView("vw-agent");
 
-  document.getElementById("ag-name").textContent  = _getAssignedTexter(agent.email) || agent.name || "—";
+  document.getElementById("ag-name").textContent  = agent.name || "—";
   document.getElementById("ag-email").textContent = agent.email || "";
   document.getElementById("ag-date").textContent  = agent.audit_date ? `· ${agent.audit_date.slice(0, 10)}` : "";
   document.getElementById("ag-ccount").textContent = "Loading…";
@@ -2503,6 +2503,7 @@ function renderConvoList() {
           <div style="display:flex; align-items:center; gap:7px; margin-bottom:3px; flex-wrap:wrap;">
             ${labelHtml}
             ${a.funnel_stage_reached ? `<span style="font-size:.68rem;color:var(--text-secondary);">· ${esc(a.funnel_stage_reached)}</span>` : ""}
+            ${c.texter_name ? `<span style="font-size:.65rem;font-weight:600;color:var(--accent);background:rgba(99,102,241,.13);border:1px solid rgba(99,102,241,.25);padding:1px 7px;border-radius:99px;flex-shrink:0;">👤 ${esc(c.texter_name)}</span>` : ""}
           </div>
           ${mlLabelStatus ? `<div style="margin-bottom:3px;">${mlLabelStatus}</div>` : ""}
           ${preview ? `<div style="font-size:.68rem;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(preview)}</div>` : ""}
@@ -2555,7 +2556,8 @@ function selectConversation(index) {
   chAv.textContent = fmtInit(contact);
   chAv.className = `av av-sm ${agentAv(contact)}`;
   document.getElementById("ch-name").textContent  = contact;
-  document.getElementById("ch-label").textContent = `${selectedAgent?.name || ""} · ${labels}`;
+  const texterDisplay = convo.texter_name && convo.texter_name !== (selectedAgent?.name || "") ? ` · 👤 ${convo.texter_name}` : "";
+  document.getElementById("ch-label").textContent = `${selectedAgent?.name || ""} · ${labels}${texterDisplay}`;
   document.getElementById("ch-score").innerHTML   = score != null
     ? `<span class="pill ${pillClass(score)}">${fmtScore(score)}</span>`
     : "";

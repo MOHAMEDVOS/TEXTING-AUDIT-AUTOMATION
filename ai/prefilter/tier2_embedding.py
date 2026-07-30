@@ -210,8 +210,9 @@ def _build_result(
     """Assemble a Groq-shaped output dict with smart summary."""
     from . import summary_builder
 
-    label = (assigned_labels or [""])[0].strip() if assigned_labels else ""
-    from .label_validator import validate_label
+    from .label_validator import validate_label, _pick_primary_label
+    label = _pick_primary_label(assigned_labels)
+    label_assigned_str = ", ".join(assigned_labels) if assigned_labels else label
     label_check = validate_label(messages, label)
     label_flags = label_check.get("red_flags", [])
     if label_flags:
@@ -239,7 +240,7 @@ def _build_result(
         "funnel_stage_reached": funnel,
         "pillars_gathered": [],
         "rebuttals_used": [],
-        "label_assigned": label,
+        "label_assigned": label_assigned_str,
         "label_correct": label_check["label_correct"],
         "label_should_be": label_check["label_should_be"],
         "label_reason": label_check["label_reason"],

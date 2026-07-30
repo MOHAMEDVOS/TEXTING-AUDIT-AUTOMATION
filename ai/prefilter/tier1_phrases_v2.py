@@ -1152,8 +1152,10 @@ def evaluate(
     if funnel_tier not in _PILLAR_THRESHOLD:
         funnel_tier = "NF"
 
-    # Real label the texter set — passed to every _clean_result call
-    _actual_label = (assigned_labels or [""])[0].strip() if assigned_labels else None
+    # Pick the most specific label the texter assigned — skip vague catch-alls
+    # (e.g. "Undefined + Not Interested" → use "Not Interested" for evaluation).
+    from ai.prefilter.label_validator import _pick_primary_label
+    _actual_label = _pick_primary_label(assigned_labels) or None
 
     contact_msgs = [m for m in messages if _sender(m) == "contact"]
     contact_text = " \n ".join(_body(m) for m in contact_msgs)
