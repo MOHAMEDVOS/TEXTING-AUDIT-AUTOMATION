@@ -173,7 +173,20 @@ class SmarterContactGQL:
                 "variables": variables,
             },
         )
-        data = resp.json()
+        try:
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            raise RuntimeError(
+                f"[{operation}] HTTP error {resp.status_code}: {resp.text[:200]}"
+            ) from e
+
+        try:
+            data = resp.json()
+        except Exception as e:
+            raise RuntimeError(
+                f"[{operation}] Invalid JSON response (HTTP {resp.status_code}): {resp.text[:200]}"
+            ) from e
+
         if "errors" in data:
             msg = data["errors"][0].get("message", "GQL error")
             raise RuntimeError(f"[{operation}] {msg}")

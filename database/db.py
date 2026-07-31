@@ -83,21 +83,28 @@ class Database:
     async def initialize(self):
         """Create connection pool and ensure all tables exist.
 
-        Schema execution is serialized with a PostgreSQL advisory lock
-        (key 987654321) so that parallel agent subprocesses never race on
-        ALTER TABLE / setval statements — the root cause of deadlock errors
-        when multiple agents start simultaneously.
+        Schema execution is bypassed if tables already exist to prevent relation lock
+        deadlocks in concurrent agent runs, while connection pool limits are set to
+        1-2 to avoid PostgreSQL client connection exhaustion.
         """
-        self.pool = await asyncpg.create_pool(self.dsn, min_size=2, max_size=10)
-        schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
+        self.pool = await asyncpg.create_pool(self.dsn, min_size=1, max_size=2)
         async with self.pool.acquire() as conn:
-            # Acquire a session-level advisory lock so only one process runs
-            # the schema at a time. Other processes block here (not deadlock).
-            await conn.execute("SELECT pg_advisory_lock(987654321)")
-            try:
-                await conn.execute(schema_sql)
-            finally:
-                await conn.execute("SELECT pg_advisory_unlock(987654321)")
+            # Check if database tables already exist
+            tables_exist = await conn.fetchval(
+                "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'conversations')"
+            )
+            if not tables_exist:
+                logger.info("Database schema not found. Initializing database schema...")
+                schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
+                # Acquire a session-level advisory lock so only one process runs
+                # the schema at a time. Other processes block here (not deadlock).
+                await conn.execute("SELECT pg_advisory_lock(987654321)")
+                try:
+                    await conn.execute(schema_sql)
+                finally:
+                    await conn.execute("SELECT pg_advisory_unlock(987654321)")
+            else:
+                logger.debug("Database schema already initialized. Skipping schema DDL execution.")
         logger.info("Database initialized (PostgreSQL)")
 
     async def close(self):
