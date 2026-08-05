@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 
 
-# ── The 15 whitelisted flag strings ──────────────────────────────────────────
+# ── The 17 whitelisted flag strings ──────────────────────────────────────────
 # T4, normalize_red_flags, and analyzer all use this exact list.
 WHITELIST_FLAG_OUTPUTS = [
     "Continued texting after explicit opt-out.",
@@ -105,10 +105,10 @@ DEFAULT_COACHING: dict[str, str] = {
     "F11": "When all pillars are gathered, escalate with a clear call-to-action.",
     "F12": "On a high/above-market price, use the $1k referral close before ending.",
     "F13": "Acknowledge the price the owner already stated — don't re-ask for it.",
-    "F14": "On a push label, always send a handoff message (partner/team will reach out).",
+    "F14": "When a contact denies knowing the address after giving property details, ask a clarifying question (parcel number, correct address) instead of closing — and label Potential/Undefined, not Bluffer.",
     "F15": "On an above-market price, switch to the referral close rather than continuing to push.",
     "F16": "A pushed lead must be closed with a handoff message — coach the agent to always tell the lead the team will reach out.",
-    "F17": "Reply to engaged leads within 7 minutes; over 10 minutes needs immediate attention.",
+    "F17": "Reply to engaged leads within 10 business-hour minutes; over 15 is a red alert and over 25 needs immediate attention.",
     WRONG_LABEL_FLAG_ID: "Re-label the conversation per the audit; review the labelling rule that was missed.",
 }
 
@@ -126,7 +126,7 @@ EXPLAIN_TEMPLATE: dict[str, str] = {
     "F11": "All four pillars were gathered but the agent did not escalate to a call.",
     "F12": "The lead gave a high price and the agent ended without the $1k referral close.",
     "F13": "The owner already stated an asking price and the agent re-asked for it.",
-    "F14": "A push label was assigned but no handoff message was sent.",
+    "F14": "The contact denied knowing the address after providing property details and the agent closed the conversation instead of asking a clarifying question.",
     "F15": "The lead's price was above market and the agent kept pushing instead of the referral close.",
     "F16": "The lead was pushed (hand raise) but the agent never sent a handoff message.",
     "F17": "The agent took longer than the response-time threshold to reply to the lead.",
@@ -236,7 +236,7 @@ def extract_evidence(flag_id: str, messages: list[dict]) -> list[dict]:
 _DYNAMIC_REMAP: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bre-?asked\b", re.I),                          "F13"),
     (re.compile(r"inflated price|above[\s-]?market", re.I),       "F15"),
-    (re.compile(r"\bno handoff\b", re.I),                         "F14"),
+    (re.compile(r"\bno handoff\b", re.I),                         "F16"),
     (re.compile(r"missed pillars?", re.I),                        "F11"),
     (re.compile(r"opt[\s-]?out|unsubscribe|stop\s+text", re.I),   "F1"),
 ]
@@ -267,12 +267,26 @@ def _detail_for(fid: str, text: str, messages, source, *, canonical: bool) -> di
     }
 
 
+# Marker appended (ai/scorer.py) to a "Wrong label:" flag when the texter's
+# label and the ML's suggestion are both defensible readings of the same
+# conversation (label_validator.is_defensible_alternative) — e.g. DNC vs Not
+# Interested with no explicit opt-out, or a specialist label like Investor
+# vs the generic Not Interested the ML falls back to. Added 2026-08-05 after
+# #9/#10/#14 in the 18-conversation review showed texters being penalised
+# for choosing a MORE useful, equally-valid label. The flag still surfaces
+# (so label drift stays visible to the Head of Texting) but is emitted at
+# needs_review confidence instead of counting as a texter error.
+DEFENSIBLE_ALTERNATIVE_SUFFIX = " (defensible alternative — texter's label is also valid)"
+DEFENSIBLE_ALTERNATIVE_CONFIDENCE = 0.40  # below confidence_tier()'s 0.55 needs_review bar
+
+
 def _detail_wrong_label(text: str, source) -> dict:
     """Wrong-label detail — flag_text is the EXACT original string so the
     dashboard's flag_details lookup matches (prefilter wrong-label flags may
     carry suffixes like \"(contact said: 'six million')\")."""
     fid = WRONG_LABEL_FLAG_ID
-    conf = CONFIDENCE_MAP[fid]
+    is_defensible = DEFENSIBLE_ALTERNATIVE_SUFFIX in text
+    conf = DEFENSIBLE_ALTERNATIVE_CONFIDENCE if is_defensible else CONFIDENCE_MAP[fid]
     return {
         "flag_id": fid,
         "flag_text": text.strip(),
@@ -281,7 +295,12 @@ def _detail_wrong_label(text: str, source) -> dict:
         "confidence_tier": confidence_tier(fid, conf),
         "evidence": [],
         "explanation": text.strip(),   # the string already explains itself
-        "coaching": DEFAULT_COACHING[fid],
+        "coaching": (
+            "Both labels are defensible — this is visibility into label "
+            "drift, not a texter error. No coaching action needed unless "
+            "the pattern recurs often for this texter."
+            if is_defensible else DEFAULT_COACHING[fid]
+        ),
         "source": source or "groq",
         "origin": "deterministic",
     }

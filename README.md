@@ -11,7 +11,7 @@ An advanced, high-performance automated auditing system for SMS/texting conversa
   - **Compliance**: Opt-out/STOP respect, kid-DNC rule (bare "I'm 15" detection), Wrong Number handling.
   - **Attitude**: Agent warmth, condescension detection, price-disagreement label guards.
   - **Professionalism**: Incoherent messages, name errors, bluffer guard (full-value stance = negotiation, not bluffing).
-  - **Script Adherence**: 3-rebuttal playbook, 4-pillar qualification, WF hand-raise validation, F14 no-handoff flag.
+  - **Script Adherence**: 3-rebuttal playbook, 4-pillar qualification, WF hand-raise validation, F16 no-handoff flag.
 - **4-Tier ML Pre-Filter**: Cost-saving local pipeline for obviously clean chats:
   - **Tier 1**: Keyword/phrase scanning.
   - **Tier 2**: kNN similarity matching (FAISS, 911+ examples).
@@ -48,7 +48,7 @@ Required for NF / Hot Lead classification:
 
 - **Kid-DNC beats Wrong Number**: bare "I'm 15" (or similar minor statement) triggers DNC regardless of WN label.
 - **Bluffer Guard**: agent stating full value as a stance counts as negotiation, not bluffing — prevents false F flags.
-- **WF Hand-Raise**: validates "Lead, Pushed to client" push label exists; missing handoff message = F14 flag (−20 script score).
+- **WF Hand-Raise**: validates "Lead, Pushed to client" push label exists; missing handoff message = F16 flag.
 - **Condescension + Price-Disagreement**: label guards prevent false positives when leads argue price.
 - **Read-Ack**: "Done" status auto-clears when the account is opened in the dashboard.
 

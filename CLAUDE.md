@@ -104,7 +104,7 @@ The system classifies every conversation into a **Funnel** type to apply relevan
 **Notable Scoring Rules (implemented):**
 -   **Kid-DNC > Wrong Number**: bare "I'm 15" (minor) triggers DNC regardless of WN label.
 -   **Bluffer Guard**: agent stating full value as a stance = negotiation, not bluffing. Prevents false F flags.
--   **WF Hand-Raise**: validates "Lead, Pushed to client" push label; missing handoff msg = F14 flag (−20 script).
+-   **WF Hand-Raise**: validates "Lead, Pushed to client" push label; missing handoff msg = **F16** flag. (F14 is the *address-denial* flag — don't confuse the two.)
 -   **Condescension + Price-Disagreement guards**: label checks prevent false positives when leads argue price.
 -   **Read-Ack**: "Done" status auto-clears when the account is opened in the dashboard.
 

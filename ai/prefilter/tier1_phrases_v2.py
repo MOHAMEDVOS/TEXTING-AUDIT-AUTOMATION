@@ -714,8 +714,13 @@ _WRONG_NUMBER_PATTERNS = [
     re.compile(r"\bthis\s+must\s+(be|have)\s+(a\s+)?wrong\b", re.I),
     re.compile(r"\b(mis-?print|wrong\s+person)\b", re.I),
     re.compile(r"\bi\s+am\s+not\s+the\s+owner\b", re.I),
-    re.compile(r"\bhave\s+not\s+owned.{0,30}(year|month)", re.I),
-    re.compile(r"\bhaven'?t\s+owned\b", re.I),
+    # NOTE (2026-08-05): "haven't owned [it] for years" / "have not owned...
+    # month(s)" removed — that's a FORMER owner (the property sold/changed
+    # hands), not an identity mismatch. #7 Dan Wiseman said "Haven't owned
+    # that house for years" and was short-circuited as Wrong Number when he
+    # is a legitimate former-owner referral lead. No longer matches Wrong
+    # Number OR Sold — deliberately deferred to Groq/T4 rather than guessing
+    # which of "sold it / inherited it / foreclosed" applies.
     re.compile(r"\bi\s+don'?t\s+know\s+(the\s+)?address\b", re.I),
     re.compile(r"\[Name\].*\[Mobile\]", re.I),
 ]
@@ -950,7 +955,12 @@ _SOLD_SC_PATTERNS = [
     # Bare "Sold" as the entire reply — most common case (Abrahan Preciado scenario)
     re.compile(r"^\s*sold[.!?]?\s*$", re.I | re.MULTILINE),
     # Compound sold phrases
-    re.compile(r"\b(already\s+sold|just\s+sold|under\s+contract|sold\s+it)\b", re.I),
+    # NOTE (2026-08-05): "under contract" removed — it's a PENDING sale, not a
+    # completed one (the deal can still fall through). #4 Kimberly Stephens
+    # said "We're under contract" and was short-circuited as Sold when the
+    # texter's correct label was Listed. Falls through to label_validator's
+    # _LISTED (which now includes "under contract") instead of short-circuiting.
+    re.compile(r"\b(already\s+sold|just\s+sold|sold\s+it)\b", re.I),
     re.compile(r"\b(it'?s?\s+sold|was\s+sold|is\s+sold|property\s+sold|place\s+sold)\b", re.I),
     re.compile(r"\bno\s+longer\s+(available|for\s+sale|on\s+the\s+market)\b", re.I),
     re.compile(r"\b(closing\s+soon|in\s+escrow|sale\s+pending)\b", re.I),

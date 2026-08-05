@@ -15,7 +15,8 @@ import psycopg2
 from config.settings import DATABASE_URL, get_now
 from ai.analyzer import analyze_conversation
 from ai.prefilter.label_validator import _label_key as _lk
-from ai.prefilter._guards import build_flag_details
+from ai.prefilter.label_validator import is_defensible_alternative
+from ai.prefilter._guards import build_flag_details, DEFENSIBLE_ALTERNATIVE_SUFFIX
 from ai.response_time import check_response_time, FLAG_TEXT as RESPONSE_TIME_FLAG
 from ai.prompts import PROMPT_VERSION
 
@@ -403,7 +404,14 @@ async def score_agent_conversations(
             if not _is_allowed_label_name(should):
                 r["label_correct"] = True
                 continue
-            flag  = f"Wrong label: assigned '{wrong}' but should be '{should}'"
+            flag = f"Wrong label: assigned '{wrong}' but should be '{should}'"
+            # Defensible-alternative pairs (DNC vs Not Interested with no explicit
+            # opt-out; a specialist label like Investor vs generic Not Interested)
+            # still surface as a flag — label drift stays visible — but are marked
+            # so _guards._detail_wrong_label emits them at needs_review confidence
+            # instead of counting as a texter error. See is_defensible_alternative().
+            if is_defensible_alternative(wrong, should):
+                flag += DEFENSIBLE_ALTERNATIVE_SUFFIX
             flags = list(r.get("red_flags") or [])
             if flag not in flags:
                 flags.insert(0, flag)

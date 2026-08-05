@@ -64,20 +64,35 @@ _WRONG_NUMBER = [
     re.compile(r"\bro+ng\s+(number|#)\b", re.I),  # "Rong number" typo
     re.compile(r"\bnot\s+(me|mine|my\s+property|the\s+owner)\b", re.I),
     re.compile(r"\byou\s+have\s+the\s+wrong\s+(person|number)\b", re.I),
-    re.compile(r"\bway\s+off\s+base\b", re.I),
+    # NOTE: "way off base" removed (2026-08-05) — it's a PRICE idiom
+    # ("you're way off base with that price"), not an identity mismatch.
+    # See _PRICE_OBJECTION_RE / summary_builder._BUYER_SIDE_REJECTION_RE.
     re.compile(r"\bmy\s+name\s+is\s+not\b", re.I),
     re.compile(r"\bi\s+don'?t\s+(live|own|have).{0,40}\b(address|property|house|home)\b", re.I),
     re.compile(r"\bnot\s+\w+'?s?\s+(number|phone)\b", re.I),  # "not Ronald's phone"
     re.compile(r"\bnot\s+familiar\s+with\s+that\s+address\b", re.I),
-    # "I am not [Name]" / "It is not [Name]" — only proper names, not NI phrases
-    # Excludes: interested, selling, ready, looking, available, the, sure, doing, etc.
+    # "I am not [Name]" / "It is not [Name]" — only proper names, not NI phrases.
+    # No re.I flag on the whole pattern: the (?=[A-Z]) guard needs a literal
+    # capital letter so common lowercase filler words never match a "name".
+    # Excludes: interested, selling, ready, looking, available, the, sure, doing,
+    # dead, necessarily, really, certain, comfortable, happy, willing, particularly.
     re.compile(
         r"(?i:\b(i'?m|i\s+am|this\s+is|it\s+is|it'?s)\s+not\s+)"
-        r"(?!(?i:interested|selling|ready|looking|available|the|sure|doing|something|going|for\s+sale|at\s+))"
+        r"(?!(?i:interested|selling|ready|looking|available|the|sure|doing|something|going|for\s+sale|at\s+"
+        r"|dead|necessarily|really|certain|comfortable|happy|willing|particularly|able))"
         r"(?=[A-Z])[A-Za-z]{3,}\b",
     ),
-    # "Who is [Name]?" — contact confused about who is being texted
-    re.compile(r"(?i:who\s+is\s+)(?=[A-Z])[A-Za-z]{2,}\b.*\?"),
+    # "Who is [Name]?" / "Who the hell is [Name]?" — contact confused about who
+    # is being texted. Requires an actual capitalized name-shaped token (no
+    # re.I on the whole pattern) so generic identity questions like "Who is
+    # this?" / "Who is that?" never fire — those mean "who's texting me", not
+    # "you have the wrong number". See _NEVER_WRONG_NUMBER for the explicit
+    # block-list checked earlier in _expected_label().
+    re.compile(
+        r"(?i:\bwho\s+(?:the\s+)?(?:hell\s+)?is\s+)"
+        r"(?!(?i:this|that|it|dis|u|you|ya|he|she|they)\b)"
+        r"(?=[A-Z])[A-Za-z]{2,}\b.*\?"
+    ),
     # "That's my daughter's/son's/sister's/brother's house"
     re.compile(r"\b(my|his|her|their)\s+(daughter|son|sister|brother|mother|father|parent|spouse|wife|husband|relative|friend)'?s?\s+(house|home|property|place)\b", re.I),
     # "I don't own" / "I don't have a home" / "I rent"
@@ -105,20 +120,60 @@ _WRONG_NUMBER = [
     re.compile(r"\b(is|are)\s+deceased\b", re.I),   # "Lethais deceased"
     re.compile(r"\bi\s+do\s+not\s+own\s+a\s+(house|property|home)\s+at\b", re.I),
     re.compile(r"\bthat'?s?\s+not\s+my\s+(place|property|house|number)\b", re.I),
-    re.compile(r"\bwho\s+(the\s+)?(hell\s+)?is\s+\w+\?", re.I),   # "Who the hell is Amjad?"
-    # "I'm not [Name]" — excludes NI/selling phrases like "I'm not interested"
+    # NOTE (2026-08-05): the old duplicate "\bwho...is\s+\w+\?" here (with a
+    # blanket re.I flag and no capital-letter guard) was removed — it matched
+    # "Who is this?" / "Who is that?" as if they were name-confusion. The
+    # capital-letter-safe version now lives once, earlier in this list.
+    # "I'm not [Name]" — excludes NI/selling phrases like "I'm not interested".
+    # No re.I flag on the whole pattern (same fix as "I am not [Name]" above):
+    # the earlier duplicate here used re.I on [A-Za-z]{3,}, which let lowercase
+    # filler words ("dead", "necessarily") match as if they were person names.
     re.compile(
-        r"\bi'?m\s+not\s+(?!(?:interested|selling|ready|looking|available|sure|doing|going|for\s+sale|at\s+)\b)[A-Za-z]{3,}\b",
-        re.I,
+        r"(?i:\bi'?m\s+not\s+)"
+        r"(?!(?i:interested|selling|ready|looking|available|sure|doing|going|for\s+sale|at\s+"
+        r"|dead|necessarily|really|certain|comfortable|happy|willing|particularly|able)\b)"
+        r"(?=[A-Z])[A-Za-z]{3,}\b",
     ),
-    # "This isn't [Name]" — same exclusion guard
+    # "This isn't [Name]" — same exclusion guard, same capital-letter requirement.
     re.compile(
-        r"\bthis\s+isn'?t\s+(?!(?:interested|selling|ready|looking|available|sure|doing|going|for\s+sale|at\s+)\b)[A-Za-z]{3,}\b",
-        re.I,
+        r"(?i:\bthis\s+isn'?t\s+)"
+        r"(?!(?i:interested|selling|ready|looking|available|sure|doing|going|for\s+sale|at\s+"
+        r"|dead|necessarily|really|certain|comfortable|happy|willing|particularly|able)\b)"
+        r"(?=[A-Z])[A-Za-z]{3,}\b",
     ),
     re.compile(r"\bi\s+am\s+not\s+affiliated\b", re.I),
     re.compile(r"\bnot\s+\w+'?s?\s+(phone|number)\s+anymore\b", re.I),
 ]
+
+# Generic identity questions / soft phrasings that must NEVER be read as Wrong
+# Number, even though a naive keyword scan might catch a fragment of them.
+# Checked BEFORE _WRONG_NUMBER in _expected_label() — if any of these match
+# and no *other*, more specific WN signal is present, Wrong Number is blocked.
+# Added 2026-08-05 after 5/18 reviewer-rejected flags were "Who is this?" or a
+# similar soft phrase being misread as a wrong-number declaration.
+_NEVER_WRONG_NUMBER = [
+    re.compile(r"^\s*who\s+is\s+this[?.!]*\s*$", re.I),
+    re.compile(r"^\s*who'?s\s+this[?.!]*\s*$", re.I),
+    re.compile(r"^\s*who\s+are\s+you[?.!]*\s*$", re.I),
+    re.compile(r"^\s*who\s+dis[?.!]*\s*$", re.I),
+    re.compile(r"^\s*who[?.!]*\s*$", re.I),
+    re.compile(r"\bhow\s+did\s+you\s+get\s+this\s+number\b", re.I),
+    re.compile(r"\bwhere\s+did\s+you\s+get\s+(this|my)\s+number\b", re.I),
+    re.compile(r"\bhow\s+do\s+you\s+have\s+my\s+(number|cell(ular)?)\b", re.I),
+    re.compile(r"\bhow\s+are\s+you\s+able\s+to\s+get\s+my\b", re.I),
+    re.compile(r"\bno\s+plans\s+of\s+selling\b", re.I),
+    re.compile(r"\bnot\s+necessarily\b", re.I),
+    re.compile(r"\bnot\s+really\b", re.I),
+]
+
+# Price-objection idioms — a contact rejecting the OFFER, not the identity of
+# the person texting them. "way off base" used to live in _WRONG_NUMBER by
+# mistake; a contact who's arguing about price has, by definition, confirmed
+# they're the right person (see label_vetoes.contact_engaged_on_property).
+_PRICE_OBJECTION_RE = re.compile(
+    r"\bway\s+off\s+base\b|\btoo\s+low\b|\bnot\s+even\s+close\b|\blowball(ed)?\b",
+    re.I,
+)
 
 _DNC = [
     re.compile(r"\bstop\s+(texting|messaging|contacting|calling|bothering)\s+me\b", re.I),
@@ -153,7 +208,14 @@ _DNC = [
     re.compile(r"\breporting\s+this\s+number\s+to\b", re.I),   # "reporting to BBB"
     re.compile(r"\bno\s+please\s+remove\s+from\b", re.I),
     re.compile(r"\bremove\s+from\s+(mailing\s+)?list\b", re.I),
-    re.compile(r"\bgo\s+away\b", re.I),
+    # "remove this number off the contract list" (#18) — object-first phrasing
+    # that "remove me" / "remove from list" above don't cover.
+    re.compile(r"\bremove\s+(this|my|the)\s+(number|phone|contact)\b", re.I),
+    re.compile(r"\btake\s+(this|my)\s+number\s+off\b", re.I),
+    re.compile(r"\bdelete\s+(this|my)\s+(number|contact)\b", re.I),
+    re.compile(r"\boff\s+(your|the|this)\s+(list|contract\s+list)\b", re.I),
+    re.compile(r"\bdon'?t\s+bother\s+me\s+again\b", re.I),
+    re.compile(r"\bgo\s+away\w*\b", re.I),   # \w* catches typos like "awayu"
     re.compile(r"\bunsolicited\s+texts\b", re.I),
     re.compile(r"\bhow\s+many\s+times\s+do\s+(you|yall|ya'?ll)\s+need\s+to\s+be\s+told\b", re.I),
     # Middle/ring finger emoji alone = DNC
@@ -345,19 +407,44 @@ _DNC_PROFANITY_INSULTS = [
         r"\b(asshole|asshat|dumbass|dipshit|assholes?|asshats?|dumbasses?|dipshits?)\b",
         re.I,
     ),
-    re.compile(r"\b(fuck|shit|bitch|bastard|piss\s+off|go\s+to\s+hell)\b", re.I),
+    # \w* on each root so inflections ("fucked", "fucking") still match —
+    # \bfuck\b alone does NOT match "fucked" (no word boundary between "fuck"
+    # and "ed"). This was silently missing "Get fucked" (#3 Margina Guzman).
+    re.compile(r"\b(fuck\w*|shit\w*|bitch\w*|bastard\w*|piss\s+off|go\s+to\s+hell)\b", re.I),
     re.compile(r"\b(f\*\*\*|b\*\*\*\*|s\*\*\*|a\*\*hole)\b", re.I),
     re.compile(r"\bson\s+of\s+a\s+(bitch|b\*\*\*\*|b|whore)\b", re.I),
+    re.compile(r"\byou\s+should\s+die\b|\bdrop\s+dead\b", re.I),
+    re.compile(r"\bscrew\s+(you|off|this)\b", re.I),
     re.compile(r"\byou\s+suck\b", re.I),
     re.compile(r"\bhow\s+(fucking\s+)?rude\b", re.I),
 ]
 
 _DNC = _DNC + _DNC_RELATIVE_REALTOR + _DNC_MINOR_OWNER + _DNC_PROFANITY_INSULTS
 
+# Completed-sale grammar only (2026-08-05 rewrite). The old bare `\bsold\b`
+# matched ANY use of the word — "I sold off 20 units" (career history, #15),
+# "it could be sold if I get an outrageous offer" (a conditional, #12) — both
+# reviewer-rejected false Sold flags. Require an actual completed-action verb
+# form; conditionals/modals are explicitly vetoed by _SOLD_CONDITIONAL_SUPPRESS.
 _SOLD = [
-    re.compile(r"\b(sold|already\s+sold)\b", re.I),
+    re.compile(r"\balready\s+sold\b", re.I),
+    re.compile(r"\bjust\s+sold\b", re.I),
+    re.compile(r"\bwe\s+sold\s+it\b|\bi\s+sold\s+it\b|\bsold\s+it\b", re.I),
+    re.compile(r"\bhas\s+been\s+sold\b", re.I),
+    re.compile(r"\bclosed\s+on\s+it\b", re.I),
     re.compile(r"\bno\s+longer\s+own\b", re.I),
+    re.compile(r"\bnew\s+owner\b", re.I),
 ]
+
+# Modal/conditional language near "sold" means it HASN'T sold — it's a maybe.
+# "In 4 months it could be sold if I get an outrageous offer" (#12) is a live
+# warm lead (Above Market Value), not a closed sale.
+_SOLD_CONDITIONAL_SUPPRESS_RE = re.compile(
+    r"\b(could|would|might|may|will)\s+be\s+sold\b"
+    r"|\bif\s+(i|we|someone|they)\s+(get|got|offer|offered)\b.{0,40}\bsold\b"
+    r"|\bsold\b.{0,40}\bif\s+(i|we)\s+(get|got)\b",
+    re.I,
+)
 
 _LISTED = [
     re.compile(r"\b(on\s+the\s+market|listed\s+with|have\s+an?\s+agent|with\s+a\s+realtor|on\s+the\s+mls|active\s+listing)\b", re.I),
@@ -371,10 +458,17 @@ _LISTED = [
     re.compile(r"\blisting\s+(it|the\s+(house|property|home))\s+(with|through|via)\b", re.I),
     re.compile(r"\bmy\s+(own\s+)?(agent|realtor|broker)\b", re.I),   # "listing with my own agent"
     re.compile(r"\b(already\s+)?working\s+with\s+an?\s+(agent|realtor|broker)\b", re.I),
+    # "Under contract" (#4) is a PENDING sale — the deal can still fall through.
+    # It is not a completed sale; treat it as Listed/Pending, not Sold.
+    re.compile(r"\bunder\s+contract\b", re.I),
+    re.compile(r"\bpending\s+sale\b|\bin\s+escrow\b|\baccepted\s+an?\s+offer\b", re.I),
 ]
 
-# Phrases that indicate "sold" refers to a neighboring/other/third property, not the subject
-_SOLD_NEIGHBOR_CONTEXT = [
+# Phrases that indicate "sold" refers to a neighboring/other/portfolio property,
+# not the subject property — renamed 2026-08-05 (was _SOLD_NEIGHBOR_CONTEXT) to
+# reflect the broader scope: career/portfolio references ("I sold off 20 units",
+# #15) are just as much "not the subject property" as a neighbor's sale.
+_SOLD_OTHER_PROPERTY_CONTEXT = [
     re.compile(r"\b(next\s+door|neighbor(?:s)?|nearby|down\s+the\s+street|across\s+the\s+street|adjacent)\b.{0,60}\bsold\b", re.I),
     re.compile(r"\bsold\b.{0,60}\b(next\s+door|neighbor(?:s)?|nearby|down\s+the\s+street|across\s+the\s+street|adjacent)\b", re.I),
     re.compile(r"\bhouse\s+next\s+(?:door\s+)?sold\b", re.I),
@@ -386,7 +480,18 @@ _SOLD_NEIGHBOR_CONTEXT = [
     re.compile(r"\bunit\s+\w+\s+(?:just\s+)?sold\b", re.I),
     re.compile(r"\b(?:apt|apartment|suite|lot|unit)\s+[#\w]+\b.{0,60}\bsold\b", re.I),
     re.compile(r"\bsold\b.{0,60}\b(?:not\s+as\s+nice|less\s+nice|worse|smaller|bigger)\s+(?:as|than)\s+(?:my|mine|ours)\b", re.I),
+    # Portfolio / career-history sales (#15 "I sold off 20 units" — bragging
+    # about a real-estate career, not the subject property).
+    re.compile(r"\bsold\s+(?:off\s+)?\d+\s+(?:units?|condos?|houses?|homes?|properties|doors)\b", re.I),
+    re.compile(r"\bsold\s+(?:a\s+few|several|many|dozens|lots)\b", re.I),
+    re.compile(r"\bi'?ve\s+sold\s+\d+\b", re.I),
+    re.compile(r"\bflipped\s+\d+\b", re.I),
+    re.compile(r"\bfor\s+\d+\s+years\s+i\b.{0,80}\bsold\b", re.I),   # "For 18 years I ... sold off 20 units"
+    re.compile(r"\b(rehab+ed|rebab+ed)\b", re.I),   # "rehabbed" / real-data typo "rebabed"
 ]
+
+# Backwards-compatible alias — keep for any external/legacy references.
+_SOLD_NEIGHBOR_CONTEXT = _SOLD_OTHER_PROPERTY_CONTEXT
 
 _NOT_INTERESTED = [
     re.compile(r"\bnot\s+(interested|selling|looking|ready|for\s+sale|at\s+this\s+time|yet)\b", re.I),
@@ -478,6 +583,24 @@ _MAYBE_LATER = [
     re.compile(r"^\s*possible[.!]*\s*$", re.I | re.MULTILINE),
     re.compile(r"\b(it'?s|that'?s|is)\s+possible\b", re.I),
 ]
+
+# Suppress a Maybe-Later verdict when the "future timing" signal is wrapped in
+# a hedge ("if and when we are ready...") AND the contact names an ALTERNATE
+# plan — their own agent/realtor/friend — rather than inviting a future
+# check-in from THIS agent. (#11 Melody Gregory: "if and when we are ready to
+# sell we will be using our friend who is a realtor" declines and names
+# someone else; it isn't "keep my number, check back later".) Narrow by
+# design — a bare "if we ever sell" with no alternate plan still counts as
+# Maybe Later.
+_MAYBE_LATER_CONDITIONAL_RE = re.compile(
+    r"\bif\s+and\s+when\b|\bif\s+we\s+ever\b|\bif\s+i\s+ever\b|\bshould\s+we\s+decide\b",
+    re.I,
+)
+_MAYBE_LATER_ALTERNATE_PLAN_RE = re.compile(
+    r"\b(we|i)\s+(will|'ll)\s+(be\s+)?us(e|ing)\s+(our|my|his|her)\s+(own\s+)?"
+    r"(friend|realtor|agent|broker)\b",
+    re.I,
+)
 
 # Explicit "check back" invitation — contact is saying "contact me again later".
 # When this fires alongside a NI pattern, Maybe Later wins.
@@ -700,6 +823,41 @@ def _pick_primary_label(assigned_labels: list[str] | None) -> str:
     return assigned_labels[0].strip()
 
 
+# Specialist labels that are strict SPECIALISATIONS of "Not Interested", not
+# errors — a contact who says "I'm an investor" is more usefully labeled
+# Investor than generic Not Interested (#10 Lonnie Mincy: texter correctly
+# wrote Investor, ML wanted to overwrite it with the less-useful generic
+# label). "Decision Maker" is NOT listed here — _label_key() above already
+# buckets it into "not interested" as an exact equivalence, so it never
+# reaches this check as a mismatch in the first place.
+_SPECIALIST_NI_LABELS = {"investor", "realtor", "wholesaler"}
+
+
+def is_defensible_alternative(assigned: str | None, should: str | None) -> bool:
+    """True when the texter's label and the ML's suggested label are both
+    reasonable readings of the same conversation, added 2026-08-05:
+
+      - DNC vs Not Interested with no explicit opt-out regex match — both are
+        accepted team conventions for a firm decline (see _CONDESCENSION_RE
+        guard above for the case WITH a regex match, which already resolves
+        to the texter's label directly rather than reaching this check).
+      - A specialist label (Investor / Realtor / Wholesaler) vs the generic
+        Not Interested the ML falls back to — the specialist label is more
+        useful, not wrong.
+
+    Callers (ai/scorer.py) still raise the flag so the disagreement is
+    visible to the Head of Texting, but route it to needs_review confidence
+    instead of counting it as a texter error — see _guards.py's
+    _detail_wrong_label confidence override.
+    """
+    a, s = _norm(assigned), _norm(should)
+    if {a, s} == {"do not call", "not interested"}:
+        return True
+    if s == "not interested" and a in _SPECIALIST_NI_LABELS:
+        return True
+    return False
+
+
 _POSITIVE_ENGAGEMENT = [
     re.compile(r"\byes\b.{0,20}\b(absolutely|definitely|sure|of\s+course|please|okay|ok)\b", re.I),
     # "absolutely"/"definitely" only when NOT followed by "not" — "Definitely not" is still NI
@@ -757,14 +915,58 @@ _POSITIVE_ENGAGEMENT = [
 ]
 
 
+# Negation/conditional gates (2026-08-05) — _POSITIVE_ENGAGEMENT is a bare
+# keyword list (it's also used, correctly, by _contact_raised_hand for WF hand
+# raises), so it matches "fixer" inside "not a fixer-upper" and "ready to
+# sell" inside "if and when we are ready to sell" just as readily as a real
+# reversal. These two reviewer-rejected cases (#6 Christopher Brady, #11
+# Melody Gregory) both escalated hostility/refusal, never reversed — but the
+# bare keyword match read them as interest. Rather than loosen
+# _POSITIVE_ENGAGEMENT itself (and risk regressing WF hand-raise detection),
+# gate it locally: a match doesn't count if it's negated nearby or wrapped in
+# a conditional.
+_REVERSAL_NEGATION_NEAR_RE = re.compile(r"\b(no|not|n't|never|won'?t|don'?t)\b", re.I)
+_REVERSAL_CONDITIONAL_RE = re.compile(
+    r"\bif\s+and\s+when\b|\bif\s+we\s+ever\b|\bif\s+i\s+ever\b"
+    r"|\bshould\s+we\s+decide\b|\bin\s+the\s+event\b",
+    re.I,
+)
+
+
+def _message_has_unnegated_engagement(body: str) -> bool:
+    """True if BODY has a _POSITIVE_ENGAGEMENT match that isn't negated
+    nearby and isn't wrapped in a conditional ("if and when...")."""
+    if _REVERSAL_CONDITIONAL_RE.search(body):
+        return False
+    for p in _POSITIVE_ENGAGEMENT:
+        m = p.search(body)
+        if not m:
+            continue
+        preceding = body[max(0, m.start() - 20):m.start()]
+        if _REVERSAL_NEGATION_NEAR_RE.search(preceding):
+            continue
+        return True
+    return False
+
+
 def _contact_reversed_to_interested(messages: list[dict]) -> bool:
     """True if contact initially declined but later showed genuine interest.
 
     Reads the FULL conversation arc: finds the first negative signal from
     the contact, then checks if any LATER contact message contains positive
-    engagement. This ensures the label reflects the conversation's outcome,
-    not just its opening.
+    engagement (that isn't itself negated or conditional — see
+    _message_has_unnegated_engagement). This ensures the label reflects the
+    conversation's outcome, not just its opening.
+
+    Mockery/condescension can never be a reversal: if the contact mocked the
+    agent anywhere in the thread ("What part of no don't you understand?"),
+    the conversation escalated, not reversed.
     """
+    if _CONDESCENSION_RE.search(
+        " \n ".join(_body(m) for m in messages if _sender(m) == "contact")
+    ):
+        return False
+
     contact_msgs = [(i, _body(m)) for i, m in enumerate(messages)
                     if _sender(m) == "contact" and _body(m)]
     if len(contact_msgs) < 2:
@@ -785,14 +987,16 @@ def _contact_reversed_to_interested(messages: list[dict]) -> bool:
         # No negative signal → can't have a reversal
         return False
 
-    # Check ALL contact messages after the negative signal for engagement
+    # Check ALL contact messages after the negative signal for UNNEGATED
+    # engagement — a match inside "not a fixer upper" or "if and when we are
+    # ready to sell" doesn't count (see _message_has_unnegated_engagement).
     for m in messages[first_negative_idx + 1:]:
         if _sender(m) != "contact":
             continue
         body = _body(m)
         if not body:
             continue
-        if any(p.search(body) for p in _POSITIVE_ENGAGEMENT):
+        if _message_has_unnegated_engagement(body):
             return True
 
     return False
@@ -821,16 +1025,43 @@ def _expected_label(contact_text: str, messages: list[dict], assigned_label: str
     """
     assigned_key = _label_key(assigned_label)
 
+    from ai.prefilter.label_vetoes import (
+        contact_confirmed_address,
+        contact_engaged_on_property,
+        sold_refers_to_subject_property,
+    )
+
     # Detect all signals upfront
     has_wn  = any(p.search(contact_text) for p in _WRONG_NUMBER)
     has_dnc = any(p.search(contact_text) for p in _DNC)
     has_ni  = any(p.search(contact_text) for p in _NOT_INTERESTED)
     has_listed = any(p.search(contact_text) for p in _LISTED)
 
-    # Sold: only fire if "sold" refers to the subject property, not a neighbor's/adjacent sale
+    # ── Wrong Number vetoes (2026-08-05) ────────────────────────────────────
+    # Vocabulary block-list: generic identity questions / soft phrasings that
+    # a keyword scan can misread as a wrong-number declaration.
+    if has_wn and any(p.search(contact_text) for p in _NEVER_WRONG_NUMBER):
+        has_wn = False
+    # Structural vetoes: a contact who read back the subject address, or who
+    # engaged with price/condition/ownership, has PROVEN they're the right
+    # person — no keyword match can override that fact.
+    if has_wn and (
+        contact_confirmed_address(messages) or contact_engaged_on_property(messages)
+    ):
+        has_wn = False
+
+    # Sold: only fire if "sold" refers to the subject property (not a
+    # neighbor's/portfolio sale) AND isn't wrapped in a conditional
+    # ("could be sold if...", #12 — a live maybe, not a closed sale).
     _sold_raw      = any(p.search(contact_text) for p in _SOLD)
     _sold_neighbor = any(p.search(contact_text) for p in _SOLD_NEIGHBOR_CONTEXT)
-    has_sold = _sold_raw and not _sold_neighbor
+    _sold_conditional = bool(_SOLD_CONDITIONAL_SUPPRESS_RE.search(contact_text))
+    has_sold = (
+        _sold_raw
+        and not _sold_neighbor
+        and not _sold_conditional
+        and sold_refers_to_subject_property(messages)
+    )
 
     # ── PRIORITY 1: DNC — beats EVERYTHING (WN, Sold, NI, Bluffer, Maybe Later) ──
     # If contact opted out in any way, the actionable label is always Do Not Call.
@@ -963,7 +1194,14 @@ def _expected_label(contact_text: str, messages: list[dict], assigned_label: str
     # callback signal ("check back at end of year", "try again in a few months"),
     # Maybe Later WINS over Not Interested — the contact is inviting future contact.
     has_future_callback = _FUTURE_CALLBACK.search(contact_text) is not None
-    if any(p.search(contact_text) for p in _MAYBE_LATER):
+    _maybe_later_hit = any(p.search(contact_text) for p in _MAYBE_LATER)
+    if (
+        _maybe_later_hit
+        and _MAYBE_LATER_CONDITIONAL_RE.search(contact_text)
+        and _MAYBE_LATER_ALTERNATE_PLAN_RE.search(contact_text)
+    ):
+        _maybe_later_hit = False
+    if _maybe_later_hit:
         return "Maybe Later", "ML detected future/later timing."
     if has_future_callback:
         return "Maybe Later", "ML detected explicit future callback invitation (contact said check back later)."
