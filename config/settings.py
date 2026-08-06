@@ -66,9 +66,6 @@ if DATABASE_URL.startswith("postgres://"):
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LOG_DIR = PROJECT_ROOT / os.getenv("LOG_DIR", "logs")
 
-# ─── Groq AI (primary) ──────────────────────────────────────
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-
 # ─── Ollama local model (fallback / offline use) ─────────────
 OLLAMA_URL   = os.getenv("OLLAMA_URL",   "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
@@ -100,10 +97,10 @@ PREFILTER_T2_LIVE       = os.getenv("PREFILTER_T2_LIVE", "false").lower() == "tr
 PREFILTER_T3_LIVE       = os.getenv("PREFILTER_T3_LIVE", "false").lower() == "true"
 PREFILTER_T4_LIVE       = os.getenv("PREFILTER_T4_LIVE", "true").lower() == "true"
 
-# ML-only mode (DEFAULT): the prefilter NEVER escalates to Groq. Every
-# conversation that no tier short-circuits is finalized by the terminal Tier 4
-# deterministic generator instead. Groq is fully decommissioned. Reversible —
-# set PREFILTER_DISABLE_GROQ=false to restore the Groq escalation path.
+# ML-only mode (DEFAULT, permanent): the prefilter never escalates to an LLM.
+# Every conversation that no tier short-circuits is finalized by the terminal
+# Tier 4 deterministic generator instead. Groq calling code has been removed
+# from the codebase, so this flag is effectively always true.
 PREFILTER_DISABLE_GROQ  = os.getenv("PREFILTER_DISABLE_GROQ", "true").lower() == "true"
 
 # Tier 2 confidence: cosine-similarity threshold + min cluster size.

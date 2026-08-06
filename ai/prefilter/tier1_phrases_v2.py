@@ -80,6 +80,8 @@ _OPT_OUT_PATTERNS = [
     re.compile(r"\bdo\s+not\s+(call|contact)\b", re.I),
     re.compile(r"\btake\s+(me|us)\s+off\b", re.I),
     re.compile(r"\btake\s+off\s+(the|your)?\s*list\b", re.I),
+    # "take me ofyoir list please" — mangled/typo'd "off your list".
+    re.compile(r"\btake\s+me\s+\S{1,12}\s+list\b", re.I),
     re.compile(r"\bi\s+said\s+no\b", re.I),
     re.compile(r"\bplease\s+don'?t\s+(ask|contact|text|call)\s+(again|me)\b", re.I),
     re.compile(r"\bno\s+please\s+don'?t\s+(ask|contact|text|call)\b", re.I),
@@ -146,6 +148,8 @@ _OPT_OUT_PATTERNS = [
     re.compile(r"\bdon'?t\s+reach\s+out\b", re.I),
     re.compile(r"\bdo\s+not\s+reach\s+out\b", re.I),
     re.compile(r"\bdon'?t\s+(want|need)\s+(any\s+)?(more\s+)?(texts?|messages?|calls?|contact)\b", re.I),
+    re.compile(r"\bdo\s+not\s+respond\b", re.I),
+    re.compile(r"\bdon'?t\s+respond\b", re.I),
 ]
 
 # ── Profanity / clear hostility → DNC short-circuit (no Groq needed) ─────────

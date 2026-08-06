@@ -18,17 +18,14 @@ Usage
     from config.rate_limiter import get_rate_limiter
 
     rl = get_rate_limiter()
-    allowed, retry_after = rl.check("groq_abc123", capacity=5, rate=0.5)
+    allowed, retry_after = rl.check("route_key", capacity=5, rate=0.5)
     if not allowed:
         raise SomeRateLimitError(retry_after=retry_after)
 
 Bucket configs used across the codebase
 ----------------------------------------
-  Groq free-tier key  : capacity=5,  rate=0.5   (5 burst, 1 req/2 s sustained)
-  Groq paid-tier key  : capacity=20, rate=2.0
   /api/run-audit route: capacity=3,  rate=0.1   (3 burst, 1 req/10 s sustained)
-  /api/ai/status      : capacity=10, rate=1.0   (relaxed — monitoring endpoint)
-  /api/* default      : capacity=20, rate=2.0
+  /api/* default       : capacity=20, rate=2.0
 """
 
 import logging
@@ -229,11 +226,6 @@ def get_rate_limiter() -> RateLimiter:
 # ---------------------------------------------------------------------------
 # Bucket key helpers (keeps naming consistent across modules)
 # ---------------------------------------------------------------------------
-
-def groq_key_bucket(api_key: str) -> str:
-    """Anonymized bucket key for a Groq API key (last 8 chars only)."""
-    return f"groq_{api_key[-8:]}"
-
 
 def route_bucket(ip: str, route_prefix: str) -> str:
     """Bucket key for a dashboard route + client IP."""

@@ -63,9 +63,10 @@ reports/
 logs/
 *.db
 # Dev-only scripts are ignored, but post_audit_reflection.py is a runtime
-# dependency of ai/scorer.py and must ship with the repo.
+# dependency of ai/scorer.py, and report.py is a shipped reporting CLI.
 scripts/*
 !scripts/post_audit_reflection.py
+!scripts/report.py
 tests/
 ruflo/
 validation_run.txt

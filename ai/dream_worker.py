@@ -5,7 +5,7 @@ After human reviewers mark AI flags as invalid, the dream worker:
 1. Checks if enough time and new sessions have passed
 2. Loads recent flag_feedback entries
 3. Clusters them by category + semantic similarity
-4. Calls Groq to generate new correction rules
+4. Extracts correction rules locally (deterministic, no LLM)
 5. Appends rules to ai/learned_rules.json
 
 Intentionally synchronous (not async) so it can be called via run_in_executor()
@@ -23,19 +23,6 @@ from config.settings import DATABASE_URL, DREAM_STATE_PATH, DREAM_WORKER_MIN_HOU
 from ai.learned_rules import append_rules
 
 logger = logging.getLogger(__name__)
-
-# ── Reflection system prompt (used for Groq call only) ──────────────────────
-REFLECTION_SYSTEM_PROMPT = """You are a meta-auditor reviewing patterns of incorrect AI audit flags.
-Human reviewers consistently marked these flag patterns as wrong.
-Your job is to extract concise correction rules from these patterns.
-
-For each cluster of invalid flags, write one concise rule (≤ 3 sentences) that would prevent
-this mistake in future audits. The rule should be actionable and specific.
-
-Return ONLY valid JSON in this format:
-{"rules": [{"rule_text": "...", "category": "...", "source_flags": [...]}, ...]}
-"""
-
 
 def should_run(db_path: str | None = None) -> bool:
     """
@@ -449,92 +436,11 @@ def _extract_local_rules(clusters: list[dict]) -> list[dict]:
 
 def _call_groq_reflect(clusters: list[dict]) -> list[dict]:
     """
-    Call Groq with the reflection prompt to generate rules from clusters.
-
-    Returns list of rule dicts with keys: rule_text, category, source_flags
+    ML-only mode: no LLM available to synthesize rules from clusters when the
+    local extractor fails. Rule learning is paused in that case.
     """
-    from config.settings import PREFILTER_DISABLE_GROQ
-    if PREFILTER_DISABLE_GROQ:
-        # ML-only mode: Groq is decommissioned and is not trusted to synthesize
-        # rules. Rule learning from clusters is paused until a deterministic
-        # synthesizer replaces this path.
-        logger.info("[DreamWorker] ML-only mode — skipping Groq rule synthesis")
-        return []
-    try:
-        from ai.analyzer import _pool
-
-        # Get a Groq key from the pool
-        groq_key = _pool._pick_groq_key()
-        if groq_key is None:
-            logger.error("[DreamWorker] No Groq keys available")
-            return []
-
-        # Build user message
-        user_msg = _build_reflection_prompt(clusters)
-
-        logger.debug(f"[DreamWorker] Calling Groq with {len(clusters)} cluster(s)")
-
-        # Call Groq
-        raw = groq_key.provider.generate(
-            system_prompt=REFLECTION_SYSTEM_PROMPT,
-            user_content=user_msg,
-            max_tokens=600,
-            temperature=0.2,  # Slightly creative but deterministic
-        )
-
-        # Parse response
-        response = json.loads(raw)
-        rules = response.get("rules", [])
-
-        for rule in rules:
-            rule["category"] = rule.get("category", "uncategorized")
-            rule["source_flags"] = rule.get("source_flags", [])
-
-        logger.info(f"[DreamWorker] Groq generated {len(rules)} rule(s)")
-        _pool.mark_success(groq_key)
-        return rules
-
-    except json.JSONDecodeError as e:
-        logger.error(f"[DreamWorker] JSON parse error from Groq: {e}")
-        return []
-    except Exception as e:
-        logger.error(f"[DreamWorker] Groq call failed: {e}")
-        return []
-
-
-def _build_reflection_prompt(clusters: list[dict]) -> str:
-    """Build the user message for the Groq reflection call."""
-    lines = [
-        "Human reviewers have marked the following AI-generated audit flags as INCORRECT.\n"
-        "These are patterns of mistakes the AI system repeatedly makes.\n\n"
-        "For each cluster, analyze the pattern and write ONE concise rule "
-        "(≤3 sentences) to prevent this mistake in future audits.\n\n"
-    ]
-
-    for i, cluster in enumerate(clusters, 1):
-        lines.append(f"─── CLUSTER {i}: {cluster['category']} ───")
-        lines.append(f"Confidence: {cluster['confidence']}")
-        lines.append(f"Count: {cluster['count']} flagged conversation(s)\n")
-        lines.append("Example flags marked as WRONG:")
-        for flag in cluster["all_flags"][:3]:  # Show first 3
-            lines.append(f"  • {flag}")
-        if len(cluster["all_flags"]) > 3:
-            lines.append(f"  ... and {len(cluster['all_flags']) - 3} more\n")
-
-        if cluster["all_reasons"]:
-            lines.append("\nReviewer feedback on why these are wrong:")
-            for reason in cluster["all_reasons"][:2]:  # Show first 2
-                lines.append(f"  • {reason}")
-            if len(cluster["all_reasons"]) > 2:
-                lines.append(f"  ... and {len(cluster['all_reasons']) - 2} more")
-        lines.append("\n")
-
-    lines.append(
-        "\nReturn ONLY valid JSON:\n"
-        '{"rules": [{"rule_text": "...", "category": "...", "source_flags": [...]}, ...]}'
-    )
-
-    return "\n".join(lines)
+    logger.info("[DreamWorker] ML-only mode — no LLM fallback for rule synthesis")
+    return []
 
 
 if __name__ == "__main__":

@@ -14,10 +14,6 @@ schedule==1.2.2
 # Logging
 colorama==0.4.6
 
-# AI Analysis (Phase 2 — Groq key pool)
-groq>=0.13.0
-requests>=2.28.0
-
 # Dashboard (Phase 4)
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0

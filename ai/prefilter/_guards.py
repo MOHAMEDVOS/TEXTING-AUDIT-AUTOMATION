@@ -359,8 +359,9 @@ OPTOUT_TEXT_RE = re.compile(
     r"\b(stop\s+texting|stop\s+messaging|stop\s+contacting|stop\s+calling"
     r"|stop\s+bothering\s+me|stop\s+these\s+texts|remove\s+me|unsubscribe"
     r"|leave\s+me\s+alone|don't\s+contact\s+me|take\s+me\s+off\s+your\s+list"
+    r"|take\s+me\s+\S{1,12}\s+list"
     r"|no\s+more\s+text|dont\s+text\s+me|don't\s+text\s+me"
-    r"|if\s+you\s+could\s+stop|please\s+stop)\b"
+    r"|if\s+you\s+could\s+stop|please\s+stop|do\s+not\s+respond|don't\s+respond)\b"
     r"|^stop[.!]*$",
     re.I | re.MULTILINE,
 )

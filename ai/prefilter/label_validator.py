@@ -187,6 +187,9 @@ _DNC = [
     re.compile(r"\bremove\s+me\b", re.I),
     re.compile(r"\btake\s+.{0,20}off\s+your\s+list\b", re.I),  # "take my house off your list"
     re.compile(r"\boff\s+your\s+(list|database|system)\b", re.I),
+    # "take me ofyoir list please" — mangled/typo'd "off your list" (fat-finger typing).
+    # Structure "take me <1 word> list" is unambiguous opt-out phrasing on its own.
+    re.compile(r"\btake\s+me\s+\S{1,12}\s+list\b", re.I),
     re.compile(r"\bopt\s*out\b", re.I),
     re.compile(r"\bkick\s+rocks\b", re.I),
     re.compile(r"\bdont\s+contact\b", re.I),
@@ -314,6 +317,8 @@ _DNC = [
     re.compile(r"\bdon'?t\s+(want|need)\s+(any\s+)?(more\s+)?(texts?|messages?|calls?|contact)\b", re.I),
     re.compile(r"\bi\s+don'?t\s+want\s+to\s+(hear|be\s+contacted|be\s+texted|be\s+called)\b", re.I),
     re.compile(r"\bplease\s+(do\s+not|don'?t)\s+(ever\s+)?reach\s+out\b", re.I),
+    re.compile(r"\bdo\s+not\s+respond\b", re.I),
+    re.compile(r"\bdon'?t\s+respond\b", re.I),
 
     # ── Real estate professional identity — we do not contact agents/brokers/realtors ──
     # "I am a real estate broker/agent/realtor" → valid DNC, beats Wrong Number

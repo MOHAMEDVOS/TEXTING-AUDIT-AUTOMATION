@@ -1892,16 +1892,6 @@
             <label class="settings-label">Guidelines <span style="font-weight:400; color:var(--text-muted); font-size:.72rem; margin-left:4px;">optional — account-specific rules</span></label>
             <textarea id="new-guidelines" placeholder="E.g., Ask about: Conditions, Asking price, Closing, motivation" class="settings-input" style="margin-top:6px; resize:vertical; min-height:80px; font-family:monospace; font-size:.8rem;"></textarea>
           </div>
-          <div style="padding-top:6px; border-top:1px solid var(--surface-border);">
-            <label class="settings-label">API Key <span style="font-weight:400; color:var(--text-muted); font-size:.72rem; margin-left:4px;">optional — can add later</span></label>
-            <div style="display:flex; gap:10px; margin-top:8px; max-width:520px;">
-              <select id="new-key-provider" class="settings-input" style="width:120px; flex-shrink:0;">
-                <option value="groq">Groq</option>
-                <option value="gemini">Gemini</option>
-              </select>
-              <input id="new-key-value" type="text" placeholder="gsk_… or AIzaSy…" class="settings-input" style="flex:1; font-family:monospace; font-size:.8rem;" />
-            </div>
-          </div>
           <div style="display:flex; align-items:center; gap:14px; padding-top:4px;">
             <button onclick="addAgent()" class="settings-btn" style="padding:11px 28px; font-size:.875rem;">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -1922,7 +1912,7 @@
           </div>
           <div>
             <div style="font-size:1.05rem; font-weight:600; color:var(--text-primary); letter-spacing:-0.02em; font-family:var(--font-display);">Edit Account</div>
-            <div style="font-size:.76rem; color:var(--text-muted); margin-top:1px; letter-spacing:-0.01em;">Modify credentials, API key, or remove an account</div>
+            <div style="font-size:.76rem; color:var(--text-muted); margin-top:1px; letter-spacing:-0.01em;">Modify credentials or remove an account</div>
           </div>
         </div>
       </div>
@@ -1966,21 +1956,6 @@
           <div style="margin-bottom:18px;">
             <label class="settings-label">Guidelines <span style="font-weight:400; color:var(--text-muted); font-size:.72rem; margin-left:4px;">optional — account-specific rules</span></label>
             <textarea id="manage-edit-guidelines" placeholder="E.g., Ask about: Conditions, Asking price, Closing, motivation" class="settings-input" style="margin-top:6px; resize:vertical; min-height:80px; font-family:monospace; font-size:.8rem;"></textarea>
-          </div>
-          <div style="padding-top:18px; border-top:1px solid var(--surface-border); margin-bottom:22px;">
-            <label class="settings-label" style="display:flex; align-items:center; gap:6px; margin-bottom:8px;">
-              API Key
-              <span id="manage-key-badge" style="display:none; font-size:.68rem; font-weight:600; padding:2px 7px; border-radius:99px; background:rgba(34,197,94,.12); color:#16a34a; border:1px solid rgba(34,197,94,.2);">assigned</span>
-              <span id="manage-no-key-badge" style="font-size:.68rem; font-weight:600; padding:2px 7px; border-radius:99px; background:rgba(239,68,68,.1); color:#dc2626; border:1px solid rgba(239,68,68,.2);">no key</span>
-            </label>
-            <div style="display:flex; gap:10px; max-width:520px;">
-              <select id="manage-key-provider" class="settings-input" style="width:120px; flex-shrink:0;">
-                <option value="groq">Groq</option>
-                <option value="gemini">Gemini</option>
-              </select>
-              <input id="manage-key-value" type="text" placeholder="Paste new key or leave blank to remove" class="settings-input" style="flex:1; font-family:monospace; font-size:.8rem;" />
-            </div>
-            <div id="manage-key-current" style="margin-top:6px; font-size:.75rem; color:var(--text-muted); font-family:monospace;"></div>
           </div>
           <div style="display:flex; align-items:center; gap:12px;">
             <button onclick="saveSelectedAgent()" class="settings-btn" style="padding:11px 24px; font-size:.875rem;">
@@ -3029,7 +3004,6 @@ let allAgents      = [];
 let filteredAgents = [];
 let processStatus  = {};
 let processStatusDetails = {};
-let keyAssignments = {};
 let selectedAgent  = null;
 let agentConvos    = [];
 let convoListFilter = "all"; // "all" | "needs_review"
@@ -3307,22 +3281,6 @@ function clearSelection() {
   renderSidebar();
 }
 
-function renderKeyAssignments() {
-  const box = document.getElementById("sb-key-assignments");
-  if (!box) return;
-  const entries = Object.entries(keyAssignments || {});
-  if (!entries.length) {
-    box.textContent = "No active runs";
-    return;
-  }
-  box.innerHTML = entries
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([name, key]) =>
-      `<div style="display:flex;justify-content:space-between;gap:8px;"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(name)}</span><span style="color:var(--brand);font-weight:600;">${esc(key)}</span></div>`
-    )
-    .join("");
-}
-
 async function runSelectedAgents() {
   if (!selectedIds.size) return;
   await refreshTodayAssignments();
@@ -3350,7 +3308,7 @@ async function runSelectedAgents() {
           </div>
         </div>
         <p style="font-size:.82rem;color:var(--text-secondary);line-height:1.6;margin:0 0 20px;">
-          Each agent gets its own dedicated API key during a run. The limit is <strong style="color:var(--text-primary);">20 agents</strong> to ensure no key is shared or burnt out.
+          Running too many accounts at once can overload the database connections and embedding service. The limit is <strong style="color:var(--text-primary);">20 agents</strong> per run.
           Please deselect <strong style="color:#f59e0b;">${over} agent${over > 1 ? "s" : ""}</strong> and try again.
         </p>
         <div style="display:flex;justify-content:flex-end;">
@@ -3366,12 +3324,8 @@ async function runSelectedAgents() {
   }
 
   if (blocked.length) {
-    const texterBlocked = blocked.filter(a => _getRunBlockReason(a) === "texter");
-    const groqBlocked = blocked.filter(a => _getRunBlockReason(a) === "groq");
-    const reason = texterBlocked.length ? "texter" : "groq";
-    const modalList = (reason === "texter" ? texterBlocked : groqBlocked)
-      .map(a => `${a.name} (${a.email})`);
-    _showUnassignedBlock(modalList, reason);
+    const modalList = blocked.map(a => `${a.name} (${a.email})`);
+    _showUnassignedBlock(modalList);
     if (!allowed.length) return;
   }
 
@@ -4060,7 +4014,7 @@ function renderConvoList() {
           ? `<p style="font-size:.75rem;color:var(--danger);margin-top:.5rem;font-weight:600;">${esc(detail)}</p>`
           : "";
         const zeroHint = st === "done" && (selectedAgent?.conversations_analyzed || 0) === 0
-          ? `<p style="font-size:.72rem;color:var(--warning);margin-top:.45rem;">Audit finished but nothing was saved — check Groq key assignment, date filter, and sample size, then re-run.</p>`
+          ? `<p style="font-size:.72rem;color:var(--warning);margin-top:.45rem;">Audit finished but nothing was saved — check the date filter and sample size, then re-run.</p>`
           : "";
         return `
       <div style="padding:3rem 1.5rem; text-align:center;">
@@ -4569,9 +4523,8 @@ async function runAgent(name, evt) {
 async function runCurrentAgent() {
   if (!selectedAgent) return;
   await refreshTodayAssignments();
-  const reason = _getRunBlockReason(selectedAgent);
-  if (reason) {
-    _showUnassignedBlock([`${selectedAgent.name} (${selectedAgent.email})`], reason);
+  if (_getRunBlockReason(selectedAgent)) {
+    _showUnassignedBlock([`${selectedAgent.name} (${selectedAgent.email})`]);
     return;
   }
   runAgent(selectedAgent.name, null);
@@ -5052,29 +5005,7 @@ function selectManageAgent(id) {
   document.getElementById("manage-edit-pass").value       = "";
   document.getElementById("manage-edit-tier").value       = agent.funnel_tier || "";
   document.getElementById("manage-edit-guidelines").value = agent.guidelines  || "";
-  document.getElementById("manage-key-value").value  = "";
-  document.getElementById("manage-key-current").textContent = "";
   document.getElementById("manage-msg").textContent  = "";
-
-  // Load current API key info
-  fetch(`/api/agents/${agent.id}/apikey`)
-    .then(r => r.json())
-    .then(d => {
-      const badge   = document.getElementById("manage-key-badge");
-      const noBadge = document.getElementById("manage-no-key-badge");
-      const current = document.getElementById("manage-key-current");
-      if (d.has_key) {
-        badge.style.display   = "inline-flex";
-        noBadge.style.display = "none";
-        current.textContent   = `Current: ${d.provider} — ${d.key_preview}`;
-        document.getElementById("manage-key-provider").value = d.provider || "groq";
-      } else {
-        badge.style.display   = "none";
-        noBadge.style.display = "inline-flex";
-        current.textContent   = "";
-      }
-    })
-    .catch(() => {});
 
   document.getElementById("manage-selected-display").innerHTML = `
     <div style="width:32px; height:32px; border-radius:50%; background:var(--brand-bg); border:1px solid var(--brand-border); display:flex; align-items:center; justify-content:center; font-size:.75rem; font-weight:700; color:var(--brand); flex-shrink:0;">
@@ -5094,8 +5025,6 @@ async function saveSelectedAgent() {
   const name     = document.getElementById("manage-edit-name").value.trim();
   const email    = document.getElementById("manage-edit-email").value.trim();
   const pass     = document.getElementById("manage-edit-pass").value.trim();
-  const keyVal   = document.getElementById("manage-key-value").value.trim();
-  const provider = document.getElementById("manage-key-provider").value;
   const msg      = document.getElementById("manage-msg");
 
   if (!name || !email) { msg.style.color = "var(--danger)"; msg.textContent = "Name and email are required."; return; }
@@ -5111,29 +5040,6 @@ async function saveSelectedAgent() {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
-
-    // Save API key if the field was touched (any value = set, empty = remove)
-    if (keyVal !== "") {
-      const keyRes = await fetch(`/api/agents/${manageSelectedAgent.id}/apikey`, {
-        method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, key: keyVal }),
-      });
-      const keyData = await keyRes.json();
-      if (!keyRes.ok) throw new Error(keyData.detail || `Key save failed: HTTP ${keyRes.status}`);
-      // Refresh the key preview
-      document.getElementById("manage-key-value").value = "";
-      const refreshed = await fetch(`/api/agents/${manageSelectedAgent.id}/apikey`).then(r => r.json());
-      const badge   = document.getElementById("manage-key-badge");
-      const noBadge = document.getElementById("manage-no-key-badge");
-      const current = document.getElementById("manage-key-current");
-      if (refreshed.has_key) {
-        badge.style.display = "inline-flex"; noBadge.style.display = "none";
-        current.textContent = `Current: ${refreshed.provider} — ${refreshed.key_preview}`;
-      } else {
-        badge.style.display = "none"; noBadge.style.display = "inline-flex";
-        current.textContent = "";
-      }
-    }
 
     msg.style.color = "var(--success)"; msg.textContent = "✓ Saved";
     manageSelectedAgent = { ...manageSelectedAgent, name, email };
@@ -5174,8 +5080,6 @@ async function addAgent() {
   const pass       = document.getElementById("new-pass").value.trim();
   const tier       = document.getElementById("new-tier").value || null;
   const guidelines = document.getElementById("new-guidelines").value.trim() || null;
-  const keyVal     = document.getElementById("new-key-value").value.trim();
-  const provider   = document.getElementById("new-key-provider").value;
   const msg        = document.getElementById("add-msg");
 
   if (!name || !email || !pass) {
@@ -5191,25 +5095,12 @@ async function addAgent() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || data.error || (res.status === 409 ? "An agent with that email already exists." : `HTTP ${res.status}`));
 
-    // Save API key if provided
-    if (keyVal && data.agent) {
-      await loadAgents();
-      const added = allAgents.find(a => a.email.toLowerCase() === email.toLowerCase());
-      if (added) {
-        await fetch(`/api/agents/${added.id}/apikey`, {
-          method: "PUT", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider, key: keyVal }),
-        });
-      }
-    }
-
     msg.style.color = "var(--success)"; msg.textContent = `✓ ${name} added successfully.`;
     document.getElementById("new-name").value        = "";
     document.getElementById("new-email").value       = "";
     document.getElementById("new-pass").value        = "";
     document.getElementById("new-tier").value        = "";
     document.getElementById("new-guidelines").value  = "";
-    document.getElementById("new-key-value").value   = "";
     await loadAgents();
     // If the manage-search dropdown is open, refresh it so the new agent appears
     const msEl = document.getElementById("manage-search");
@@ -5228,7 +5119,6 @@ async function pollStatus() {
     const payload = await res.json();
     const data = payload.statuses || payload;
     const details = payload.status_details || {};
-    keyAssignments = payload.key_assignments || {};
 
     let changed = false;
     for (const [name, state] of Object.entries(data)) {
@@ -5267,8 +5157,6 @@ async function pollStatus() {
       }
     }
     if (ttlAcked) { _saveAckedDone(); changed = true; }
-
-    renderKeyAssignments();
 
     const ts = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     document.getElementById("last-ref").textContent = ts;
@@ -5325,7 +5213,6 @@ async function loadAgents() {
     filteredAgents = data.filter(a => !!_getAssignedTexter(a.email));
 
     updateStats();
-    renderKeyAssignments();
     renderSidebar();
 
     // Populate the Trends agent dropdown with texter names from AGENT_ROSTER
@@ -5672,7 +5559,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   showView("vw-empty");
   await loadLabelsDropdown();
   await loadRoster();
-  await loadGroqKeys();
   await refreshTodayAssignments();
   await loadAgents();
   pollStatus();
@@ -5689,7 +5575,6 @@ async function refreshTodayAssignments() {
       if (!key) continue;
       todayAssignments[key] = {
         agent_name: r.agent_name || null,
-        groq_key_id: r.groq_key_id || null,
       };
     }
   } catch (_) {}
@@ -5704,11 +5589,6 @@ function _getAssignedTexter(agentEmail) {
   return todayAssignments[_normEmail(agentEmail)]?.agent_name || null;
 }
 
-// Returns assigned Groq key id for an account email today, or null
-function _getAssignedGroqKey(agentEmail) {
-  return null;
-}
-
 // Return missing requirement for today's run, or null when ready.
 function _getRunBlockReason(agent) {
   if (!_getAssignedTexter(agent.email)) return "texter";
@@ -5721,13 +5601,12 @@ function _canRunAgent(agent) {
 }
 
 // Show a friendly modal for blocked runs
-function _showUnassignedBlock(blockedNames, reason = "texter") {
+function _showUnassignedBlock(blockedNames) {
   const existing = document.getElementById("unassigned-block-modal");
   if (existing) existing.remove();
 
-  const isKey = reason === "groq";
-  const title = isKey ? "No Groq Key Assigned" : "No Texter Assigned";
-  const noun = isKey ? "Groq key" : "texter";
+  const title = "No Texter Assigned";
+  const noun = "texter";
   const names = blockedNames.map(n => `<li style="padding:3px 0;color:var(--text-primary);">${esc(n)}</li>`).join("");
   const modal = document.createElement("div");
   modal.id = "unassigned-block-modal";
@@ -5837,7 +5716,6 @@ async function submitNotValid() {
 
 // ── Texter Roster ─────────────────────────────────────────────────────────────
 let AGENT_ROSTER = [];
-let GROQ_KEYS = [];
 
 async function loadRoster() {
   const res = await fetch("/api/roster");
@@ -5854,13 +5732,6 @@ async function loadRoster() {
     ddAgentSelect.innerHTML = '<option value="all">All Texters</option>'
       + AGENT_ROSTER.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join("");
   }
-}
-
-async function loadGroqKeys() {
-  const res = await fetch("/api/groq-keys");
-  const payload = await res.json();
-  if (!res.ok) throw new Error(payload.detail || "Failed to load Groq keys");
-  GROQ_KEYS = payload.data || [];
 }
 
 async function loadTexterList() {
@@ -6121,32 +5992,18 @@ function hideSearchableDropdown(input) {
   const drop = input.nextElementSibling.nextElementSibling;
   drop.style.display = "none";
   const val = input.getAttribute("data-value") || "";
-  const container = input.closest(".searchable-select-container");
-  const type = container.getAttribute("data-type");
-  
+
   // Restore current value label if search was cancelled
-  if (type === "texter") {
-    input.value = val;
-  } else {
-    const key = GROQ_KEYS.find(k => String(k.id) === val);
-    input.value = key ? key.label : "";
-  }
+  input.value = val;
 }
 
 function filterSearchableDropdown(input) {
   const drop = input.nextElementSibling.nextElementSibling;
   const val = input.value.toLowerCase();
-  const container = input.closest(".searchable-select-container");
-  const type = container.getAttribute("data-type");
   const currentVal = input.getAttribute("data-value") || "";
-  
-  let options = [];
-  if (type === "texter") {
-    options = AGENT_ROSTER.map(n => ({ id: n, label: n }));
-  } else {
-    options = GROQ_KEYS.map(k => ({ id: String(k.id), label: k.label }));
-  }
-  
+
+  const options = AGENT_ROSTER.map(n => ({ id: n, label: n }));
+
   const filtered = options.filter(o => o.label.toLowerCase().includes(val));
   
   drop.innerHTML = `
@@ -6188,12 +6045,7 @@ async function loadAssignments() {
       return;
     }
 
-    if (!GROQ_KEYS.length) {
-      await loadGroqKeys();
-    }
-
     const rosterOptions = AGENT_ROSTER.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join("");
-    const groqOptions = GROQ_KEYS.map(k => `<option value="${esc(String(k.id))}">${esc(k.label)}</option>`).join("");
     listEl.style.display = "grid";
 
     // Split into assigned and unassigned accounts
@@ -6416,10 +6268,8 @@ async function _confirmClearAssignments() {
     const rows = document.querySelectorAll("#assign-list [data-email]");
     rows.forEach(row => {
       const sel = row.querySelector(".assign-select");
-      const groqSel = row.querySelector(".groq-key-select");
       if (sel) sel.value = "";
-      if (groqSel) groqSel.value = "";
-      _onAssignChange(sel || groqSel);
+      _onAssignChange(sel);
     });
 
     await loadAssignments();
@@ -6455,13 +6305,11 @@ async function loadAssignmentHistory() {
         <thead><tr style="border-bottom:1px solid var(--surface-border);">
           <th style="text-align:left;padding:5px 8px;color:var(--text-muted);font-weight:600;">Date</th>
           <th style="text-align:left;padding:5px 8px;color:var(--text-muted);font-weight:600;">Agent</th>
-          <th style="text-align:left;padding:5px 8px;color:var(--text-muted);font-weight:600;">Groq Key</th>
         </tr></thead>
         <tbody>
           ${rows.map(r => `<tr style="border-bottom:1px solid var(--surface-border);">
             <td style="padding:5px 8px;color:var(--text-secondary);">${esc(r.assigned_date)}</td>
             <td style="padding:5px 8px;color:var(--text-primary);">${esc(r.agent_name)}</td>
-            <td style="padding:5px 8px;color:var(--text-secondary);">${esc(r.groq_key_label || "—")}</td>
           </tr>`).join("")}
         </tbody>
       </table>`;

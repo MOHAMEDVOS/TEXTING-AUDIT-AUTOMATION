@@ -185,17 +185,6 @@ async def run_single_agent(agent_name: str, date_filter: str = "today", limit: i
                 return result
             logger.info(f"Extraction complete for {agent_name}")
 
-            # Pick up the pinned Groq key assigned by the dashboard for this run
-            pinned_key = None
-            pinned_key_value = os.environ.get("GROQ_PINNED_KEY")
-            if pinned_key_value:
-                from ai.analyzer import _pool, PooledKey
-                _pool.ensure_loaded()
-                with _pool._lock:
-                    pinned_key = next(
-                        (pk for pk in _pool._groq_pool if pk.key == pinned_key_value), None
-                    )
-
             _write_run_status(agent_name, "running", "scoring", "Scoring conversations")
             current_stage = "scoring"
             await score_agent_conversations(
@@ -204,7 +193,6 @@ async def run_single_agent(agent_name: str, date_filter: str = "today", limit: i
                 conversations=saved,
                 unread_count=result.get("unread_count", 0),
                 pool=db.pool,
-                pinned_key=pinned_key,
             )
             audit_scored = True
         else:

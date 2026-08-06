@@ -228,7 +228,6 @@ async def score_agent_conversations(
     unread_count: int = 0,
     unread_conversations: list[dict] | None = None,
     pool=None,
-    pinned_key=None,
 ) -> dict:
     """
     Analyze all conversations for one agent and persist aggregate audit scores.
@@ -316,8 +315,6 @@ async def score_agent_conversations(
                 contact,
                 assigned_labels=labels,
                 funnel_tier=funnel_tier,
-                guidelines=guidelines,
-                pinned_key=pinned_key,
                 conversation_id=convo.get("conversation_id"),
                 db_pool=pool,
             )

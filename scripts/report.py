@@ -1,11 +1,14 @@
 """
 Full Audit Report — reads audit_scores from DB and prints a ranked summary.
-Usage: python report.py
+Usage: python scripts/report.py
 """
 import asyncio
 import json
 import sys
 import io
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 

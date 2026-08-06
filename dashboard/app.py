@@ -366,8 +366,6 @@ def require_admin(request: Request) -> None:
 # â"€â"€ In-memory process registry â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 # { "Noah": <Popen> | "done" }
 running_processes: dict[str, "subprocess.Popen | str"] = {}
-# { "Noah": "gsk_..."}
-running_pinned_keys: dict[str, str] = {}
 # { "Noah": Path("logs/run_status/...json") }
 running_status_files: dict[str, Path] = {}
 running_status_details: dict[str, dict] = {}
@@ -1017,7 +1015,6 @@ def _cleanup_finished():
             detail = _read_run_status_detail(name)
             state = detail.get("state")
             running_processes[name] = state if state in {"done", "failed"} else ("done" if proc.returncode == 0 else "failed")
-            running_pinned_keys.pop(name, None)
             _run_started_at.pop(name, None)
             continue
 
@@ -1033,7 +1030,6 @@ def _cleanup_finished():
             except Exception as _e:
                 logger.debug("swallowed: %r", _e)
             running_processes[name] = "failed"
-            running_pinned_keys.pop(name, None)
             _run_started_at.pop(name, None)
 
 
@@ -1047,13 +1043,11 @@ def _agent_status(name: str) -> str:
         detail = _read_run_status_detail(name)
         if detail.get("state") == "failed":
             running_processes[name] = "failed"
-            running_pinned_keys.pop(name, None)
             return "failed"
         return "running"
     detail = _read_run_status_detail(name)
     state = detail.get("state")
     running_processes[name] = state if state in {"done", "failed"} else ("done" if entry.returncode == 0 else "failed")
-    running_pinned_keys.pop(name, None)
     return running_processes[name]
 
 
@@ -1080,27 +1074,6 @@ def _read_run_status_detail(agent_name: str) -> dict:
 def _new_run_status_path(agent_name: str) -> Path:
     safe = "".join(ch if ch.isalnum() else "_" for ch in agent_name).strip("_") or "agent"
     return RUN_STATUS_DIR / f"{safe}_{get_now().strftime('%Y%m%d_%H%M%S_%f')}_{uuid.uuid4().hex[:8]}.json"
-
-
-def _pick_unique_run_key(agent_name: str):
-    """
-    Pick one Groq key for this run that is not currently assigned
-    to another running agent in this dashboard process.
-    """
-    from ai.analyzer import _pool
-
-    _pool.ensure_loaded()
-    with _pool._lock:
-        used_keys = set(running_pinned_keys.values())
-        candidates = [
-            pk for pk in _pool._groq_pool
-            if (not pk.quota_exhausted) and (pk.key not in used_keys)
-        ]
-        if not candidates:
-            return None
-        # LRU among currently unassigned keys
-        chosen = min(candidates, key=lambda k: k.last_used_at)
-        return chosen
 
 
 # â"€â"€ Pydantic request models â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
@@ -1173,11 +1146,6 @@ class EditAgentRequest(BaseModel):
     guidelines:  str | None = None
 
 
-class EditAgentKeyRequest(BaseModel):
-    provider: str = ""   # "groq"
-    key:      str = ""   # the API key value (empty string = remove key)
-
-
 class RedFlagFeedbackRequest(BaseModel):
     agent_id:        int
     agent_name:      str
@@ -1205,7 +1173,6 @@ class AssignmentRequest(BaseModel):
     account_email: str
     agent_name:    str
     assigned_date: str  # "YYYY-MM-DD"
-    groq_key_id:   int | None = None
 
 
 class AddTexterRequest(BaseModel):
@@ -1766,12 +1733,8 @@ async def api_run(body: RunRequest):
 
             today = get_now().date()
             assignment = await conn.fetchrow(
-                """SELECT aa.agent_name, aa.groq_key_id, k.api_key
+                """SELECT aa.agent_name
                    FROM account_assignments aa
-                   LEFT JOIN api_keys k
-                     ON k.id = aa.groq_key_id
-                    AND k.provider = 'groq'
-                    AND k.agent_name IS NULL
                    WHERE LOWER(aa.account_email) = LOWER($1)
                      AND aa.assigned_date = $2
                    LIMIT 1""",
@@ -1801,8 +1764,6 @@ async def api_run(body: RunRequest):
 
         extra_env = {
             "PYTITLE": f"TEXTING Scraper - {agent_name}",
-            "GROQ_PINNED_KEY": assignment["api_key"],
-            "GROQ_ASSIGNMENT_STRICT": "1",
             "AUDIT_STATUS_FILE": str(status_path),
             # Point the subprocess at the dashboard-hosted embedding service so
             # it skips the in-process sentence-transformer model load.
@@ -1838,11 +1799,7 @@ async def api_run(body: RunRequest):
             env=sub_env,
         )
         running_processes[agent_name] = proc
-        running_pinned_keys[agent_name] = assignment["api_key"]
-        logger.info(
-            f"Started audit subprocess for '{agent_name}' (PID {proc.pid}) "
-            f"pinned=...{assignment['api_key'][-6:]}"
-        )
+        logger.info(f"Started audit subprocess for '{agent_name}' (PID {proc.pid})")
         return {"status": "started", "agent": agent_name}
     except HTTPException:
         raise
@@ -1868,10 +1825,6 @@ async def api_status():
         }
         for name in running_processes
     }
-    key_assignments = {
-        name: (f"...{key[-6:]}" if isinstance(key, str) and len(key) >= 6 else key)
-        for name, key in running_pinned_keys.items()
-    }
     # Save a trend snapshot for each agent that just finished
     for name, status in statuses.items():
         if status == "done":
@@ -1879,7 +1832,6 @@ async def api_status():
     return {
         "statuses": statuses,
         "status_details": status_details,
-        "key_assignments": key_assignments,
     }
 
 
@@ -1916,7 +1868,6 @@ async def api_clear_stuck(body: ClearStuckRequest = ClearStuckRequest()):
                 except Exception as _e:
                     logger.debug("swallowed: %r", _e)
             running_processes.pop(name, None)
-            running_pinned_keys.pop(name, None)
             _run_started_at.pop(name, None)
             sf = running_status_files.pop(name, None)
             if sf and sf.exists():
@@ -1934,38 +1885,19 @@ async def api_clear_stuck(body: ClearStuckRequest = ClearStuckRequest()):
 @app.get("/api/ai/status")
 async def api_ai_status():
     """
-    Return real-time health of the multi-provider AI key pool.
+    Report AI engine mode. ML-only — there is no LLM key pool anymore.
 
     Response:
-        {
-          "success": true,
-          "data": {
-            "total_keys": 14,
-            "available_keys": 13,
-            "cooling_keys": 1,
-            "providers": {
-              "groq": {"total": 14, "available": 13, "model": "...", "success": 42, "failures": 1}
-            }
-          }
-        }
+        {"success": true, "data": {"mode": "ml-only", "groq_disabled": true}}
     """
-    from config.settings import PREFILTER_DISABLE_GROQ
-    if PREFILTER_DISABLE_GROQ:
-        # ML-only mode: Groq is decommissioned — no key pool to report.
-        return {"success": True, "data": {
-            "mode": "ml-only",
-            "groq_disabled": True,
-            "total_keys": 0,
-            "available_keys": 0,
-            "cooling_keys": 0,
-            "providers": {},
-        }}
-    try:
-        from ai.analyzer import get_pool_status
-        return {"success": True, "data": get_pool_status()}
-    except Exception as exc:
-        logger.exception("Error in /api/ai/status")
-        return {"success": False, "error": str(exc)}
+    return {"success": True, "data": {
+        "mode": "ml-only",
+        "groq_disabled": True,
+        "total_keys": 0,
+        "available_keys": 0,
+        "cooling_keys": 0,
+        "providers": {},
+    }}
 
 
 @app.get("/api/agent/{agent_id}")
@@ -2042,7 +1974,6 @@ async def api_agent_reset(agent_id: int):
                 proc.kill()
             except Exception as _e:
                 logger.debug("swallowed: %r", _e)
-        running_pinned_keys.pop(name, None)
         sf = running_status_files.pop(name, None)
         if sf and sf.exists():
             try:
@@ -2177,69 +2108,6 @@ async def api_delete_agent(agent_id: int):
         logger.exception(f"Error in DELETE /api/agents/{agent_id}")
         raise HTTPException(status_code=500, detail=str(exc))
 
-
-@app.get("/api/agents/{agent_id}/apikey")
-async def api_get_agent_key(agent_id: int):
-    """Return the API key info for one agent (key is masked except last 6 chars)."""
-    try:
-        async with app.state.pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT name FROM accounts WHERE id = $1", agent_id)
-            if not row:
-                raise HTTPException(status_code=404, detail="Agent not found")
-            agent_name = row["name"].lower()
-            key_row = await conn.fetchrow(
-                "SELECT provider, api_key FROM api_keys WHERE LOWER(agent_name) = LOWER($1) LIMIT 1",
-                agent_name,
-            )
-        if not key_row:
-            return {"has_key": False, "provider": None, "key_preview": None}
-        key_val = key_row["api_key"] or ""
-        preview = ("*" * max(0, len(key_val) - 6)) + key_val[-6:] if key_val else ""
-        return {"has_key": bool(key_val), "provider": key_row["provider"], "key_preview": preview}
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
-@app.put("/api/agents/{agent_id}/apikey", dependencies=[Depends(require_admin)])
-async def api_set_agent_key(agent_id: int, body: EditAgentKeyRequest):
-    """Set or remove the API key for one agent in the database."""
-    try:
-        async with app.state.pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT name FROM accounts WHERE id = $1", agent_id)
-            if not row:
-                raise HTTPException(status_code=404, detail="Agent not found")
-            agent_name = row["name"].lower()
-
-            key_val  = body.key.strip()
-            provider = body.provider.strip().lower()
-
-            if not key_val:
-                # Remove key
-                await conn.execute(
-                    "DELETE FROM api_keys WHERE LOWER(agent_name) = LOWER($1)",
-                    agent_name,
-                )
-            else:
-                if provider != "groq":
-                    raise HTTPException(status_code=400, detail="provider must be 'groq'")
-                # Upsert: delete old + insert new
-                await conn.execute(
-                    "DELETE FROM api_keys WHERE LOWER(agent_name) = LOWER($1)",
-                    agent_name,
-                )
-                await conn.execute(
-                    "INSERT INTO api_keys (provider, api_key, agent_name) VALUES ($1, $2, $3)",
-                    provider, key_val, agent_name,
-                )
-
-        logger.info(f"Updated API key for agent '{agent_name}' (provider={provider or 'removed'})")
-        return {"status": "ok"}
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
 
 
 # â"€â"€ Red Flag Feedback â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
@@ -2511,34 +2379,6 @@ async def api_review_queue(agent_id: int | None = None,
 
 # â"€â"€ Account Assignments â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
-@app.get("/api/groq-keys")
-async def api_get_groq_keys():
-    """
-    Return shared Groq keys as UI-safe labeled options:
-    [{id: 12, label: "Groq 1"}, ...]
-    """
-    try:
-        async with app.state.pool.acquire() as conn:
-            rows = await conn.fetch(
-                """SELECT id, api_key
-                   FROM api_keys
-                   WHERE provider = 'groq' AND agent_name IS NULL
-                   ORDER BY id"""
-            )
-        data = []
-        for idx, row in enumerate(rows, start=1):
-            data.append(
-                {
-                    "id": row["id"],
-                    "label": f"Groq {idx}",
-                }
-            )
-        return {"success": True, "data": data}
-    except Exception as exc:
-        logger.exception("Error in GET /api/groq-keys")
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
 @app.get("/api/assignments")
 async def api_get_assignments(date: str = ""):
     """
@@ -2557,35 +2397,19 @@ async def api_get_assignments(date: str = ""):
             from datetime import date as _date
             date_obj = _date.fromisoformat(date)
             rows = await conn.fetch(
-                """SELECT aa.account_email, aa.agent_name, aa.groq_key_id,
-                          aa.assigned_date, aa.assigned_at,
-                          k.api_key
+                """SELECT aa.account_email, aa.agent_name,
+                          aa.assigned_date, aa.assigned_at
                    FROM account_assignments aa
-                   LEFT JOIN api_keys k
-                     ON k.id = aa.groq_key_id
-                    AND k.provider = 'groq'
-                    AND k.agent_name IS NULL
                    WHERE aa.assigned_date = $1""",
                 date_obj,
             )
-            shared_groq_rows = await conn.fetch(
-                """SELECT id FROM api_keys
-                   WHERE provider = 'groq' AND agent_name IS NULL
-                   ORDER BY id"""
-            )
 
         assigned_map = {r["account_email"]: dict(r) for r in rows}
-        groq_rank = {r["id"]: i for i, r in enumerate(shared_groq_rows, start=1)}
         result = []
         for email, name in account_map.items():
             if email in assigned_map:
                 row = assigned_map[email]
-                key_id = row.get("groq_key_id")
-                key_val = row.get("api_key") or ""
                 row["account_name"] = name
-                row["groq_key_label"] = f"Groq {groq_rank[key_id]}" if key_id in groq_rank else None
-                row["groq_key_preview"] = f"...{key_val[-6:]}" if len(key_val) >= 6 else None
-                row.pop("api_key", None)
                 result.append(row)
             else:
                 result.append(
@@ -2593,9 +2417,6 @@ async def api_get_assignments(date: str = ""):
                         "account_email": email,
                         "account_name": name,
                         "agent_name": None,
-                        "groq_key_id": None,
-                        "groq_key_label": None,
-                        "groq_key_preview": None,
                         "assigned_date": date,
                         "assigned_at": None,
                     }
@@ -2630,12 +2451,11 @@ async def api_assignments_dates():
 async def api_post_assignment(body: AssignmentRequest):
     """
     Assign an agent to an account for a given date (upserts - one assignment per account per day).
-    Body: {account_email, agent_name, assigned_date, groq_key_id}
+    Body: {account_email, agent_name, assigned_date}
     """
     email      = body.account_email.strip()
     agent_name = body.agent_name.strip()
     date       = body.assigned_date.strip()
-    groq_key_id = body.groq_key_id
 
     if not email or not date:
         raise HTTPException(status_code=400, detail="account_email and assigned_date are required")
@@ -2672,13 +2492,12 @@ async def api_post_assignment(body: AssignmentRequest):
             from datetime import date as _date
             date_obj = _date.fromisoformat(date)
             await conn.execute(
-                """INSERT INTO account_assignments (account_email, agent_name, groq_key_id, assigned_date)
-                   VALUES ($1, $2, $3, $4)
+                """INSERT INTO account_assignments (account_email, agent_name, assigned_date)
+                   VALUES ($1, $2, $3)
                    ON CONFLICT(account_email, assigned_date) DO UPDATE SET
                        agent_name=EXCLUDED.agent_name,
-                       groq_key_id=EXCLUDED.groq_key_id,
                        assigned_at=CURRENT_TIMESTAMP""",
-                email, agent_name, groq_key_id, date_obj,
+                email, agent_name, date_obj,
             )
         logger.info(f"Assignment saved: {email} -> {agent_name} on {date}")
         return {"success": True}
@@ -2712,8 +2531,8 @@ async def api_copy_latest_assignments(date: str = ""):
             # Use ON CONFLICT to avoid overwriting existing assignments if the user already made some for today
             result = await conn.execute(
                 """
-                INSERT INTO account_assignments (account_email, agent_name, groq_key_id, assigned_date)
-                SELECT account_email, agent_name, groq_key_id, $1
+                INSERT INTO account_assignments (account_email, agent_name, assigned_date)
+                SELECT account_email, agent_name, $1
                 FROM account_assignments
                 WHERE assigned_date = $2
                 ON CONFLICT (account_email, assigned_date) DO NOTHING
@@ -2758,33 +2577,14 @@ async def api_assignment_history(account: str = ""):
     try:
         async with app.state.pool.acquire() as conn:
             rows = await conn.fetch(
-                """SELECT aa.account_email, aa.agent_name, aa.groq_key_id,
-                          aa.assigned_date, aa.assigned_at,
-                          k.api_key
+                """SELECT aa.account_email, aa.agent_name,
+                          aa.assigned_date, aa.assigned_at
                    FROM account_assignments aa
-                   LEFT JOIN api_keys k
-                     ON k.id = aa.groq_key_id
-                    AND k.provider = 'groq'
-                    AND k.agent_name IS NULL
                    WHERE LOWER(aa.account_email) = LOWER($1)
                    ORDER BY aa.assigned_date DESC""",
                 account,
             )
-            shared_groq_rows = await conn.fetch(
-                """SELECT id FROM api_keys
-                   WHERE provider = 'groq' AND agent_name IS NULL
-                   ORDER BY id"""
-            )
-        groq_rank = {r["id"]: i for i, r in enumerate(shared_groq_rows, start=1)}
-        data = []
-        for row in rows:
-            rec = dict(row)
-            key_id = rec.get("groq_key_id")
-            key_val = rec.get("api_key") or ""
-            rec["groq_key_label"] = f"Groq {groq_rank[key_id]}" if key_id in groq_rank else None
-            rec["groq_key_preview"] = f"...{key_val[-6:]}" if len(key_val) >= 6 else None
-            rec.pop("api_key", None)
-            data.append(rec)
+        data = [dict(row) for row in rows]
         return {"success": True, "data": data}
     except Exception as exc:
         logger.exception("Error in GET /api/assignments/history")
@@ -2947,6 +2747,10 @@ async def api_detailed_dashboard(
                         c.assigned_labels,
                         c.audit_date,
                         c.convo_date,
+                        CASE
+                            WHEN c.convo_date <> '' THEN TO_DATE(c.convo_date, 'MM/DD/YYYY')
+                            ELSE c.audit_date
+                        END AS effective_date,
                         COALESCE(aa.agent_name, c.texter_name) AS texter_name,
                         cs.compliance_score,
                         cs.sentiment_score,
@@ -2990,13 +2794,18 @@ async def api_detailed_dashboard(
                         LIMIT 1
                     ) aa ON TRUE
                     WHERE {texter_clause}
-                      AND c.audit_date BETWEEN $1 AND $2
+                      AND (
+                            CASE
+                                WHEN c.convo_date <> '' THEN TO_DATE(c.convo_date, 'MM/DD/YYYY')
+                                ELSE c.audit_date
+                            END
+                          ) BETWEEN $1 AND $2
                       {contact_clause}
                       {flagged_clause}
                     -- DISTINCT ON keeps the row with the highest id (most recent scrape) per contact+date
                     ORDER BY ct.name, c.convo_date, c.audit_date, c.id DESC
                 ) deduped
-                ORDER BY audit_date DESC, conversation_id DESC
+                ORDER BY effective_date DESC, conversation_id DESC
                 """
 
     contact_search = contact_name.strip()
@@ -3219,23 +3028,11 @@ async def api_delete_roster(name: str):
 @app.get("/api/rate-limit/status")
 async def api_rate_limit_status():
     """
-    Live snapshot of all active token buckets — dashboard routes + Groq keys.
+    Live snapshot of all active token buckets — dashboard routes.
     Polled every 5 s by the dashboard Rate Limiter widget.
     Returns fill %, tokens remaining, and all-time allowed/rejected counts.
     """
-    from ai.analyzer import _rl as groq_rl
-
-    # Dashboard route buckets
-    combined = _dashboard_rl.status()
-
-    # Merge Groq key buckets with a clear label prefix
-    groq_status = groq_rl.status()
-    for k, v in groq_status["buckets"].items():
-        combined["buckets"][f"[groq] {k}"] = v
-
-    combined["summary"]["groq_rejected"] = groq_status["summary"]["total_rejected_all_time"]
-
-    return combined
+    return _dashboard_rl.status()
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────

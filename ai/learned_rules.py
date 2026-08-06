@@ -1,9 +1,9 @@
 """
-Learned Rules Manager — load, save, deduplicate, and inject dynamic correction rules.
+Learned Rules Manager — load, save, and deduplicate dynamic correction rules.
 
 Rules are stored in ai/learned_rules.json and are derived from human feedback via
 the dream worker. At module load time, this file caches rules in memory (with mtime
-invalidation) to avoid file I/O on every LLM prompt call.
+invalidation) to avoid file I/O on every Tier-4 evaluation.
 """
 import json
 import logging
@@ -136,36 +136,6 @@ def append_rules(new_rules: list[dict]) -> int:
         return 0
 
 
-def inject_into_prompt(base_prompt: str) -> str:
-    """
-    Load active rules and append them to the base prompt as PART 14.
-    If no rules exist, returns base_prompt unchanged (zero-cost path).
-
-    This function is called before every LLM API call, so it's performance-critical.
-    The module-level cache ensures we don't re-read the file on every call.
-    """
-    rules = load_rules()
-
-    if not rules:
-        return base_prompt
-
-    # Build LEARNED_RULES block
-    rules_block = "\n\n<LEARNED_RULES>\n"
-    rules_block += "These rules were derived from real reviewer feedback and take precedence over all other logic.\n\n"
-
-    for i, rule in enumerate(rules, 1):
-        rule_id = rule.get("id", f"lr_{i:03d}")
-        category = rule.get("category", "uncategorized")
-        text = rule.get("rule_text", "")
-        rules_block += f"RULE {rule_id} — {category}\n  {text}\n\n"
-
-    rules_block += "</LEARNED_RULES>\n"
-
-    logger.debug(f"[LearnedRules] Injecting {len(rules)} learned rule(s) into prompt")
-
-    return base_prompt + rules_block
-
-
 def get_t4_suppressed_flags() -> set[str]:
     """
     Canonicalized flag texts that the deterministic Tier-4 generator should
@@ -174,8 +144,7 @@ def get_t4_suppressed_flags() -> set[str]:
     Sourced from active learned rules carrying a `suppresses_t4_flags` list
     (written by the dream worker when reviewers repeatedly mark a deterministic
     flag invalid). Returns an empty set when no such rules exist — a zero-cost
-    path for the common case. This is the T4 counterpart of inject_into_prompt():
-    it routes the same human feedback into the deterministic tier.
+    path for the common case.
     """
     rules = load_rules()
     if not rules:
