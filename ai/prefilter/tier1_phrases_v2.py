@@ -1068,6 +1068,16 @@ def _future_rebuttal_sequence_violation(messages: list[dict]) -> tuple[bool, str
     return False, ""
 
 
+def _display_label(assigned_labels: list[str] | None, fallback: str | None) -> str:
+    """Join every label the texter assigned for display — never drop one
+    (e.g. a second label like "Maybe later" alongside "June List")."""
+    if assigned_labels:
+        joined = ", ".join(l.strip() for l in assigned_labels if l and l.strip())
+        if joined:
+            return joined
+    return fallback or ""
+
+
 def _clean_result(
     contact_name: str,
     *,
@@ -1079,12 +1089,25 @@ def _clean_result(
     label_reason: str = "No engagement, no rule violations.",
     pillars: list | None = None,
     actual_label: str | None = None,
+    all_assigned_labels: list[str] | None = None,
 ) -> dict:
     # Use the label the texter actually set as label_assigned
     real_label = actual_label.strip() if actual_label else label_assigned
+    # Report every label the texter assigned, not just the one picked for
+    # rule-matching — a second label (e.g. "Maybe later" alongside a
+    # campaign tag like "June List") must stay visible, never silently
+    # dropped from what the dashboard shows as label_assigned.
+    display_label = _display_label(all_assigned_labels, real_label)
     expected_label = label_assigned.strip() if label_assigned else ""
     if actual_label:
-        label_correct = _label_key(real_label) == _label_key(expected_label)
+        # Correct when ANY assigned label is the expected one — a texter who
+        # stacks a campaign tag with the real status ("June List, Maybe later")
+        # labelled it right even if _pick_primary_label picked the other one.
+        from ai.prefilter.label_validator import label_matches_any
+        label_correct = (
+            _label_key(real_label) == _label_key(expected_label)
+            or label_matches_any(all_assigned_labels, expected_label)
+        )
         label_should_be = expected_label
         # Keep the specific evidence the caller passed — a bare "ML rule matched X"
         # gives reviewers nothing to verify the flag against.
@@ -1106,7 +1129,7 @@ def _clean_result(
         "funnel_stage_reached": funnel_stage,
         "pillars_gathered": pillars or [],
         "rebuttals_used": [],
-        "label_assigned": real_label,
+        "label_assigned": display_label,
         "label_correct": label_correct,
         "label_should_be": label_should_be,
         "label_reason": label_reason if label_correct is not None else "",
@@ -1233,6 +1256,7 @@ def evaluate(
                     label_assigned="Sold",
                     label_reason="ML detected sold-property language — property is already sold or under contract.",
                     actual_label=_actual_label,
+                    all_assigned_labels=assigned_labels,
                 ),
             )
 
@@ -1256,6 +1280,7 @@ def evaluate(
                     label_assigned="DO Not Call",
                     label_reason="Contact used sexual/private-meeting harassment language.",
                     actual_label=_actual_label,
+                    all_assigned_labels=assigned_labels,
                 ),
             )
 
@@ -1300,7 +1325,7 @@ def evaluate(
                             "funnel_stage_reached": "none",
                             "pillars_gathered": [],
                             "rebuttals_used": [],
-                            "label_assigned": _actual_label or "DO Not Call",
+                            "label_assigned": _display_label(assigned_labels, _actual_label or "DO Not Call"),
                             "label_correct": None,
                             "label_should_be": None,
                             "label_reason": "",
@@ -1349,6 +1374,7 @@ def evaluate(
                     label_assigned="DO Not Call",
                     label_reason="Contact used hostile or profane language.",
                     actual_label=_actual_label,
+                    all_assigned_labels=assigned_labels,
                 ),
             )
 
@@ -1388,6 +1414,7 @@ def evaluate(
                     label_assigned="DO Not Call",
                     label_reason="Contact explicitly requested to stop communication.",
                     actual_label=_actual_label,
+                    all_assigned_labels=assigned_labels,
                 ),
             )
 
@@ -1662,7 +1689,7 @@ def evaluate(
                 "funnel_stage_reached":    "wide",
                 "pillars_gathered":        _pillars_found,
                 "rebuttals_used":          [],
-                "label_assigned":          _actual_label or "Potential",
+                "label_assigned":          _display_label(assigned_labels, _actual_label or "Potential"),
                 "label_correct":           _label_correct,
                 "label_should_be":         _label_should,
                 "label_reason":            _label_reason,
@@ -1706,6 +1733,7 @@ def evaluate(
                     label_assigned="Missed Call",
                     label_reason="Missed call event present — Missed Call label is correct.",
                     actual_label=_actual_label,
+                    all_assigned_labels=assigned_labels,
                 ),
             )
         return PrefilterResult(
@@ -1721,6 +1749,7 @@ def evaluate(
                 label_assigned="Stopped Responding",
                 label_reason="No contact engagement.",
                 actual_label=_actual_label,
+                all_assigned_labels=assigned_labels,
             ),
         )
 
@@ -1778,6 +1807,7 @@ def evaluate(
                             label_assigned="DO Not Call",
                             label_reason="Contact used explicit opt-out language.",
                             actual_label=_actual_label,
+                            all_assigned_labels=assigned_labels,
                         ),
                     )
 
@@ -1836,7 +1866,7 @@ def evaluate(
                     "funnel_stage_reached": "none",
                     "pillars_gathered": [],
                     "rebuttals_used": [],
-                    "label_assigned": _actual_label or "Wrong Number",
+                    "label_assigned": _display_label(assigned_labels, _actual_label or "Wrong Number"),
                     "label_correct": None,
                     "label_should_be": None,
                     "label_reason": "",
@@ -1898,6 +1928,7 @@ def evaluate(
                 label_assigned=expected_label,
                 label_reason=reason,
                 actual_label=_actual_label,
+                all_assigned_labels=assigned_labels,
             ),
         )
 
@@ -1921,6 +1952,7 @@ def evaluate(
                 label_assigned="Sold",
                 label_reason="Contact confirmed property is sold.",
                 actual_label=_actual_label,
+                all_assigned_labels=assigned_labels,
             ),
         )
 
@@ -2015,6 +2047,7 @@ def evaluate(
                             "stands."
                         ),
                         actual_label=_actual_label,
+                        all_assigned_labels=assigned_labels,
                     ),
                 )
 
@@ -2070,6 +2103,7 @@ def evaluate(
                                 "price-disagreement decline."
                             ),
                             actual_label=_actual_label,
+                            all_assigned_labels=assigned_labels,
                         ),
                     )
                 if not _is_ni_label:
@@ -2111,6 +2145,7 @@ def evaluate(
                             "sent after the refusal, then closed cleanly per script)."
                         ),
                         actual_label=_actual_label,
+                        all_assigned_labels=assigned_labels,
                     ),
                 )
 
@@ -2143,6 +2178,7 @@ def evaluate(
                 label_assigned="Maybe Later",
                 label_reason="Contact indicated possible future interest.",
                 actual_label=_actual_label,
+                all_assigned_labels=assigned_labels,
             ),
         )
 

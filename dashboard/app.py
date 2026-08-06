@@ -38,7 +38,7 @@ from authlib.integrations.httpx_client import AsyncOAuth2Client
 from pydantic import BaseModel
 
 from config.settings import (
-    DATABASE_URL, get_now,
+    DATABASE_URL, get_now, TIMEZONE, TIMEZONE_STR,
     GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, APP_BASE_URL,
     SESSION_SECRET_KEY, TOOL_ACCESS_SEED_EMAILS,
 )
@@ -1173,6 +1173,17 @@ class AssignmentRequest(BaseModel):
     account_email: str
     agent_name:    str
     assigned_date: str  # "YYYY-MM-DD"
+
+
+class AssignmentEntry(BaseModel):
+    account_email: str
+    agent_name:    str = ""   # "" = unassign
+
+
+class SaveAllAssignmentsRequest(BaseModel):
+    """One 'Save All' click — the full desired state of every account card."""
+    assigned_date: str                 # "YYYY-MM-DD" (the DATE picker)
+    assignments:   list[AssignmentEntry]
 
 
 class AddTexterRequest(BaseModel):
@@ -2448,122 +2459,396 @@ async def api_assignments_dates():
 
 
 @app.post("/api/assignments", dependencies=[Depends(require_admin)])
-async def api_post_assignment(body: AssignmentRequest):
+async def api_post_assignment(body: AssignmentRequest, request: Request):
     """
-    Assign an agent to an account for a given date (upserts - one assignment per account per day).
+    Assign an agent to a single account for a given date.
+
+    Delegates to the batch handler so a one-off save produces exactly the same
+    ownership periods and audit rows as a Save All click — there is only one
+    code path that can move ownership.
     Body: {account_email, agent_name, assigned_date}
     """
-    email      = body.account_email.strip()
-    agent_name = body.agent_name.strip()
-    date       = body.assigned_date.strip()
+    email = body.account_email.strip()
+    date  = body.assigned_date.strip()
 
     if not email or not date:
         raise HTTPException(status_code=400, detail="account_email and assigned_date are required")
 
-    # Validate date format first
+    result = await api_save_all_assignments(
+        SaveAllAssignmentsRequest(
+            assigned_date=date,
+            assignments=[AssignmentEntry(account_email=email, agent_name=body.agent_name)],
+        ),
+        request,
+    )
+    if result.get("errors"):
+        raise HTTPException(status_code=400, detail="; ".join(result["errors"]))
+    return {"success": True}
+
+
+# ── Time-ranged ownership (assignment_periods) ────────────────────────────────
+# One "Save All" click submits the desired state of every account card. The
+# server diffs that against the currently-open periods and writes a row ONLY
+# where ownership actually changed. Rewriting all ~39 accounts on every click
+# would shred the timeline into meaningless slices and destroy attribution.
+
+def _local_day_bounds(day: "date") -> tuple[datetime, datetime]:
+    """Return tz-aware [start, end) covering `day` in the configured timezone."""
+    from datetime import time as _time
+    start = TIMEZONE.localize(datetime.combine(day, _time.min))
+    end   = TIMEZONE.localize(datetime.combine(day + timedelta(days=1), _time.min))
+    return start, end
+
+
+async def _log_assignment(conn, *, account_email, action, from_texter, to_texter,
+                          effective_at, performed_by, save_id=None, period_id=None,
+                          reason=None):
+    await conn.execute(
+        """INSERT INTO assignment_audit_log
+               (period_id, save_id, account_email, action, from_texter, to_texter,
+                effective_at, performed_by, reason)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)""",
+        period_id, save_id, account_email, action, from_texter, to_texter,
+        effective_at, performed_by, reason,
+    )
+
+
+@app.post("/api/assignments/save-all", dependencies=[Depends(require_admin)])
+async def api_save_all_assignments(body: SaveAllAssignmentsRequest, request: Request):
+    """
+    Record one Save All click.
+
+    Saving TODAY is a live shuffle: the boundary instant is the server's
+    transaction time, shared by every account in the batch so no gap or overlap
+    can open up between them.
+
+    Saving a PAST date is a roster correction, not a shuffle — there is no
+    honest way to know what time an unrecorded change happened, so it becomes a
+    whole-day period, and only for accounts that have no period covering that
+    day already. Recorded shuffles are never overwritten.
+
+    account_assignments is still written so every existing day-grained reader
+    (scoring, trends, the assignments grid) keeps working unchanged.
+    """
+    from datetime import date as _date
+
+    performed_by = (request.session.get("user_email") or "unknown").lower().strip()
+
     try:
-        from datetime import date as _date
-        date_obj = _date.fromisoformat(date)
+        target_date = _date.fromisoformat(body.assigned_date.strip())
     except ValueError:
         raise HTTPException(status_code=400, detail="assigned_date must be YYYY-MM-DD")
 
-    # If agent_name is empty, we treat this as an "unassign" action
-    if not agent_name:
-        async with app.state.pool.acquire() as conn:
-            await conn.execute(
-                "DELETE FROM account_assignments WHERE account_email = $1 AND assigned_date = $2",
-                email, date_obj
-            )
-        return {"status": "ok", "message": "Assignment removed"}
+    today = get_now().date()
+    if target_date > today:
+        raise HTTPException(status_code=400, detail="Cannot assign a future date")
 
-    if agent_name not in AGENT_ROSTER:
-        raise HTTPException(status_code=400, detail=f"'{agent_name}' is not in the agent roster")
+    # Normalize + de-duplicate submissions (last card wins for a given account).
+    desired: dict[str, str] = {}
+    for entry in body.assignments:
+        email = entry.account_email.strip()
+        if email:
+            desired[email.lower()] = entry.agent_name.strip()
 
-    # Validate account exists in accounts table.
+    if not desired:
+        return {"success": True, "changed": 0, "unchanged": 0, "shuffles": [],
+                "errors": [], "save_id": None}
+
+    errors: list[str] = []
     async with app.state.pool.acquire() as conn:
-        acct = await conn.fetchrow(
-            "SELECT id FROM accounts WHERE LOWER(email) = LOWER($1)", email
-        )
-    if not acct:
-        raise HTTPException(status_code=404, detail=f"Account '{email}' not found in database")
+        known = {
+            r["email"].lower(): r["email"]
+            for r in await conn.fetch("SELECT email FROM accounts WHERE email IS NOT NULL")
+        }
+
+    # Drop anything we can't attribute to a real account or a real texter.
+    clean: dict[str, str] = {}
+    for email_lc, texter in desired.items():
+        if email_lc not in known:
+            errors.append(f"Unknown account: {email_lc}")
+            continue
+        if texter and texter not in AGENT_ROSTER:
+            errors.append(f"'{texter}' is not in the texter roster")
+            continue
+        clean[known[email_lc]] = texter
+
+    if not clean:
+        raise HTTPException(status_code=400, detail="; ".join(errors) or "Nothing to save")
+
+    emails = sorted(clean)          # stable lock order — avoids deadlocks
+    is_today = target_date == today
+    changed = unchanged = 0
+    shuffles: list[dict] = []
 
     try:
         async with app.state.pool.acquire() as conn:
-            from datetime import date as _date
-            date_obj = _date.fromisoformat(date)
-            await conn.execute(
-                """INSERT INTO account_assignments (account_email, agent_name, assigned_date)
-                   VALUES ($1, $2, $3)
-                   ON CONFLICT(account_email, assigned_date) DO UPDATE SET
-                       agent_name=EXCLUDED.agent_name,
-                       assigned_at=CURRENT_TIMESTAMP""",
-                email, agent_name, date_obj,
-            )
-        logger.info(f"Assignment saved: {email} -> {agent_name} on {date}")
-        return {"success": True}
+            async with conn.transaction():
+                # now() is transaction start, so every account in this batch
+                # shares one boundary instant and assignment_saves.saved_at agrees.
+                boundary = await conn.fetchval("SELECT now()")
+
+                save_id = await conn.fetchval(
+                    """INSERT INTO assignment_saves (saved_by, target_date, source)
+                       VALUES ($1, $2, 'dashboard') RETURNING id""",
+                    performed_by, target_date,
+                )
+
+                # Lock the open periods for these accounts in a fixed order.
+                open_rows = await conn.fetch(
+                    """SELECT id, account_email, texter_name
+                         FROM assignment_periods
+                        WHERE account_email = ANY($1::text[]) AND ended_at IS NULL
+                        ORDER BY account_email
+                          FOR UPDATE""",
+                    emails,
+                )
+                current = {r["account_email"]: r for r in open_rows}
+
+                for email in emails:
+                    texter = clean[email]
+                    row    = current.get(email)
+                    owner  = row["texter_name"] if row else None
+
+                    if is_today:
+                        if owner == (texter or None):
+                            unchanged += 1
+                            continue
+
+                        if row is not None:
+                            await conn.execute(
+                                """UPDATE assignment_periods
+                                      SET ended_at = $1, ended_by = $2
+                                    WHERE id = $3""",
+                                boundary, performed_by, row["id"],
+                            )
+
+                        new_period_id = None
+                        if texter:
+                            new_period_id = await conn.fetchval(
+                                """INSERT INTO assignment_periods
+                                       (account_email, texter_name, started_at,
+                                        started_by, save_id, source)
+                                   VALUES ($1, $2, $3, $4, $5, 'dashboard')
+                                   RETURNING id""",
+                                email, texter, boundary, performed_by, save_id,
+                            )
+
+                        action = ("shuffle" if (owner and texter)
+                                  else "open" if texter else "unassign")
+                        await _log_assignment(
+                            conn, account_email=email, action=action,
+                            from_texter=owner, to_texter=texter or None,
+                            effective_at=boundary, performed_by=performed_by,
+                            save_id=save_id, period_id=new_period_id,
+                        )
+                        changed += 1
+                        shuffles.append({
+                            "account_email": email, "action": action,
+                            "from": owner, "to": texter or None,
+                            "at": boundary.isoformat(),
+                        })
+                    else:
+                        # Past date — whole-day period, only if nothing covers it.
+                        day_start, day_end = _local_day_bounds(target_date)
+                        covered = await conn.fetchval(
+                            """SELECT EXISTS (
+                                   SELECT 1 FROM assignment_periods
+                                    WHERE account_email = $1
+                                      AND period && tstzrange($2, $3, '[)'))""",
+                            email, day_start, day_end,
+                        )
+                        if texter and not covered:
+                            pid = await conn.fetchval(
+                                """INSERT INTO assignment_periods
+                                       (account_email, texter_name, started_at,
+                                        ended_at, started_by, save_id, source)
+                                   VALUES ($1, $2, $3, $4, $5, $6, 'dashboard')
+                                   RETURNING id""",
+                                email, texter, day_start, day_end,
+                                performed_by, save_id,
+                            )
+                            await _log_assignment(
+                                conn, account_email=email, action="correction",
+                                from_texter=None, to_texter=texter,
+                                effective_at=day_start, performed_by=performed_by,
+                                save_id=save_id, period_id=pid,
+                                reason=f"Backdated save for {target_date.isoformat()}",
+                            )
+                            changed += 1
+                        else:
+                            unchanged += 1
+                            if texter and covered:
+                                errors.append(
+                                    f"{email}: {target_date.isoformat()} already has "
+                                    f"recorded ownership — left untouched"
+                                )
+
+                    # ── Legacy day-grained mirror (keeps existing readers working)
+                    if texter:
+                        await conn.execute(
+                            """INSERT INTO account_assignments
+                                   (account_email, agent_name, assigned_date)
+                               VALUES ($1, $2, $3)
+                               ON CONFLICT (account_email, assigned_date) DO UPDATE
+                                   SET agent_name  = EXCLUDED.agent_name,
+                                       assigned_at = CURRENT_TIMESTAMP""",
+                            email, texter, target_date,
+                        )
+                    else:
+                        await conn.execute(
+                            """DELETE FROM account_assignments
+                                WHERE account_email = $1 AND assigned_date = $2""",
+                            email, target_date,
+                        )
+
+                await conn.execute(
+                    "UPDATE assignment_saves SET changed = $1, unchanged = $2 WHERE id = $3",
+                    changed, unchanged, save_id,
+                )
+
+        logger.info(
+            f"Save All by {performed_by} for {target_date}: "
+            f"{changed} changed, {unchanged} unchanged"
+        )
+        return {
+            "success":   True,
+            "save_id":   save_id,
+            "changed":   changed,
+            "unchanged": unchanged,
+            "shuffles":  shuffles,
+            "errors":    errors,
+        }
+    except HTTPException:
+        raise
     except Exception as exc:
-        logger.exception("Error in POST /api/assignments")
+        logger.exception("Error in POST /api/assignments/save-all")
         raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.post("/api/assignments/copy-latest", dependencies=[Depends(require_admin)])
-async def api_copy_latest_assignments(date: str = ""):
+async def api_copy_latest_assignments(request: Request, date: str = ""):
     """
     Find the most recent date with any assignments and copy them to the target date.
+
+    Accounts already assigned on the target date are left alone. The copy runs
+    through the batch handler, so an account whose owner is unchanged produces
+    no ownership period — carrying the same roster forward day after day keeps
+    one continuous period instead of one row per day.
     """
     from datetime import date as _date
     if not date:
         date = get_now().date().isoformat()
-    
+
     try:
         target_date = _date.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
+
+    try:
         async with app.state.pool.acquire() as conn:
-            # 1. Find the most recent date with assignments BEFORE target_date
             latest_date = await conn.fetchval(
                 "SELECT MAX(assigned_date) FROM account_assignments WHERE assigned_date < $1",
-                target_date
+                target_date,
             )
-            
             if not latest_date:
                 return {"success": False, "error": "No previous assignments found to copy."}
-            
-            # 2. Copy those assignments to target_date
-            # Use ON CONFLICT to avoid overwriting existing assignments if the user already made some for today
-            result = await conn.execute(
-                """
-                INSERT INTO account_assignments (account_email, agent_name, assigned_date)
-                SELECT account_email, agent_name, $1
-                FROM account_assignments
-                WHERE assigned_date = $2
-                ON CONFLICT (account_email, assigned_date) DO NOTHING
-                """,
-                target_date, latest_date
+
+            source = await conn.fetch(
+                "SELECT account_email, agent_name FROM account_assignments WHERE assigned_date = $1",
+                latest_date,
             )
-            
-            count = int(result.split()[-1]) if "INSERT" in result else 0
-            logger.info(f"Assignments copied from {latest_date} to {target_date} (count: {count})")
-            return {"success": True, "from_date": str(latest_date), "count": count}
-            
+            already = {
+                r["account_email"].lower()
+                for r in await conn.fetch(
+                    "SELECT account_email FROM account_assignments WHERE assigned_date = $1",
+                    target_date,
+                )
+            }
+
+        entries = [
+            AssignmentEntry(account_email=r["account_email"], agent_name=r["agent_name"])
+            for r in source
+            if r["account_email"].lower() not in already
+        ]
+        if not entries:
+            return {"success": True, "from_date": str(latest_date), "count": 0,
+                    "changed": 0, "unchanged": 0}
+
+        result = await api_save_all_assignments(
+            SaveAllAssignmentsRequest(assigned_date=date, assignments=entries),
+            request,
+        )
+        logger.info(
+            f"Assignments copied from {latest_date} to {target_date} "
+            f"({len(entries)} accounts, {result['changed']} ownership changes)"
+        )
+        return {
+            "success":   True,
+            "from_date": str(latest_date),
+            "count":     len(entries),
+            "changed":   result["changed"],
+            "unchanged": result["unchanged"],
+        }
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("Error in POST /api/assignments/copy-latest")
         raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.delete("/api/assignments", dependencies=[Depends(require_admin)])
-async def api_delete_assignments(date: str = ""):
-    """Clear all account assignments for a given date."""
+async def api_delete_assignments(request: Request, date: str = ""):
+    """
+    Clear all account assignments for a given date.
+
+    Clearing TODAY closes every open ownership period at now() — accounts become
+    unassigned from this instant, and messages that already arrived keep the
+    texter who owned them. Ownership history is never deleted; a past date only
+    clears the day-grained mirror.
+    """
     from datetime import date as _date
     if not date:
         date = get_now().date().isoformat()
+    performed_by = (request.session.get("user_email") or "unknown").lower().strip()
     try:
         date_obj = _date.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
+
+    closed = 0
+    try:
         async with app.state.pool.acquire() as conn:
-            await conn.execute(
-                "DELETE FROM account_assignments WHERE assigned_date = $1",
-                date_obj
-            )
-        logger.info(f"Assignments cleared for date: {date}")
-        return {"success": True}
+            async with conn.transaction():
+                if date_obj == get_now().date():
+                    boundary = await conn.fetchval("SELECT now()")
+                    open_rows = await conn.fetch(
+                        """SELECT id, account_email, texter_name
+                             FROM assignment_periods
+                            WHERE ended_at IS NULL
+                            ORDER BY account_email
+                              FOR UPDATE"""
+                    )
+                    for r in open_rows:
+                        await conn.execute(
+                            "UPDATE assignment_periods SET ended_at = $1, ended_by = $2 WHERE id = $3",
+                            boundary, performed_by, r["id"],
+                        )
+                        await _log_assignment(
+                            conn, account_email=r["account_email"], action="unassign",
+                            from_texter=r["texter_name"], to_texter=None,
+                            effective_at=boundary, performed_by=performed_by,
+                            period_id=r["id"], reason="Clear All",
+                        )
+                    closed = len(open_rows)
+
+                await conn.execute(
+                    "DELETE FROM account_assignments WHERE assigned_date = $1",
+                    date_obj,
+                )
+        logger.info(f"Assignments cleared for {date} by {performed_by} ({closed} periods closed)")
+        return {"success": True, "periods_closed": closed}
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("Error in DELETE /api/assignments")
         raise HTTPException(status_code=500, detail=str(exc))
@@ -2588,6 +2873,170 @@ async def api_assignment_history(account: str = ""):
         return {"success": True, "data": data}
     except Exception as exc:
         logger.exception("Error in GET /api/assignments/history")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/assignments/timeline")
+async def api_assignment_timeline(date: str = "", account: str = ""):
+    """
+    Ownership periods overlapping a day — the shuffle timeline.
+
+    Optional `account` narrows to one email. Returns every period that touches
+    the day, so a period opened yesterday and still open today appears once.
+    """
+    from datetime import date as _date
+    if not date:
+        date = get_now().date().isoformat()
+    try:
+        day = _date.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
+
+    day_start, day_end = _local_day_bounds(day)
+    try:
+        async with app.state.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT p.id, p.account_email, p.texter_name,
+                          p.started_at, p.ended_at, p.started_by, p.ended_by,
+                          p.source, a.name AS account_name
+                     FROM assignment_periods p
+                     LEFT JOIN accounts a ON LOWER(a.email) = LOWER(p.account_email)
+                    WHERE p.period && tstzrange($1, $2, '[)')
+                      AND ($3 = '' OR LOWER(p.account_email) = LOWER($3))
+                    ORDER BY p.account_email, p.started_at""",
+                day_start, day_end, account.strip(),
+            )
+        return {
+            "success": True,
+            "date": date,
+            # The team's timezone, so every viewer sees a shuffle at the same
+            # clock time regardless of where they open the dashboard.
+            "timezone": TIMEZONE_STR,
+            "day_start": day_start.isoformat(),
+            "day_end":   day_end.isoformat(),
+            "data": [
+                {
+                    "id":            r["id"],
+                    "account_email": r["account_email"],
+                    "account_name":  r["account_name"],
+                    "texter_name":   r["texter_name"],
+                    "started_at":    r["started_at"].isoformat(),
+                    "ended_at":      r["ended_at"].isoformat() if r["ended_at"] else None,
+                    "started_by":    r["started_by"],
+                    "ended_by":      r["ended_by"],
+                    "source":        r["source"],
+                }
+                for r in rows
+            ],
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Error in GET /api/assignments/timeline")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/assignments/who")
+async def api_assignment_who(account: str = "", at: str = ""):
+    """
+    Point-in-time resolver: who owned `account` at instant `at` (ISO 8601)?
+
+    This is the query every attribution ultimately reduces to. Returns
+    texter_name=null when nobody owned the account at that moment — an
+    unassigned gap is reported honestly rather than blamed on the last owner.
+    """
+    if not account.strip():
+        raise HTTPException(status_code=400, detail="account query param is required")
+
+    if at.strip():
+        try:
+            ts = datetime.fromisoformat(at.strip().replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="at must be an ISO 8601 datetime")
+        if ts.tzinfo is None:
+            ts = TIMEZONE.localize(ts)
+    else:
+        ts = get_now()
+
+    try:
+        async with app.state.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                # The ::timestamptz cast is required — without it asyncpg
+                # resolves @> to the range-contains-range operator and rejects
+                # the instant as "list, tuple or Range object expected".
+                """SELECT id, texter_name, started_at, ended_at
+                     FROM assignment_periods
+                    WHERE LOWER(account_email) = LOWER($1)
+                      AND period @> $2::timestamptz
+                    LIMIT 1""",
+                account.strip(), ts,
+            )
+        return {
+            "success":       True,
+            "account_email": account.strip(),
+            "at":            ts.isoformat(),
+            "texter_name":   row["texter_name"] if row else None,
+            "period_id":     row["id"] if row else None,
+            "started_at":    row["started_at"].isoformat() if row else None,
+            "ended_at":      (row["ended_at"].isoformat()
+                              if row and row["ended_at"] else None),
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Error in GET /api/assignments/who")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/assignments/shuffles")
+async def api_assignment_shuffles(date: str = "", limit: int = 200):
+    """Change log for a day — what changed, when, and which Google account did it."""
+    from datetime import date as _date
+    if not date:
+        date = get_now().date().isoformat()
+    try:
+        day = _date.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
+
+    day_start, day_end = _local_day_bounds(day)
+    try:
+        async with app.state.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT l.id, l.account_email, l.action, l.from_texter, l.to_texter,
+                          l.effective_at, l.performed_at, l.performed_by, l.reason,
+                          a.name AS account_name
+                     FROM assignment_audit_log l
+                     LEFT JOIN accounts a ON LOWER(a.email) = LOWER(l.account_email)
+                    WHERE l.effective_at >= $1 AND l.effective_at < $2
+                    ORDER BY l.effective_at DESC, l.id DESC
+                    LIMIT $3""",
+                day_start, day_end, max(1, min(limit, 1000)),
+            )
+        return {
+            "success": True,
+            "date": date,
+            "timezone": TIMEZONE_STR,
+            "data": [
+                {
+                    "id":            r["id"],
+                    "account_email": r["account_email"],
+                    "account_name":  r["account_name"],
+                    "action":        r["action"],
+                    "from":          r["from_texter"],
+                    "to":            r["to_texter"],
+                    "effective_at":  r["effective_at"].isoformat(),
+                    "performed_at":  r["performed_at"].isoformat(),
+                    "performed_by":  r["performed_by"],
+                    "reason":        r["reason"],
+                }
+                for r in rows
+            ],
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Error in GET /api/assignments/shuffles")
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -2709,6 +3158,7 @@ async def api_detailed_dashboard(
     end_date: str = "",
     flagged_only: bool = False,
     contact_name: str = "",
+    account_email: str = "",
 ):
     """
     Return conversations for a texter within a date range.
@@ -2716,6 +3166,7 @@ async def api_detailed_dashboard(
     Required query params: texter_name, start_date (YYYY-MM-DD), end_date (YYYY-MM-DD)
     Optional: flagged_only=true limits results to conversations with red flags or label issues.
     Optional: contact_name filters by owner/contact name (partial, case-insensitive).
+    Optional: account_email narrows to a single SmarterContact account.
     """
     if not texter_name or not start_date or not end_date:
         raise HTTPException(
@@ -2801,6 +3252,7 @@ async def api_detailed_dashboard(
                             END
                           ) BETWEEN $1 AND $2
                       {contact_clause}
+                      {account_clause}
                       {flagged_clause}
                     -- DISTINCT ON keeps the row with the highest id (most recent scrape) per contact+date
                     ORDER BY ct.name, c.convo_date, c.audit_date, c.id DESC
@@ -2820,11 +3272,22 @@ async def api_detailed_dashboard(
         contact_clause = f"AND ct.name ILIKE ${len(params) + 1}"
         params.append(f"%{contact_search}%")
 
+    # Narrow to one SmarterContact account — lets the Assignments History page
+    # link "this texter, on this account" instead of the texter's whole day.
+    account_clause = ""
+    if account_email.strip():
+        account_clause = (
+            f"AND LOWER((SELECT email FROM accounts WHERE id = c.agent_id)) "
+            f"= LOWER(${len(params) + 1})"
+        )
+        params.append(account_email.strip())
+
     try:
         async with app.state.pool.acquire() as conn:
             sql = _DETAILED_SQL.format(
                 texter_clause=texter_clause,
                 contact_clause=contact_clause,
+                account_clause=account_clause,
                 flagged_clause=flagged_clause,
             )
             rows = await conn.fetch(sql, *params)
@@ -2991,32 +3454,62 @@ async def api_post_roster(body: AddTexterRequest):
 
 
 @app.delete("/api/roster/{name:path}", dependencies=[Depends(require_admin)])
-async def api_delete_roster(name: str):
-    """Remove a texter from the database roster and wipe all their historical data."""
+async def api_delete_roster(name: str, request: Request):
+    """
+    Remove a texter from the roster and wipe their forward-looking data.
+
+    Ownership periods are NOT deleted. They are the record of who was
+    responsible for which messages; erasing them would silently re-attribute
+    past work. Any period this texter still has open is closed at now() instead.
+    """
     global AGENT_ROSTER
     name = name.strip()
     if name not in AGENT_ROSTER:
         raise HTTPException(status_code=404, detail=f"'{name}' not found in roster")
+    performed_by = (request.session.get("user_email") or "unknown").lower().strip()
     try:
         async with app.state.pool.acquire() as conn:
-            await conn.execute("DELETE FROM texters WHERE name = $1", name)
-            r1 = await conn.execute(
-                "DELETE FROM trend_snapshots WHERE agent_name = $1", name
-            )
-            r2 = await conn.execute(
-                "DELETE FROM account_assignments WHERE agent_name = $1", name
-            )
+            async with conn.transaction():
+                # Close, don't delete — history stays intact.
+                boundary = await conn.fetchval("SELECT now()")
+                open_rows = await conn.fetch(
+                    """SELECT id, account_email FROM assignment_periods
+                        WHERE texter_name = $1 AND ended_at IS NULL
+                        ORDER BY account_email
+                          FOR UPDATE""",
+                    name,
+                )
+                for r in open_rows:
+                    await conn.execute(
+                        "UPDATE assignment_periods SET ended_at = $1, ended_by = $2 WHERE id = $3",
+                        boundary, performed_by, r["id"],
+                    )
+                    await _log_assignment(
+                        conn, account_email=r["account_email"], action="unassign",
+                        from_texter=name, to_texter=None, effective_at=boundary,
+                        performed_by=performed_by, period_id=r["id"],
+                        reason="Texter removed from roster",
+                    )
+
+                await conn.execute("DELETE FROM texters WHERE name = $1", name)
+                r1 = await conn.execute(
+                    "DELETE FROM trend_snapshots WHERE agent_name = $1", name
+                )
+                r2 = await conn.execute(
+                    "DELETE FROM account_assignments WHERE agent_name = $1", name
+                )
         await _load_agent_roster_from_db()
         deleted_snapshots = int(r1.split()[-1]) if r1 else 0
         deleted_assignments = int(r2.split()[-1]) if r2 else 0
         logger.info(
             f"Roster: removed '{name}', wiped {deleted_snapshots} snapshots, "
-            f"{deleted_assignments} assignments"
+            f"{deleted_assignments} assignments, closed {len(open_rows)} open period(s)"
         )
         return {
             "status": "ok",
             "deleted_snapshots": deleted_snapshots,
             "deleted_assignments": deleted_assignments,
+            "periods_closed": len(open_rows),
         }
     except Exception as exc:
         logger.exception(f"Error wiping data for '{name}'")

@@ -225,6 +225,92 @@
     .ah-table tr:last-child td { border-bottom:none; }
     .ah-table tr:hover td { background:var(--surface-elevated); }
     .ah-unassigned { color:var(--text-muted); font-style:italic; }
+
+    /* ── Ownership segments (a shuffled account stacks more than one) ── */
+    .ah-seg { display:flex; align-items:baseline; gap:7px; }
+    .ah-seg + .ah-seg { margin-top:6px; }
+    .ah-seg-arrow {
+      color:var(--text-muted); font-size:.72rem; flex-shrink:0;
+      width:11px; display:inline-block;
+    }
+    .ah-owned {
+      font-variant-numeric:tabular-nums; font-size:.75rem;
+      color:var(--text-secondary); white-space:nowrap;
+    }
+    .ah-owned-all { color:var(--text-muted); }
+    .ah-badge {
+      display:inline-block; padding:1px 6px; border-radius:5px;
+      font-size:.66rem; font-weight:600; letter-spacing:.02em;
+      background:var(--brand-bg); color:var(--brand); margin-left:6px;
+      vertical-align:middle; white-space:nowrap;
+    }
+    .ah-note {
+      font-size:.72rem; color:var(--text-muted); margin:-8px 0 14px;
+      display:flex; align-items:center; gap:6px;
+    }
+
+    /* ── Shuffle strip ── */
+    .ah-strip {
+      border:1px solid var(--surface-border); border-radius:10px;
+      background:var(--surface-subtle); padding:12px 14px; margin-bottom:16px;
+    }
+    .ah-strip-head {
+      display:flex; align-items:center; justify-content:space-between;
+      gap:12px; margin-bottom:2px;
+    }
+    .ah-strip-title {
+      font-size:.78rem; font-weight:700; color:var(--text-primary);
+      letter-spacing:-.01em;
+    }
+    .ah-strip-toggle {
+      display:flex; align-items:center; gap:6px; cursor:pointer;
+      font-size:.72rem; color:var(--text-secondary); user-select:none;
+      flex-shrink:0;
+    }
+    .ah-strip-toggle input { accent-color:var(--brand); cursor:pointer; }
+    .ah-strip-row {
+      display:flex; align-items:baseline; gap:10px; padding:7px 0;
+      border-top:1px solid var(--surface-border); font-size:.76rem;
+    }
+    .ah-strip-time {
+      font-variant-numeric:tabular-nums; font-weight:600;
+      color:var(--text-primary); white-space:nowrap; flex-shrink:0;
+      min-width:66px;
+    }
+    .ah-strip-acct { color:var(--text-secondary); flex-shrink:0; min-width:110px; }
+    .ah-strip-move { color:var(--text-primary); flex:1; min-width:0; }
+    .ah-strip-by {
+      color:var(--text-muted); font-size:.7rem; white-space:nowrap; flex-shrink:0;
+    }
+    .ah-strip-empty { font-size:.75rem; color:var(--text-muted); }
+    .ah-seg-link {
+      font-weight:600; color:var(--text-primary); cursor:pointer;
+      border-bottom:1px dotted var(--surface-border);
+    }
+    .ah-seg-link:hover { color:var(--brand); border-bottom-color:var(--brand); }
+
+    /* Account scope chip on the Detailed Dashboard */
+    .dd-chip {
+      display:inline-flex; align-items:center; gap:8px; margin-bottom:14px;
+      padding:5px 10px; border-radius:999px; font-size:.74rem; font-weight:600;
+      background:var(--brand-bg); color:var(--brand);
+    }
+    .dd-chip button {
+      background:none; border:none; color:inherit; cursor:pointer;
+      font-size:1rem; line-height:1; padding:0 0 1px;
+    }
+
+    /* Per-flag owner, shown only on conversations that changed hands */
+    .rf-owner {
+      display:inline-block; margin-left:6px; padding:0 6px;
+      border-radius:999px; font-size:.62rem; font-weight:700;
+      background:var(--brand-bg); color:var(--brand);
+      vertical-align:middle; white-space:nowrap;
+    }
+    .rf-owner-weak {
+      background:var(--surface-elevated); color:var(--text-muted);
+      font-weight:600; font-style:italic;
+    }
     .lp-item-active { background:var(--brand-bg) !important; color:var(--brand) !important; font-weight:600; }
     #vw-chat > div:first-child { background: var(--surface-subtle) !important; }
     #ch-ai { background: var(--surface) !important; }
@@ -2801,6 +2887,12 @@
 
       <!-- Results area -->
       <div style="flex:1; overflow-y:auto; padding:20px 32px;">
+        <!-- Visible when arriving from an Assignments History segment, so a
+             narrowed result set is never mistaken for the full picture. -->
+        <div id="dd-account-chip" class="dd-chip" style="display:none;">
+          <span id="dd-account-chip-label"></span>
+          <button type="button" onclick="_ddClearAccountScope()" title="Show all accounts">&times;</button>
+        </div>
         <div id="dd-empty" style="text-align:center; color:var(--text-muted); font-size:.85rem; padding:48px 0; display:block;">
           Select a texter and date range, then click Search.
         </div>
@@ -2831,12 +2923,15 @@
         </div>
         <div id="ah-table-wrap" style="display:none;">
           <div id="ah-date-heading" style="font-size:.9rem; font-weight:700; color:var(--text-primary); margin-bottom:14px; letter-spacing:-.02em;"></div>
+          <div id="ah-note" class="ah-note" style="display:none;"></div>
+          <div id="ah-strip" class="ah-strip"></div>
           <div style="overflow-x:auto; border:1px solid var(--surface-border); border-radius:10px;">
             <table class="ah-table">
               <thead>
                 <tr>
                   <th>Account</th>
                   <th>Texter (Agent)</th>
+                  <th>Owned</th>
                 </tr>
               </thead>
               <tbody id="ah-tbody"></tbody>
@@ -4353,6 +4448,15 @@ function renderAiAnalysis(a, invalidatedFlags) {
   const fdMap   = {};
   (a.flag_details || []).forEach(d => { if (d && d.flag_text) fdMap[String(d.flag_text).trim()] = d; });
 
+  // A conversation only needs per-flag ownership shown when the account was
+  // shuffled mid-thread and the flags do NOT all belong to one texter.
+  const _owners = new Set(
+    (a.flag_details || [])
+      .filter(d => d && d.texter_name && d.attribution && d.attribution !== "legacy")
+      .map(d => d.texter_name)
+  );
+  const _showFlagOwners = _owners.size > 1;
+
   el.innerHTML = `
     <div style="padding:.6rem 1.1rem;background:var(--surface-subtle);border-bottom:1px solid var(--surface-border);display:flex;align-items:center;gap:8px;">
       <div style="width:5px;height:5px;border-radius:50%;background:var(--brand);flex-shrink:0;"></div>
@@ -4389,9 +4493,13 @@ function renderAiAnalysis(a, invalidatedFlags) {
             const d    = fdMap[String(f).trim()] || null;
             const sev  = d ? sevBadge(d.severity) : "";
             const expl = (d && d.explanation) ? `<div style="margin-top:3px;font-size:.64rem;color:var(--text-secondary);line-height:1.4;font-style:italic;">${esc(d.explanation)}</div>` : "";
+            // Who earned this flag. Only shown when the account changed hands
+            // during the thread — on a single-owner conversation it would just
+            // repeat the texter already named at the top of the card.
+            const owner = _showFlagOwners ? ddFlagOwner(d) : "";
             return `<div class="rf-row${isInvalid ? " rf-invalidated" : ""}" style="display:block;margin-top:7px;padding-top:6px;border-top:1px solid rgba(239,68,68,.12);">
               <div style="display:flex;align-items:flex-start;gap:6px;">
-                <span class="rf-text" style="font-size:.72rem;color:var(--danger);opacity:.85;line-height:1.45;flex:1;">· ${esc(f)}</span>
+                <span class="rf-text" style="font-size:.72rem;color:var(--danger);opacity:.85;line-height:1.45;flex:1;">· ${esc(f)}${owner}</span>
                 ${sev}
                 <button class="btn-not-valid${isInvalid ? " rf-done" : ""}"
                   data-flag="${esc(f)}"
@@ -4726,6 +4834,57 @@ function getDdDateRange() {
   return { start: "2000-01-01", end: today };
 }
 
+// Set when the user arrives from an Assignments History segment, so results are
+// scoped to that one account. Cleared by any manual filter change — otherwise a
+// stale account would silently hide conversations on a later search.
+/**
+ * Badge naming the texter who earned a flag, for conversations where the
+ * account changed hands mid-thread.
+ *
+ * `attribution` says how firmly we know:
+ *   exact      — resolved against the ownership timeline
+ *   inferred   — the message had no usable timestamp
+ *   unassigned — nobody owned the account at that moment
+ *   legacy     — scored before attribution existed; shown as unverified
+ */
+function ddFlagOwner(d) {
+  if (!d || !d.attribution) return "";
+  if (d.attribution === "unassigned") {
+    return `<span class="rf-owner rf-owner-weak" title="No texter was assigned to this account at the time">unassigned</span>`;
+  }
+  if (!d.texter_name) return "";
+  const weak = d.attribution !== "exact";
+  const why = {
+    message:      "said this",
+    omission:     "owed the reply when the lead wrote in",
+    conversation: "was running this conversation",
+    label:        "owned the account at the last activity",
+  }[d.attribution_basis] || "";
+  const tip = why ? `${d.texter_name} — ${why}` : d.texter_name;
+  return `<span class="rf-owner${weak ? " rf-owner-weak" : ""}" title="${esc(tip)}">`
+       + `${esc(d.texter_name)}${weak ? " (unverified)" : ""}</span>`;
+}
+
+let _ddAccountEmail = "";
+
+function _ddSetAccountScope(email, label) {
+  _ddAccountEmail = email || "";
+  const chip = document.getElementById("dd-account-chip");
+  const lbl  = document.getElementById("dd-account-chip-label");
+  if (!chip) return;
+  if (_ddAccountEmail) {
+    if (lbl) lbl.textContent = `Account: ${label || _ddAccountEmail}`;
+    chip.style.display = "inline-flex";
+  } else {
+    chip.style.display = "none";
+  }
+}
+
+function _ddClearAccountScope() {
+  _ddSetAccountScope("", "");
+  loadDetailedDashboard();
+}
+
 async function loadDetailedDashboard() {
   const texterName = document.getElementById("dd-agent").value;
   const { start: startDate, end: endDate } = getDdDateRange();
@@ -4754,6 +4913,7 @@ async function loadDetailedDashboard() {
       flagged_only: flaggedOnly ? "true" : "false",
     });
     if (ownerSearch) params.set("contact_name", ownerSearch);
+    if (_ddAccountEmail) params.set("account_email", _ddAccountEmail);
     const resp = await fetch("/api/detailed-dashboard?" + params);
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.detail || data.error || `HTTP ${resp.status}`);
@@ -5515,24 +5675,263 @@ async function _ahPickDate(date) {
   empty.textContent   = "Loading…";
 
   try {
-    const res  = await fetch(`/api/assignments?date=${date}`);
-    const data = await res.json();
+    // Three sources: every account (so unassigned ones stay visible), the
+    // ownership periods, and the change log.
+    const [accRes, tlRes, shRes] = await Promise.all([
+      fetch(`/api/assignments?date=${date}`),
+      fetch(`/api/assignments/timeline?date=${date}`),
+      fetch(`/api/assignments/shuffles?date=${date}`),
+    ]);
+    const data = await accRes.json();
     if (!data.success) throw new Error(data.error || "Failed");
-    const rows = data.data || [];
+    const tl = await tlRes.json().catch(() => ({}));
+    const sh = await shRes.json().catch(() => ({}));
+
+    _ahTz        = tl.timezone || null;
+    _ahDayStart  = tl.day_start ? new Date(tl.day_start) : null;
+    _ahDayEnd    = tl.day_end   ? new Date(tl.day_end)   : null;
+    _ahAccounts  = data.data || [];
+    _ahPeriods   = tl.data || [];
+    _ahShuffles  = (sh.data || []).filter(x => x.action === "shuffle");
+
     if (heading) heading.textContent = _fmtAssignDateLong(date);
-    tbody.innerHTML = rows.map(r => {
-      const account = esc(r.account_name || r.account_email || "—");
-      const texter  = r.agent_name
-        ? `<span style="font-weight:600;">${esc(r.agent_name)}</span>`
-        : `<span class="ah-unassigned">Unassigned</span>`;
-      return `<tr><td>${account}</td><td>${texter}</td></tr>`;
-    }).join("");
+    _ahRender();
     empty.style.display = "none";
     wrap.style.display  = "block";
   } catch (e) {
     empty.textContent   = `Error: ${esc(String(e))}`;
     empty.style.display = "block";
   }
+}
+
+// ── Assignments History rendering ────────────────────────────────────────────
+// A day with no shuffles renders exactly as it always did — one row per account.
+// Only an account that changed hands stacks extra segments.
+let _ahTz = null, _ahDayStart = null, _ahDayEnd = null;
+let _ahAccounts = [], _ahPeriods = [], _ahShuffles = [];
+let _ahOnlyChanged = false;
+
+function _ahTime(iso) {
+  if (!iso) return "";
+  const opts = { hour: "numeric", minute: "2-digit" };
+  if (_ahTz) opts.timeZone = _ahTz;
+  return new Date(iso).toLocaleTimeString("en-US", opts);
+}
+
+/**
+ * Turn an account's periods into display segments, inserting a gap segment
+ * wherever ownership ended and nobody took over before the day was out.
+ * The stretch before the first period is NOT a gap — every day starts
+ * unassigned until the Team Leader saves, and flagging that would be noise.
+ */
+function _ahSegments(periods) {
+  const segs = [];
+  const now  = new Date();
+  const dayEnd = _ahDayEnd || now;
+  const sorted = periods.slice().sort((a, b) => new Date(a.started_at) - new Date(b.started_at));
+
+  sorted.forEach((p, i) => {
+    const start = new Date(p.started_at);
+    const end   = p.ended_at ? new Date(p.ended_at) : null;
+
+    const spansWholeDay = _ahDayStart && start <= _ahDayStart && (!end || end >= dayEnd);
+    let owned;
+    if (spansWholeDay) {
+      owned = "all day";
+    } else {
+      const from = (_ahDayStart && start < _ahDayStart)
+        ? "from previous day" : _ahTime(p.started_at);
+      const to = !end ? "now"
+        : (end >= dayEnd ? "end of day" : _ahTime(p.ended_at));
+      owned = `${from} – ${to}`;
+    }
+    segs.push({ texter: p.texter_name, owned, whole: spansWholeDay });
+
+    // Ownership ended with nothing following it, inside this day.
+    const next = sorted[i + 1];
+    if (end && end < dayEnd) {
+      const resumesAt = next ? new Date(next.started_at) : null;
+      if (!resumesAt || resumesAt > end) {
+        segs.push({
+          texter: null,
+          owned: `${_ahTime(p.ended_at)} – ${resumesAt ? _ahTime(next.started_at) : "end of day"}`,
+        });
+      }
+    }
+  });
+
+  return segs;
+}
+
+function _ahToggleOnlyChanged(el) {
+  _ahOnlyChanged = !!(el && el.checked);
+  _ahRender();
+}
+
+/** Click targets for texter segments — rebuilt on every render. */
+let _ahSegIndex = [];
+
+/**
+ * Jump to the Detailed Dashboard scoped to one texter ON one account for the
+ * selected day. Without the account filter this would show the texter's whole
+ * day across every account they touched, which is not what was clicked.
+ */
+function _ahOpenDetailed(ref) {
+  const target = _ahSegIndex[ref];
+  if (!target) return;
+
+  const sel = document.getElementById("dd-agent");
+  if (sel) sel.value = target.texter;
+
+  const acct = _ahAccounts.find(
+    a => (a.account_email || "").toLowerCase() === (target.account || "").toLowerCase()
+  );
+  _ddSetAccountScope(target.account, acct ? (acct.account_name || acct.account_email) : "");
+
+  // Pin the range to the single day being viewed, using the same custom-range
+  // state the date picker writes.
+  const date = _ahSelectedDate || _todayISO();
+  const filterSel = document.getElementById("dd-date-filter");
+  if (filterSel) filterSel.value = "custom";
+  window._ddDrpDateStart = date;
+  window._ddDrpDateEnd   = date;
+  const labelEl = document.getElementById("dd-drp-label");
+  if (labelEl) labelEl.textContent = _fmtAssignDate(date);
+  document.querySelectorAll("#dd-drp-popover .dd-drp-preset")
+    .forEach(b => b.classList.remove("active"));
+
+  showTrendsSection("detailed");
+  loadDetailedDashboard();
+}
+
+function _ahRender() {
+  const tbody  = document.getElementById("ah-tbody");
+  const strip  = document.getElementById("ah-strip");
+  const noteEl = document.getElementById("ah-note");
+  if (!tbody) return;
+  _ahSegIndex = [];
+
+  // Group periods by account.
+  const byAccount = {};
+  _ahPeriods.forEach(p => {
+    const k = (p.account_email || "").toLowerCase();
+    (byAccount[k] = byAccount[k] || []).push(p);
+  });
+
+  // ── Shuffle strip ──
+  if (strip) {
+    const toggle = `
+      <label class="ah-strip-toggle">
+        <input type="checkbox" ${_ahOnlyChanged ? "checked" : ""}
+               onchange="_ahToggleOnlyChanged(this)">
+        Only accounts that changed
+      </label>`;
+    if (_ahShuffles.length === 0) {
+      strip.innerHTML = `
+        <div class="ah-strip-head">
+          <span class="ah-strip-title">No shuffles</span>
+          ${_ahPeriods.length ? toggle : ""}
+        </div>
+        <div class="ah-strip-empty">Assignments held all day.</div>`;
+    } else {
+      const rows = _ahShuffles
+        .slice()
+        .sort((a, b) => new Date(a.effective_at) - new Date(b.effective_at))
+        .map(s => {
+          const by = (s.performed_by || "").split("@")[0];
+          return `
+            <div class="ah-strip-row">
+              <span class="ah-strip-time">${esc(_ahTime(s.effective_at))}</span>
+              <span class="ah-strip-acct">${esc(s.account_name || s.account_email || "—")}</span>
+              <span class="ah-strip-move">${esc(s.from || "—")} &rarr; <strong>${esc(s.to || "Unassigned")}</strong></span>
+              <span class="ah-strip-by" title="${esc(s.performed_by || "")}">by ${esc(by || "unknown")}</span>
+            </div>`;
+        }).join("");
+      strip.innerHTML = `
+        <div class="ah-strip-head">
+          <span class="ah-strip-title">${_ahShuffles.length} shuffle${_ahShuffles.length !== 1 ? "s" : ""}</span>
+          ${toggle}
+        </div>${rows}`;
+    }
+  }
+
+  // Days before shuffle tracking existed only have reconstructed whole-day
+  // ownership — say so, or the page reads as "nobody ever shuffled".
+  if (noteEl) {
+    const anyLive = _ahPeriods.some(p => p.source !== "backfill");
+    if (_ahPeriods.length && !anyLive) {
+      noteEl.textContent =
+        "Reconstructed from daily assignments — exact shuffle times weren't recorded on this date.";
+      noteEl.style.display = "flex";
+    } else {
+      noteEl.style.display = "none";
+    }
+  }
+
+  // ── Table ──
+  const changedAccounts = new Set(
+    _ahShuffles.map(s => (s.account_email || "").toLowerCase())
+  );
+
+  const rows = _ahAccounts.filter(r => {
+    if (!_ahOnlyChanged) return true;
+    return changedAccounts.has((r.account_email || "").toLowerCase());
+  });
+
+  if (rows.length === 0) {
+    tbody.innerHTML =
+      `<tr><td colspan="3" class="ah-unassigned" style="text-align:center; padding:22px 0;">
+         No accounts changed hands on this date.
+       </td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = rows.map(r => {
+    const account  = esc(r.account_name || r.account_email || "—");
+    const periods  = byAccount[(r.account_email || "").toLowerCase()] || [];
+    const shuffled = changedAccounts.has((r.account_email || "").toLowerCase());
+
+    // No periods recorded — fall back to the day-grained value so nothing
+    // silently disappears from the list.
+    if (periods.length === 0) {
+      const texter = r.agent_name
+        ? `<span style="font-weight:600;">${esc(r.agent_name)}</span>`
+        : `<span class="ah-unassigned">Unassigned</span>`;
+      const owned = r.agent_name
+        ? `<span class="ah-owned ah-owned-all">all day</span>`
+        : `<span class="ah-owned ah-owned-all">—</span>`;
+      return `<tr><td>${account}</td><td>${texter}</td><td>${owned}</td></tr>`;
+    }
+
+    const segs = _ahSegments(periods);
+    const texterCell = segs.map((s, i) => {
+      const arrow = i === 0 ? "" : `<span class="ah-seg-arrow">&#8627;</span>`;
+      // Register the click target by index — names and emails go through a
+      // lookup rather than being interpolated into an onclick string, so a
+      // quote or apostrophe in a texter's name can't break the markup.
+      let name;
+      if (s.texter) {
+        const ref = _ahSegIndex.push({ texter: s.texter, account: r.account_email || "" }) - 1;
+        name = `<a class="ah-seg-link" onclick="_ahOpenDetailed(${ref})"
+                   title="Open this texter's conversations on this account">${esc(s.texter)}</a>`;
+      } else {
+        name = `<span class="ah-unassigned">Unassigned</span>`;
+      }
+      // A handover is a texter taking over directly from another texter — mark
+      // every one of them, not just the first, so a twice-shuffled account
+      // shows both. Taking over after a gap is a re-assignment, not a shuffle.
+      const handover = i > 0 && s.texter && segs[i - 1].texter;
+      const badge = (handover && shuffled) ? `<span class="ah-badge">shuffled</span>` : "";
+      return `<div class="ah-seg">${arrow}${name}${badge}</div>`;
+    }).join("");
+
+    const ownedCell = segs.map(s =>
+      `<div class="ah-seg"><span class="ah-owned${s.whole ? " ah-owned-all" : ""}">${esc(s.owned)}</span></div>`
+    ).join("");
+
+    return `<tr><td style="vertical-align:top;">${account}</td>`
+         + `<td>${texterCell}</td><td>${ownedCell}</td></tr>`;
+  }).join("");
 }
 
 function _fmtAssignDate(iso) {
@@ -6196,44 +6595,50 @@ async function saveAssignments() {
     return;
   }
 
-  let saved = 0, errors = 0;
-  for (const row of rows) {
-    const email     = row.dataset.email;
-    const sel       = row.querySelector(".assign-select");
-    const agentName = sel ? (sel.getAttribute("data-value") || "") : "";
+  // One request carrying the desired state of every card. The server diffs it
+  // against current ownership and records a shuffle only where the texter
+  // actually changed — clicking Save All with nothing changed writes nothing.
+  const assignments = rows.map(row => {
+    const sel = row.querySelector(".assign-select");
+    return {
+      account_email: row.dataset.email,
+      agent_name:    sel ? (sel.getAttribute("data-value") || "") : "",
+    };
+  });
 
-    try {
-      const res = await fetch("/api/assignments", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({
-          account_email: email,
-          agent_name:    agentName,
-          assigned_date: date,
-        }),
-      });
-      if (res.ok) {
-        saved++;
-        row.classList.remove("is-dirty");
-      } else {
-        const errData = await res.json().catch(() => ({}));
-        console.warn("Assignment save error:", errData);
-        errors++;
+  try {
+    const res  = await fetch("/api/assignments/save-all", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ assigned_date: date, assignments }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "Save failed");
+
+    rows.forEach(row => row.classList.remove("is-dirty"));
+
+    if (msgEl) {
+      const shuffles = (data.shuffles || []).filter(s => s.action === "shuffle");
+      let text = `✓ Saved — ${data.changed} change${data.changed !== 1 ? "s" : ""}`;
+      if (data.unchanged) text += `, ${data.unchanged} unchanged`;
+      if (shuffles.length) {
+        const at = new Date(shuffles[0].at).toLocaleTimeString([], {
+          hour: "2-digit", minute: "2-digit",
+        });
+        text += ` · ${shuffles.length} shuffle${shuffles.length !== 1 ? "s" : ""} at ${at}`;
       }
-    } catch (_) { errors++; }
-  }
-
-  if (msgEl) {
-    if (errors === 0) {
-      msgEl.style.color = "#059669";
-      msgEl.textContent = `✓ Saved ${saved} assignment${saved !== 1 ? "s" : ""}`;
-    } else {
-      msgEl.style.color = "#dc2626";
-      msgEl.textContent = `Saved ${saved}, ${errors} error${errors !== 1 ? "s" : ""}`;
+      msgEl.style.color = (data.errors && data.errors.length) ? "#d97706" : "#059669";
+      msgEl.textContent = text;
+      if (data.errors && data.errors.length) console.warn("Assignment save notes:", data.errors);
+      setTimeout(() => { if (msgEl) msgEl.textContent = ""; }, 5000);
     }
-    setTimeout(() => { if (msgEl) msgEl.textContent = ""; }, 4000);
-    // Keep assignment cache in sync
     await refreshTodayAssignments();
+  } catch (err) {
+    if (msgEl) {
+      msgEl.style.color = "#dc2626";
+      msgEl.textContent = `Save failed: ${err.message}`;
+      setTimeout(() => { if (msgEl) msgEl.textContent = ""; }, 5000);
+    }
   }
 }
 

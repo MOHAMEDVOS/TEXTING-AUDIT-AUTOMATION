@@ -40,6 +40,8 @@ from ai.prefilter._guards import (
     contact_has_dnc_joke_price,
     apply_label_guards,
     normalize_red_flags,
+    canon_flag_text,
+    _remap_flag_to_whitelist,
 )
 from ai.prefilter.summary_builder import (
     build_summary,
@@ -53,6 +55,49 @@ from ai.prefilter.summary_builder import (
 from ai.prefilter.pillar_detection import detect_gathered_pillars
 
 logger = logging.getLogger(__name__)
+
+
+# ── Flag attribution ─────────────────────────────────────────────────────────
+# A conversation can have two authors when an account is shuffled mid-day, so a
+# flag has to name the texter who actually earned it. Every flag records the
+# message that decides that, plus WHY that message is the deciding one:
+#
+#   message      the agent said something wrong        → the offending message
+#   omission     the agent failed to say something     → the lead message whose
+#                                                         reply was due, because
+#                                                         that is when the clock
+#                                                         started
+#   conversation whole-thread conduct, no single       → the agent's last message
+#                culprit message
+#   label        the label is a state, not a message   → last activity
+#
+# The timestamp is authoritative; `index` is informational, since the caller may
+# have trimmed the transcript to the audit window before scoring.
+
+def _flag_key(text: str) -> str:
+    """Key a culprit by the same canonical form normalize_red_flags produces, so
+    the lookup still resolves after a raw flag is remapped to whitelist text."""
+    if not text:
+        return ""
+    return canon_flag_text(_remap_flag_to_whitelist(text) or text)
+
+
+def _culprit_ref(msg: dict | None, index: int | None, basis: str) -> dict:
+    at = (msg or {}).get("timestamp") or (msg or {}).get("sent_at")
+    if hasattr(at, "isoformat"):
+        at = at.isoformat()
+    elif at is not None:
+        at = str(at)
+    return {
+        "basis":  basis,
+        "at":     at,
+        # Kept so db.py can rebuild the instant when only the scraped
+        # date/time strings are available (no ISO timestamp).
+        "date":   (msg or {}).get("date") or "",
+        "time":   (msg or {}).get("time") or "",
+        "index":  index,
+        "sender": ((msg or {}).get("sender") or "").strip() or None,
+    }
 
 
 # ── Additional patterns specific to T4 flag detection ────────────────────────
@@ -259,39 +304,67 @@ def generate(
     ]
 
     raw_flags: list[str] = []
+    culprits: dict[str, dict] = {}
+    _idx_by_id = {id(m): i for i, m in enumerate(messages)}
+    _last_agent_msg   = agent_msgs[-1] if agent_msgs else None
+    _last_contact_msg = contact_msgs[-1] if contact_msgs else None
+
+    def _flag(text: str, msg: dict | None = None, basis: str = "message") -> None:
+        """Raise a flag and remember which message decides who is responsible."""
+        raw_flags.append(text)
+        key = _flag_key(text)
+        if key and key not in culprits:
+            culprits[key] = _culprit_ref(msg, _idx_by_id.get(id(msg)) if msg else None, basis)
 
     # ── FLAG 1: Continued texting after explicit opt-out ──────────────
     if agent_continued_after_opt_out(messages):
-        raw_flags.append("Continued texting after explicit opt-out.")
+        # Responsible = whoever sent the first message after the opt-out.
+        _optout_idx = next(
+            (i for i, m in enumerate(messages)
+             if (m.get("sender") or "").strip().lower() in ("contact", "lead")
+             and OPTOUT_TEXT_RE.search((m.get("message") or m.get("body") or ""))),
+            None,
+        )
+        _culprit = next(
+            (m for m in messages[(_optout_idx or 0) + 1:]
+             if (m.get("sender") or "").strip().lower() not in ("contact", "lead")),
+            _last_agent_msg,
+        ) if _optout_idx is not None else _last_agent_msg
+        _flag("Continued texting after explicit opt-out.", _culprit)
 
     # ── FLAG 2: Profane / threatening / deceptive language ────────────
     for m in agent_msgs:
         body = (m.get("message") or m.get("body") or "").strip()
         if PROFANITY_RE.search(body):
-            raw_flags.append("Used threatening, profane, or deceptive language.")
+            _flag("Used threatening, profane, or deceptive language.", m)
             break
 
     # ── FLAG 3: Stated a specific dollar offer ───────────────────────
     for m in agent_msgs:
         body = (m.get("message") or m.get("body") or "").strip()
         if DOLLAR_OFFER_RE.search(body):
-            raw_flags.append("Stated a specific dollar offer.")
+            _flag("Stated a specific dollar offer.", m)
             break
 
     # ── FLAG 4: Gave up after first no with zero rebuttal ────────────
     if not agent_replied_after_first_soft_no(messages):
         # Contact said no and agent didn't follow up
         has_soft_no = False
+        _soft_no_msg = None
         for m in contact_msgs:
             body = (m.get("message") or m.get("body") or "").strip()
             if SOFT_NO_RE.search(body):
                 has_soft_no = True
+                _soft_no_msg = m
                 break
         if has_soft_no and not last_message_from_contact(messages):
             # Agent sent last message but didn't rebuttal after the no
             # Only flag if there are at least 2 agent messages to have a meaningful conversation
             if len(agent_msgs) >= 2:
-                raw_flags.append("Gave up after first no with zero rebuttal.")
+                # Omission: the rebuttal was owed from the moment the lead
+                # said no, so that message decides who owed it.
+                _flag("Gave up after first no with zero rebuttal.",
+                      _soft_no_msg, basis="omission")
     # Also guard: if last message is from contact, remove this flag
     if last_message_from_contact(messages) and "Gave up after first no with zero rebuttal." in raw_flags:
         raw_flags = [f for f in raw_flags if f != "Gave up after first no with zero rebuttal."]
@@ -317,12 +390,15 @@ def generate(
                 has_pitch = any(w in body for w in pitch_keywords)
                 has_referral = REFERRAL_RE.search(body) or "someone" in body or "know" in body
                 if has_pitch and not has_referral:
-                    raw_flags.append("Continued original pitch after wrong number.")
+                    _flag("Continued original pitch after wrong number.", later)
                     break
 
     # ── FLAG 6: Agreed to call without pre-qualifying ────────────────
     if _should_flag_call_without_prequal(messages):
-        raw_flags.append("Agreed to call without pre-qualifying.")
+        # Whole-thread conduct — no single offending line, so the agent's last
+        # message stands in for "who was running this conversation".
+        _flag("Agreed to call without pre-qualifying.",
+              _last_agent_msg, basis="conversation")
 
     # ── FLAG 7: Revealed or promised 6+ month timeline ───────────────
     # Only flag if agent uses reveal/promise language with the 6+ month pattern.
@@ -334,14 +410,14 @@ def generate(
     for m in agent_msgs:
         body = (m.get("message") or m.get("body") or "").strip()
         if TIMELINE_RE.search(body) and _REVEAL_PROMISE_RE.search(body):
-            raw_flags.append("Revealed or promised 6+ month timeline.")
+            _flag("Revealed or promised 6+ month timeline.", m)
             break
 
     # ── FLAG 8: Sent incoherent message or wrong name ────────────────
     for m in agent_msgs:
         body = (m.get("message") or m.get("body") or "").strip()
         if _INCOHERENT_RE.search(body) or _WRONG_NAME_RE.search(body):
-            raw_flags.append("Sent incoherent message or wrong name.")
+            _flag("Sent incoherent message or wrong name.", m)
             break
 
     # ── FLAG 9: Ended conversation after lead showed interest ────────
@@ -364,7 +440,8 @@ def generate(
             last_body = (messages[-1].get("message") or messages[-1].get("body") or "").strip().lower()
             # If agent's last message is short and doesn't continue the conversation
             if len(last_body) < 30 and not any(w in last_body for w in ["?", "call", "schedule", "when"]):
-                raw_flags.append("Ended conversation after lead showed interest.")
+                # The agent's own last message is what ended it.
+                _flag("Ended conversation after lead showed interest.", messages[-1])
 
     # ── FLAG 16: No handoff message sent after a valid lead push ──────
     # A pushed lead (label "Lead/Lead Pushed/Pushed to client/...") whose
@@ -379,7 +456,8 @@ def generate(
                 and _is_push_label(_assigned_str)
                 and not agent_handed_off
                 and _contact_raised_hand(messages)):
-            raw_flags.append(NO_HANDOFF_FLAG)
+            # Omission: the handoff was owed once the lead raised a hand.
+            _flag(NO_HANDOFF_FLAG, _last_contact_msg, basis="omission")
     except Exception as _e:
         logger.debug("[T4] no-handoff check skipped: %r", _e)
 
@@ -397,22 +475,33 @@ def generate(
     # ── FLAG 10: Pushed to close with zero property info ─────────────
     # Only flag on explicit contract/signing language — 'deal' and 'close' are too
     # common in normal real-estate texting to be reliable close-push indicators.
-    has_close_push = any(w in agent_text for w in ["contract", "sign", "agreement", "closing date"])
+    _CLOSE_PUSH_WORDS = ("contract", "sign", "agreement", "closing date")
+    has_close_push = any(w in agent_text for w in _CLOSE_PUSH_WORDS)
     if has_close_push and pillar_count < 1:
-        raw_flags.append("Pushed to close with zero property info.")
+        _close_msg = next(
+            (m for m in agent_msgs
+             if any(w in (m.get("message") or m.get("body") or "").lower()
+                    for w in _CLOSE_PUSH_WORDS)),
+            _last_agent_msg,
+        )
+        _flag("Pushed to close with zero property info.", _close_msg)
 
     # ── FLAG 11: Did not escalate after all 4 pillars gathered ───────
-    _address_denied = any(
-        _ADDRESS_DENIAL_RE.search((m.get("message") or m.get("body") or ""))
-        for m in contact_msgs
+    _address_denial_msg = next(
+        (m for m in contact_msgs
+         if _ADDRESS_DENIAL_RE.search((m.get("message") or m.get("body") or ""))),
+        None,
     )
+    _address_denied = _address_denial_msg is not None
     if pillar_count >= 4 and not _address_denied:
         # Check if agent escalated (mentioned manager, appointment, etc.)
         escalation_re = re.compile(
             r"\b(manager|supervisor|appointment|schedule|set\s+up|escalat)\b", re.I
         )
         if not escalation_re.search(agent_text):
-            raw_flags.append("Did not escalate after all 4 pillars gathered.")
+            # Omission: escalation was owed once the lead completed the pillars.
+            _flag("Did not escalate after all 4 pillars gathered.",
+                  _last_contact_msg, basis="omission")
 
     # ── FLAG 14: Address denial after pillar engagement ───────────────
     # Contact answered property questions (condition, repairs, etc.) but then
@@ -420,23 +509,28 @@ def generate(
     # "Do you have the parcel number?" or "Which address is yours?"
     # Labeling this as Bluffer is WRONG — the contact may own a different property.
     if _address_denied and pillar_count >= 2:
-        raw_flags.append(
+        # Omission: the clarifying question was owed from the denial onward.
+        _flag(
             "Contact denied knowing the address after providing property details. "
             "Agent should have asked clarifying questions (parcel number, correct address) "
-            "instead of closing the conversation. Label should be Potential or Undefined, not Bluffer."
+            "instead of closing the conversation. Label should be Potential or Undefined, not Bluffer.",
+            _address_denial_msg, basis="omission",
         )
 
 
     # ── FLAG 12: Skipped $1k referral close after high price ─────────
     high_price_re = re.compile(r"\$\s?\d{3,}(,\d{3})*\s*(k|thousand|K)?", re.I)
-    contact_mentioned_high = any(
-        high_price_re.search((m.get("message") or m.get("body") or ""))
-        for m in contact_msgs
+    _high_price_msg = next(
+        (m for m in contact_msgs
+         if high_price_re.search((m.get("message") or m.get("body") or ""))),
+        None,
     )
-    if contact_mentioned_high and not any(
+    if _high_price_msg is not None and not any(
         w in agent_text for w in ["referral", "refer", "$1k", "$1,000", "1000 for"]
     ):
-        raw_flags.append("Skipped $1k referral close after high price.")
+        # Omission: the referral close was owed once the lead named the price.
+        _flag("Skipped $1k referral close after high price.",
+              _high_price_msg, basis="omission")
 
     # ── FLAG 13: Agent re-asked for asking price after owner stated it ─
     # Fires ONLY when:
@@ -460,8 +554,8 @@ def generate(
             sender = (m.get("sender") or "").strip().lower()
             body = (m.get("message") or m.get("body") or "").strip()
             if sender not in ("contact", "lead") and _AGENT_PRICE_ASK_RE.search(body):
-                raw_flags.append(
-                    "Agent re-asked for asking price after owner already stated it."
+                _flag(
+                    "Agent re-asked for asking price after owner already stated it.", m
                 )
                 break
 
@@ -488,9 +582,17 @@ def generate(
             _price_msg = _pm.get("message") or _pm.get("body") or ""
         _rent_framed = bool(_RENT_CONTEXT_RE.search(_price_msg))
         if _price >= 1_000_000 and not _rent_framed:
-            raw_flags.append(
+            # The violation is the pushing, so blame the first agent message
+            # sent after the lead named the price.
+            _pushed_msg = next(
+                (m for m in messages[(_abv["price_msg_index"] or 0) + 1:]
+                 if (m.get("sender") or "").strip().lower() not in ("contact", "lead")),
+                _last_agent_msg,
+            )
+            _flag(
                 f"Agent kept pushing after above-market price (${_price:,.0f}) "
-                "instead of doing the $1k referral close per script."
+                "instead of doing the $1k referral close per script.",
+                _pushed_msg,
             )
 
     # ── Normalize through the whitelist ──────────────────────────────
@@ -554,11 +656,16 @@ def generate(
     if assigned_labels:
         assigned_str = ", ".join(assigned_labels)
         try:
-            from ai.prefilter.label_validator import validate_label
+            from ai.prefilter.label_validator import validate_label, label_matches_any
             vr = validate_label(messages, assigned_str, funnel_tier)
             if vr.get("label_correct") is False:
                 should = (vr.get("label_should_be") or "").strip()
-                if should and should.lower().strip() != assigned_str.lower().strip():
+                # A texter may stack a campaign tag with the real status label
+                # ("June List, Maybe later"). If any assigned label is the one
+                # expected, the labelling is correct — don't flag it.
+                if (should
+                        and should.lower().strip() != assigned_str.lower().strip()
+                        and not label_matches_any(assigned_labels, should)):
                     label_correct = False
                     label_should_be = should
                     label_reason = vr.get("label_reason") or label_reason
@@ -571,6 +678,21 @@ def generate(
                 label_correct = False
                 label_should_be = "DO Not Call"
                 label_reason = "Contact used explicit opt-out language, so the correct label is DO Not Call."
+
+    # ── Flag attribution map ─────────────────────────────────────────
+    # Keyed by canonical flag text so db.py can match it against the
+    # flag_details it builds from the final (normalized) flag strings.
+    flag_culprits = {
+        k: c for k, c in ((canon_flag_text(f), culprits.get(canon_flag_text(f)))
+                          for f in final_flags)
+        if c is not None
+    }
+    # A wrong label is a state, not a message — the texter who owned the account
+    # at the last activity is the one who should have set it correctly.
+    if label_correct is False and messages:
+        flag_culprits["__label__"] = _culprit_ref(
+            messages[-1], len(messages) - 1, "label"
+        )
 
     # ── Summary ──────────────────────────────────────────────────────
     summary = build_summary(
@@ -601,6 +723,7 @@ def generate(
         "summary": summary,
         "model_used": "prefilter_t4",
         "contact_name": contact_name,
+        "flag_culprits": flag_culprits,
     }
 
     # Apply deterministic label guards (same as analyzer post-processing)

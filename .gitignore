@@ -63,10 +63,13 @@ reports/
 logs/
 *.db
 # Dev-only scripts are ignored, but post_audit_reflection.py is a runtime
-# dependency of ai/scorer.py, and report.py is a shipped reporting CLI.
+# dependency of ai/scorer.py, report.py is a shipped reporting CLI, and
+# backfill_assignment_periods.py is a one-time migration that has to run
+# against the deployed database.
 scripts/*
 !scripts/post_audit_reflection.py
 !scripts/report.py
+!scripts/backfill_assignment_periods.py
 tests/
 ruflo/
 validation_run.txt

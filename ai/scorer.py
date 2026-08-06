@@ -651,6 +651,20 @@ async def score_agent_conversations(
                         source = "prefilter_t4"
                     else:
                         source = "groq"
+                    # Name the texter responsible for each flag before writing.
+                    # On a shuffled account the conversation owner is not always
+                    # the person who earned the flag — resolve each one against
+                    # the ownership timeline instead.
+                    try:
+                        from database.db import attribute_flag_details
+                        await attribute_flag_details(
+                            conn, conv_id, r.get("flag_details") or [],
+                            r.get("flag_culprits"),
+                        )
+                    except Exception as _e:
+                        logger.warning(
+                            f"[Scorer] Flag attribution skipped for conv_id={conv_id}: {_e}"
+                        )
                     try:
                         await conn.execute(
                             """INSERT INTO conversation_scores

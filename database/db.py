@@ -6,7 +6,7 @@ Uses asyncpg for async access; psycopg2 is used by synchronous callers (session_
 import asyncpg
 import json
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from pathlib import Path
 from config.settings import DATABASE_URL, get_now
 
@@ -67,10 +67,104 @@ def _parse_msg_datetime(msg: dict) -> datetime | None:
 
     try:
         t = datetime.strptime(time_str, "%I:%M %p")
+        # Stamp UTC explicitly. api_bot renders these 'date'/'time' strings from
+        # the UTC `createdAt`, so UTC is their true meaning — and leaving them
+        # naive would make sent_at depend on the server's session timezone,
+        # which silently shifts attribution once ownership is tracked by minute.
         return datetime(msg_date.year, msg_date.month, msg_date.day,
-                        t.hour, t.minute)
+                        t.hour, t.minute, tzinfo=timezone.utc)
     except Exception:
         return None
+
+
+def _is_outgoing(sender: str) -> bool:
+    """Agent-sent messages are the only ones a texter can be accountable for."""
+    return (sender or "").strip().lower() not in ("contact", "lead", "unknown", "")
+
+
+async def attribute_flag_details(conn, conversation_id: int,
+                                 flag_details: list[dict],
+                                 culprits: dict | None) -> None:
+    """
+    Name the texter responsible for each flag.
+
+    A shuffled account means one conversation can have two authors, so a flag
+    belongs to whoever owned the account at the moment that decided it — the
+    offending message for something the agent said, the lead's message for
+    something the agent failed to say. Mutates `flag_details` in place.
+
+    Shared by every write path so a flag can never be attributed two ways.
+    """
+    if not flag_details:
+        return
+    from ai.prefilter._guards import canon_flag_text
+
+    row = await conn.fetchrow(
+        """SELECT a.email AS account_email, c.texter_name
+             FROM conversations c
+             JOIN accounts a ON a.id = c.agent_id
+            WHERE c.id = $1""",
+        conversation_id,
+    )
+    if not row:
+        return
+    fallback = row["texter_name"]
+
+    periods = [
+        dict(r) for r in await conn.fetch(
+            """SELECT texter_name, started_at, ended_at
+                 FROM assignment_periods
+                WHERE LOWER(account_email) = LOWER($1)
+                ORDER BY started_at""",
+            row["account_email"] or "",
+        )
+    ]
+
+    for detail in flag_details:
+        if not isinstance(detail, dict):
+            continue
+        text = detail.get("flag_text") or ""
+        ref = (culprits or {}).get(canon_flag_text(text))
+        if ref is None and str(text).lower().startswith("wrong label:"):
+            ref = (culprits or {}).get("__label__")
+
+        if not ref:
+            # Scored before culprits were recorded, or by a tier that doesn't
+            # emit them — keep the conversation owner but label it 'legacy'
+            # rather than passing it off as a verified attribution.
+            detail["texter_name"] = fallback
+            detail["attribution"] = "legacy"
+            continue
+
+        when = _parse_msg_datetime({
+            "timestamp": ref.get("at"),
+            "date": ref.get("date"),
+            "time": ref.get("time"),
+        })
+        texter, attribution = _resolve_texter(periods, when, fallback)
+        detail["texter_name"]       = texter
+        detail["attribution"]       = attribution
+        detail["attribution_basis"] = ref.get("basis")
+        if when is not None:
+            detail["culprit_at"] = when.isoformat()
+
+
+def _resolve_texter(periods: list[dict], sent_at: datetime | None,
+                    fallback: str | None) -> tuple[str | None, str]:
+    """
+    Map a message timestamp onto the ownership periods for its account.
+
+    Returns (texter_name, attribution):
+      exact      — a period covers this instant
+      unassigned — a timestamp exists but nobody owned the account then
+      inferred   — no usable timestamp, so the conversation-level owner is used
+    """
+    if sent_at is None:
+        return fallback, "inferred"
+    for p in periods:
+        if p["started_at"] <= sent_at and (p["ended_at"] is None or sent_at < p["ended_at"]):
+            return p["texter_name"], "exact"
+    return None, "unassigned"
 
 
 class Database:
@@ -197,6 +291,9 @@ class Database:
         # If no assignment exists on or before the audit date, fall back to the agent name.
         texter_name = result.get("agent_name", "Unknown")
         async with self.pool.acquire() as conn:
+            account_email = await conn.fetchval(
+                "SELECT email FROM accounts WHERE id = $1", agent_id
+            )
             assignment = await conn.fetchrow(
                 """SELECT agent_name FROM account_assignments
                    WHERE account_email = (SELECT email FROM accounts WHERE id = $1)
@@ -207,6 +304,19 @@ class Database:
             )
             if assignment:
                 texter_name = assignment["agent_name"]
+
+            # Ownership timeline for this account — fetched once, then matched
+            # in memory so a mid-day shuffle attributes each message to whoever
+            # actually owned the account at the minute it was sent.
+            periods = [
+                dict(r) for r in await conn.fetch(
+                    """SELECT texter_name, started_at, ended_at
+                         FROM assignment_periods
+                        WHERE LOWER(account_email) = LOWER($1)
+                        ORDER BY started_at""",
+                    account_email or "",
+                )
+            ]
 
         async with self.pool.acquire() as conn:
             async with conn.transaction():
@@ -257,11 +367,24 @@ class Database:
                         sent_at = _parse_msg_datetime(msg)
                         sc_date_label = (msg.get("date") or "").strip()
 
+                        # Inbound messages are not anyone's work product, so they
+                        # carry no texter. Outbound ones resolve against the
+                        # ownership timeline; the result is stored, not recomputed
+                        # at read time, so an audit stays reproducible.
+                        if _is_outgoing(sender):
+                            msg_texter, attribution = _resolve_texter(
+                                periods, sent_at, texter_name
+                            )
+                        else:
+                            msg_texter, attribution = None, None
+
                         await conn.execute(
                             """INSERT INTO messages
-                               (conversation_id, sender, body, sent_at, sc_date_label, seq)
-                               VALUES ($1, $2, $3, $4, $5, $6)""",
+                               (conversation_id, sender, body, sent_at, sc_date_label,
+                                seq, texter_name, attribution)
+                               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)""",
                             conversation_id, sender, body, sent_at, sc_date_label, idx,
+                            msg_texter, attribution,
                         )
 
         logger.info(
@@ -310,6 +433,14 @@ class Database:
             )
 
         async with self.pool.acquire() as conn:
+            try:
+                await attribute_flag_details(
+                    conn, conversation_id, flag_details,
+                    score_data.get("flag_culprits"),
+                )
+            except Exception as e:
+                # Attribution is additive metadata — never block saving a score.
+                logger.warning(f"[DB] Flag attribution skipped for conv {conversation_id}: {e}")
             await conn.execute(
                 """INSERT INTO conversation_scores
                        (conversation_id, compliance_score, sentiment_score,

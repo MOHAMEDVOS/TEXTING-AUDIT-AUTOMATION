@@ -775,6 +775,36 @@ def _label_key(label: str | None) -> str:
     return normalized
 
 
+def label_matches_any(assigned_labels, expected: str | None) -> bool:
+    """True when `expected` matches ANY label the texter assigned.
+
+    Texters routinely stack a campaign/list tag with the real status label
+    ("June List, Maybe later"). Comparing only the joined string — or only the
+    one label _pick_primary_label() selects for rule-matching — raises a bogus
+    wrong-label flag whenever the correct status label isn't the one picked.
+    The audit is satisfied when one of the assigned labels is the expected one,
+    so only flag when none of them match.
+
+    Accepts either a list of labels or a single comma-joined string.
+    """
+    if not assigned_labels or not expected:
+        return False
+    if isinstance(assigned_labels, str):
+        assigned_labels = [assigned_labels]
+
+    keys = set()
+    for raw in assigned_labels:
+        if not raw:
+            continue
+        keys.add(_label_key(raw))
+        # Split compounds so "June List, Maybe later" also matches per-label
+        for part in re.split(r"[,;/|+]", str(raw)):
+            if part.strip():
+                keys.add(_label_key(part))
+
+    return _label_key(expected) in keys
+
+
 def label_requires_ai(assigned_labels: list[str] | None) -> tuple[bool, str | None]:
     """Labels whose correctness depends on timing/campaign context must use AI.
 

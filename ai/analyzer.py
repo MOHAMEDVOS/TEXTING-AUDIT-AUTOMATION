@@ -37,6 +37,10 @@ def _parse_message_date(date_str: str):
     return None
 
 
+def _is_contact_msg(msg: dict) -> bool:
+    return (msg.get("sender") or "").strip().lower() in ("contact", "lead")
+
+
 def filter_recent_messages(
     messages: list[dict],
     window_days: int = _AUDIT_WINDOW_DAYS,
@@ -47,6 +51,12 @@ def filter_recent_messages(
     (same-day messages at the top of the conversation have date="").
 
     If no dates can be parsed at all, returns the original list unchanged.
+
+    Exception: the contact's most recent reply is always kept, even when it
+    falls outside the window. Without it a thread whose only engagement is
+    older than `window_days` reads as "contact never replied" and gets
+    mislabelled Stopped Responding — e.g. a lead who said "not now, maybe
+    fall/winter" 34 days ago is a Maybe Later, not a silent contact.
     """
     from datetime import timedelta
 
@@ -75,6 +85,22 @@ def filter_recent_messages(
 
     if not filtered:
         return messages  # safety: never return empty if input had messages
+
+    # Pass 3: rescue the contact's last reply if the window dropped every one.
+    # `dated` is chronological, so the last match is the most recent reply and
+    # prepending it preserves message order.
+    if not any(_is_contact_msg(m) for m in filtered):
+        rescued = next(
+            (m for m, d in reversed(dated)
+             if _is_contact_msg(m) and d is not None and d < cutoff),
+            None,
+        )
+        if rescued is not None:
+            filtered = [rescued] + filtered
+            logger.info(
+                f"[Analyzer] {window_days}-day window: kept contact's last reply "
+                f"from outside the window so the thread isn't read as silent"
+            )
 
     if len(filtered) < len(messages):
         dropped = len(messages) - len(filtered)
