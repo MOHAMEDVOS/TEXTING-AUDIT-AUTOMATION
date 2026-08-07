@@ -2637,6 +2637,60 @@ def _normalize_segments(day: "date",
     return merged
 
 
+def _editable_day_segments(rows, day_start: datetime,
+                           day_end: datetime) -> list[tuple]:
+    """
+    Collapse raw ownership periods into ranges the editor can actually show.
+
+    Two things make the stored timeline unfit to edit directly. Every Save All
+    click writes its own period, so a day can hold a dozen consecutive slices
+    that all name the same texter — noise, not history. And a period that opens
+    and closes inside one minute renders as "5:27 PM to 5:27 PM" once seconds
+    are dropped, which the validator rightly rejects, on a card nobody can then
+    save.
+
+    So: clip to the day, floor every boundary to the minute, drop what is too
+    short to survive that, and merge neighbouring slices owned by the same
+    texter. Real gaps and real handovers are preserved.
+
+    Returns (start, end, texter, source) tuples, ordered, non-overlapping.
+    """
+    def _floor_min(ts: datetime) -> datetime:
+        return ts.astimezone(TIMEZONE).replace(second=0, microsecond=0)
+
+    raw = []
+    for r in rows:
+        start = max(r["started_at"], day_start)
+        end   = min(r["ended_at"] or day_end, day_end)
+        if end <= start:
+            continue
+        raw.append((_floor_min(start), _floor_min(end),
+                    r["texter_name"], r["source"]))
+    raw.sort(key=lambda x: (x[0], x[1]))
+
+    out: list[tuple] = []
+    for start, end, texter, source in raw:
+        if out:
+            p_start, p_end, p_texter, p_source = out[-1]
+            if p_texter == texter and start <= p_end:
+                out[-1] = (p_start, max(p_end, end), p_texter, p_source)
+                continue
+            if start < p_end:           # a slice the previous one swallowed
+                start = p_end
+        if end <= start:                # sub-minute: unrepresentable, so dropped
+            continue
+        out.append((start, end, texter, source))
+
+    # Dropping a sliver can leave the same texter on both sides of the hole.
+    merged: list[tuple] = []
+    for seg in out:
+        if merged and merged[-1][2] == seg[2] and merged[-1][1] == seg[0]:
+            merged[-1] = (merged[-1][0], seg[1], seg[2], merged[-1][3])
+        else:
+            merged.append(seg)
+    return merged
+
+
 async def _clear_day_periods(conn, email: str, day_start: datetime,
                              day_end: datetime, *, is_today: bool) -> None:
     """
@@ -2925,21 +2979,37 @@ async def api_save_all_assignments(body: SaveAllAssignmentsRequest, request: Req
                     performed_by, target_date,
                 )
 
-                # Lock the open periods for these accounts in a fixed order.
-                open_rows = await conn.fetch(
-                    """SELECT id, account_email, texter_name
+                # Lock every period that still reaches the boundary or beyond,
+                # in a fixed order. Not just the open ones: the day editor can
+                # leave a range that ends this evening, so an account can be
+                # owned right now with nothing open. Treating that as unowned
+                # and opening a second period on top of it violates the
+                # no-overlap constraint and 500s the whole save.
+                live_rows = await conn.fetch(
+                    """SELECT id, account_email, texter_name, started_at, ended_at
                          FROM assignment_periods
-                        WHERE account_email = ANY($1::text[]) AND ended_at IS NULL
-                        ORDER BY account_email
+                        WHERE account_email = ANY($1::text[])
+                          AND (ended_at IS NULL OR ended_at > $2)
+                        ORDER BY account_email, started_at
                           FOR UPDATE""",
-                    emails,
+                    emails, boundary,
                 )
-                current = {r["account_email"]: r for r in open_rows}
+                live: dict[str, list] = {}
+                for r in live_rows:
+                    live.setdefault(r["account_email"], []).append(r)
 
                 for email in emails:
                     texter = clean[email]
-                    row    = current.get(email)
-                    owner  = row["texter_name"] if row else None
+                    rows_for = live.get(email, [])
+                    # Whoever holds the account at this instant is the owner,
+                    # whether their period is open or merely ends later today.
+                    row = next(
+                        (r for r in rows_for
+                         if r["started_at"] <= boundary
+                         and (r["ended_at"] is None or r["ended_at"] > boundary)),
+                        None,
+                    )
+                    owner = row["texter_name"] if row else None
 
                     if is_today:
                         if owner == (texter or None):
@@ -2947,12 +3017,30 @@ async def api_save_all_assignments(body: SaveAllAssignmentsRequest, request: Req
                             continue
 
                         if row is not None:
-                            await conn.execute(
-                                """UPDATE assignment_periods
-                                      SET ended_at = $1, ended_by = $2
-                                    WHERE id = $3""",
-                                boundary, performed_by, row["id"],
-                            )
+                            if row["started_at"] >= boundary:
+                                await conn.execute(
+                                    "DELETE FROM assignment_periods WHERE id = $1",
+                                    row["id"],
+                                )
+                            else:
+                                await conn.execute(
+                                    """UPDATE assignment_periods
+                                          SET ended_at = $1, ended_by = $2
+                                        WHERE id = $3""",
+                                    boundary, performed_by, row["id"],
+                                )
+
+                        # "From now on, X owns this" leaves no room for ranges
+                        # someone scheduled later in the day — they'd overlap
+                        # the open period this is about to write.
+                        for other in rows_for:
+                            if row is not None and other["id"] == row["id"]:
+                                continue
+                            if other["started_at"] >= boundary:
+                                await conn.execute(
+                                    "DELETE FROM assignment_periods WHERE id = $1",
+                                    other["id"],
+                                )
 
                         new_period_id = None
                         if texter:
@@ -3106,14 +3194,22 @@ async def api_assignment_day_segments(date: str = ""):
                 day,
             )
 
-        by_account: dict[str, list[dict]] = {}
+        grouped: dict[str, list] = {}
         for p in periods:
-            by_account.setdefault(p["account_email"].lower(), []).append({
-                "texter_name": p["texter_name"],
-                "start_time":  _hhmm(p["started_at"], fallback="00:00"),
-                "end_time":    _hhmm(p["ended_at"],   fallback="24:00"),
-                "source":      p["source"],
-            })
+            grouped.setdefault(p["account_email"].lower(), []).append(p)
+
+        by_account: dict[str, list[dict]] = {}
+        for key, rows in grouped.items():
+            by_account[key] = [
+                {
+                    "texter_name": texter,
+                    "start_time":  _hhmm(start, fallback="00:00"),
+                    "end_time":    _hhmm(end,   fallback="24:00"),
+                    "source":      source,
+                }
+                for start, end, texter, source
+                in _editable_day_segments(rows, day_start, day_end)
+            ]
         legacy_by = {r["account_email"].lower(): r["agent_name"] for r in legacy}
 
         data = []
@@ -3433,10 +3529,18 @@ async def api_delete_assignments(request: Request, date: str = ""):
     """
     Clear all account assignments for a given date.
 
-    Clearing TODAY closes every open ownership period at now() — accounts become
-    unassigned from this instant, and messages that already arrived keep the
-    texter who owned them. Ownership history is never deleted; a past date only
-    clears the day-grained mirror.
+    The day is left genuinely unowned: every ownership period covering it is
+    removed, and one that merely overlaps is trimmed back to the part outside
+    the day, so history either side survives untouched. Clearing today therefore
+    also ends current ownership.
+
+    Both the time-ranged periods and the day-grained mirror are cleared —
+    clearing only the mirror used to leave the editor showing the same ranges it
+    started with, which reads as "the button does nothing".
+
+    Attribution over the day is replayed, so messages that now fall in unowned
+    time are marked 'unassigned' rather than keeping a texter the day no longer
+    says owned them.
     """
     from datetime import date as _date
     if not date:
@@ -3447,38 +3551,48 @@ async def api_delete_assignments(request: Request, date: str = ""):
     except ValueError:
         raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
 
-    closed = 0
+    day_start, day_end = _local_day_bounds(date_obj)
+    is_today = date_obj == get_now().date()
+
+    cleared = 0
     try:
         async with app.state.pool.acquire() as conn:
             async with conn.transaction():
-                if date_obj == get_now().date():
-                    boundary = await conn.fetchval("SELECT now()")
-                    open_rows = await conn.fetch(
-                        """SELECT id, account_email, texter_name
-                             FROM assignment_periods
-                            WHERE ended_at IS NULL
-                            ORDER BY account_email
-                              FOR UPDATE"""
+                owners = await conn.fetch(
+                    """SELECT DISTINCT account_email, texter_name
+                         FROM assignment_periods
+                        WHERE period && tstzrange($1, $2, '[)')
+                        ORDER BY account_email""",
+                    day_start, day_end,
+                )
+                emails = sorted({r["account_email"] for r in owners})
+
+                for email in emails:
+                    await _clear_day_periods(conn, email, day_start, day_end,
+                                             is_today=is_today)
+                    cleared += 1
+
+                for r in owners:
+                    await _log_assignment(
+                        conn, account_email=r["account_email"], action="unassign",
+                        from_texter=r["texter_name"], to_texter=None,
+                        effective_at=day_start, performed_by=performed_by,
+                        reason=f"{_DAY_EDIT_REASON}: Clear All for {date_obj.isoformat()}",
                     )
-                    for r in open_rows:
-                        await conn.execute(
-                            "UPDATE assignment_periods SET ended_at = $1, ended_by = $2 WHERE id = $3",
-                            boundary, performed_by, r["id"],
-                        )
-                        await _log_assignment(
-                            conn, account_email=r["account_email"], action="unassign",
-                            from_texter=r["texter_name"], to_texter=None,
-                            effective_at=boundary, performed_by=performed_by,
-                            period_id=r["id"], reason="Clear All",
-                        )
-                    closed = len(open_rows)
 
                 await conn.execute(
                     "DELETE FROM account_assignments WHERE assigned_date = $1",
                     date_obj,
                 )
-        logger.info(f"Assignments cleared for {date} by {performed_by} ({closed} periods closed)")
-        return {"success": True, "periods_closed": closed}
+
+                if emails:
+                    await _reattribute_day(conn, emails, date_obj, day_start, day_end)
+
+        logger.info(
+            f"Assignments cleared for {date} by {performed_by} "
+            f"({cleared} account(s) unowned for the day)"
+        )
+        return {"success": True, "accounts_cleared": cleared, "periods_closed": cleared}
     except HTTPException:
         raise
     except Exception as exc:
