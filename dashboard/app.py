@@ -821,6 +821,33 @@ async def _upsert_flag_review(
     )
 
 
+# Inbound messages are nobody's work product, so they never carry a texter.
+_OUTGOING_EXCLUDED_SQL = "('contact', 'lead', 'unknown')"
+
+# Time-ranged ownership resolved at the conversation's last outgoing message.
+# A day with a single owner produces the same name the day-grained
+# account_assignments row would, so this only changes anything where a shuffle
+# was actually recorded — which is the point.
+#
+# Requires `c` (conversations) in scope. Callers COALESCE it ahead of the
+# day-grained value: ap → aa → the frozen c.texter_name.
+_PERIOD_TEXTER_LATERAL = f"""
+    LEFT JOIN LATERAL (
+        SELECT p.texter_name
+          FROM messages m
+          JOIN assignment_periods p
+            ON LOWER(p.account_email) =
+               LOWER((SELECT email FROM accounts WHERE id = c.agent_id))
+           AND p.period @> m.sent_at
+         WHERE m.conversation_id = c.id
+           AND m.sent_at IS NOT NULL
+           AND LOWER(m.sender) NOT IN {_OUTGOING_EXCLUDED_SQL}
+         ORDER BY m.seq DESC, m.id DESC
+         LIMIT 1
+    ) ap ON TRUE
+"""
+
+
 async def _fetch_agent_conversations(agent_id: int) -> dict | None:
     """
     Return conversations with parsed messages + per-conversation AI analysis
@@ -836,11 +863,14 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
 
         # Load all conversations for this agent, newest first
         conv_rows = await conn.fetch(
-            """SELECT c.id, c.extracted_at, c.audit_date, c.convo_date, c.assigned_labels,
-                      COALESCE(aa.agent_name, c.texter_name) AS texter_name,
+            f"""SELECT c.id, c.extracted_at, c.audit_date, c.convo_date, c.assigned_labels,
+                      COALESCE(ap.texter_name, aa.agent_name, c.texter_name) AS texter_name,
                       ct.name AS contact_name
                FROM conversations c
                JOIN contacts ct ON ct.id = c.contact_id
+               -- Time-ranged ownership first, so a mid-day shuffle wins over the
+               -- day-grained row; falls through when no period covers the thread.
+               {_PERIOD_TEXTER_LATERAL}
                -- Resolve texter against the conversation's own date (convo_date),
                -- not audit_date (when the scrape ran). convo_date is 'MM/DD/YYYY' text.
                LEFT JOIN LATERAL (
@@ -1184,6 +1214,30 @@ class SaveAllAssignmentsRequest(BaseModel):
     """One 'Save All' click — the full desired state of every account card."""
     assigned_date: str                 # "YYYY-MM-DD" (the DATE picker)
     assignments:   list[AssignmentEntry]
+
+
+class DaySegment(BaseModel):
+    """One time-ranged ownership row inside a single local day."""
+    texter_name: str = ""              # "" = deliberate gap; no period is written
+    start_time:  str = "00:00"         # local "HH:MM"
+    end_time:    str = ""              # "" = to the end of the local day
+
+
+class AccountDaySegments(BaseModel):
+    account_email: str
+    segments:      list[DaySegment] = []
+
+
+class SaveDaySegmentsRequest(BaseModel):
+    """
+    The full desired ownership timeline for one local day.
+
+    Only the accounts present in `accounts` are touched — an account left out is
+    not cleared, so the editor can submit just the cards the user opened.
+    """
+    assigned_date: str                 # "YYYY-MM-DD"
+    accounts:      list[AccountDaySegments]
+    reattribute:   bool = True         # replay message/flag attribution afterwards
 
 
 class AddTexterRequest(BaseModel):
@@ -2500,6 +2554,284 @@ def _local_day_bounds(day: "date") -> tuple[datetime, datetime]:
     return start, end
 
 
+# Marks audit-log rows written by the day-timeline editor. Re-saving a day
+# clears its own previous rows so repeated edits don't stack, while live
+# shuffles recorded by Save All (reason IS NULL) are left untouched.
+_DAY_EDIT_REASON = "day-edit"
+
+
+def _seg_instant(day: "date", hhmm: str, *, is_end: bool) -> datetime:
+    """
+    Turn a local "HH:MM" into a tz-aware instant on `day`.
+
+    As an end time, "24:00" means the following midnight — the only way to say
+    "until the day is over" with a clock value.
+    """
+    from datetime import time as _time
+
+    txt = (hhmm or "").strip()
+    if not txt:
+        raise ValueError("time is required")
+    parts = txt.split(":")
+    try:
+        hour   = int(parts[0])
+        minute = int(parts[1]) if len(parts) > 1 else 0
+    except ValueError:
+        raise ValueError(f"'{txt}' is not a valid HH:MM time")
+
+    if is_end and hour == 24 and minute == 0:
+        return _local_day_bounds(day)[1]
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        raise ValueError(f"'{txt}' is not a valid HH:MM time")
+    return TIMEZONE.localize(datetime.combine(day, _time(hour, minute)))
+
+
+def _normalize_segments(day: "date",
+                        segments: list[DaySegment]) -> list[tuple[datetime, datetime, str]]:
+    """
+    Validate one account's day into ordered, non-overlapping (start, end, texter).
+
+    Rows with no texter are dropped rather than rejected — an empty row is how
+    the editor expresses "nobody owned it then", and a gap is a legitimate
+    answer. Touching ranges owned by the same texter are merged, so re-saving an
+    unchanged day doesn't shred the timeline into meaningless slices.
+    """
+    day_start, day_end = _local_day_bounds(day)
+
+    parsed: list[tuple[datetime, datetime, str]] = []
+    for seg in segments:
+        texter = (seg.texter_name or "").strip()
+        if not texter:
+            continue
+        if texter not in AGENT_ROSTER:
+            raise ValueError(f"'{texter}' is not in the texter roster")
+
+        start = _seg_instant(day, seg.start_time or "00:00", is_end=False)
+        end   = (_seg_instant(day, seg.end_time, is_end=True)
+                 if (seg.end_time or "").strip() else day_end)
+
+        if end <= start:
+            raise ValueError(
+                f"{seg.start_time}–{seg.end_time or '24:00'} ends before it starts"
+            )
+        if start < day_start or end > day_end:
+            raise ValueError(
+                f"{seg.start_time}–{seg.end_time or '24:00'} falls outside {day.isoformat()}"
+            )
+        parsed.append((start, end, texter))
+
+    parsed.sort(key=lambda s: s[0])
+    for prev, cur in zip(parsed, parsed[1:]):
+        if cur[0] < prev[1]:
+            raise ValueError(
+                f"time ranges overlap at {cur[0].strftime('%H:%M')} — "
+                f"two texters can't own one account at the same minute"
+            )
+
+    merged: list[tuple[datetime, datetime, str]] = []
+    for start, end, texter in parsed:
+        if merged and merged[-1][2] == texter and merged[-1][1] == start:
+            merged[-1] = (merged[-1][0], end, texter)
+        else:
+            merged.append((start, end, texter))
+    return merged
+
+
+async def _clear_day_periods(conn, email: str, day_start: datetime,
+                             day_end: datetime, *, is_today: bool) -> None:
+    """
+    Make room for a rewritten day without disturbing ownership outside it.
+
+    A period that only touches the day is trimmed to the part that lies outside
+    it; one that spans the whole day is split in two. Updates run before any
+    insert so the no-overlap exclusion constraint never sees a transient clash.
+    """
+    rows = await conn.fetch(
+        """SELECT id, texter_name, started_at, ended_at, started_by, source
+             FROM assignment_periods
+            WHERE LOWER(account_email) = LOWER($1)
+              AND period && tstzrange($2, $3, '[)')
+            ORDER BY started_at
+              FOR UPDATE""",
+        email, day_start, day_end,
+    )
+
+    tails: list[tuple[str, datetime | None, str | None, str]] = []
+    for r in rows:
+        head = r["started_at"] < day_start
+        # An open period on a PAST day continues past that day and must survive
+        # the rewrite. On today it is simply replaced by the new final segment,
+        # which stays open itself — moving it to tomorrow's midnight would leave
+        # the account ownerless right now.
+        tail = ((r["ended_at"] is not None and r["ended_at"] > day_end)
+                or (r["ended_at"] is None and not is_today))
+
+        if head:
+            await conn.execute(
+                "UPDATE assignment_periods SET ended_at = $1 WHERE id = $2",
+                day_start, r["id"],
+            )
+            if tail:
+                tails.append((r["texter_name"], r["ended_at"],
+                              r["started_by"], r["source"]))
+        elif tail:
+            await conn.execute(
+                "UPDATE assignment_periods SET started_at = $1 WHERE id = $2",
+                day_end, r["id"],
+            )
+        else:
+            await conn.execute("DELETE FROM assignment_periods WHERE id = $1", r["id"])
+
+    for texter, ended_at, started_by, source in tails:
+        await conn.execute(
+            """INSERT INTO assignment_periods
+                   (account_email, texter_name, started_at, ended_at, started_by, source)
+               VALUES ($1, $2, $3, $4, $5, $6)""",
+            email, texter, day_end, ended_at, started_by, source,
+        )
+
+
+async def _reattribute_day(conn, emails: list[str], day: "date",
+                           day_start: datetime, day_end: datetime) -> dict[str, int]:
+    """
+    Replay attribution over one day for the accounts whose timeline just changed.
+
+    `messages.texter_name` and the per-flag owners in
+    `conversation_scores.flag_details` are resolved once at ingest and stored, so
+    a corrected period only reaches the dashboards if the affected range is
+    recomputed. Scoped to the edited day — a full replay would rewrite years.
+    """
+    lc = [e.lower() for e in emails]
+
+    def _n(tag: str) -> int:
+        return int(tag.split()[-1]) if tag else 0
+
+    # ── messages ──────────────────────────────────────────────────────────────
+    await conn.execute(
+        f"""UPDATE messages m
+               SET texter_name = NULL, attribution = NULL
+              FROM conversations c
+              JOIN accounts a ON a.id = c.agent_id
+             WHERE m.conversation_id = c.id
+               AND LOWER(a.email) = ANY($1::text[])
+               AND m.sent_at >= $2 AND m.sent_at < $3
+               AND LOWER(m.sender) NOT IN {_OUTGOING_EXCLUDED_SQL}""",
+        lc, day_start, day_end,
+    )
+    exact = await conn.execute(
+        f"""UPDATE messages m
+               SET texter_name = p.texter_name, attribution = 'exact'
+              FROM conversations c
+              JOIN accounts a ON a.id = c.agent_id
+              JOIN assignment_periods p
+                ON LOWER(p.account_email) = LOWER(a.email)
+             WHERE m.conversation_id = c.id
+               AND LOWER(a.email) = ANY($1::text[])
+               AND m.sent_at >= $2 AND m.sent_at < $3
+               AND p.period @> m.sent_at
+               AND LOWER(m.sender) NOT IN {_OUTGOING_EXCLUDED_SQL}""",
+        lc, day_start, day_end,
+    )
+    # Timestamped, but the new timeline leaves that minute unowned — say so
+    # rather than blaming whoever happens to be nearest.
+    unassigned = await conn.execute(
+        f"""UPDATE messages m
+               SET texter_name = NULL, attribution = 'unassigned'
+              FROM conversations c
+              JOIN accounts a ON a.id = c.agent_id
+             WHERE m.conversation_id = c.id
+               AND LOWER(a.email) = ANY($1::text[])
+               AND m.sent_at >= $2 AND m.sent_at < $3
+               AND m.attribution IS NULL
+               AND LOWER(m.sender) NOT IN {_OUTGOING_EXCLUDED_SQL}""",
+        lc, day_start, day_end,
+    )
+
+    # ── per-flag owners inside conversation_scores.flag_details ───────────────
+    # Only details carrying a culprit timestamp can be re-resolved; the rest
+    # keep whatever they had, still labelled 'legacy' by the writer.
+    flags = await conn.execute(
+        """WITH tgt AS (
+               SELECT cs.id, cs.flag_details, a.email AS account_email
+                 FROM conversation_scores cs
+                 JOIN conversations c ON c.id = cs.conversation_id
+                 JOIN accounts a      ON a.id = c.agent_id
+                WHERE LOWER(a.email) = ANY($1::text[])
+                  AND (CASE WHEN c.convo_date <> ''
+                            THEN TO_DATE(c.convo_date, 'MM/DD/YYYY')
+                            ELSE c.audit_date END) = $2
+                  AND jsonb_typeof(cs.flag_details) = 'array'
+           ),
+           rebuilt AS (
+               SELECT t.id,
+                      jsonb_agg(
+                          CASE WHEN e.d ? 'culprit_at'
+                                    AND e.d->>'culprit_at' IS NOT NULL
+                               THEN e.d || jsonb_build_object(
+                                        'texter_name', to_jsonb(r.texter),
+                                        'attribution',
+                                        CASE WHEN r.texter IS NULL
+                                             THEN 'unassigned' ELSE 'exact' END)
+                               ELSE e.d
+                          END ORDER BY e.ord
+                      ) AS new_details
+                 FROM tgt t
+                 CROSS JOIN LATERAL jsonb_array_elements(t.flag_details)
+                            WITH ORDINALITY AS e(d, ord)
+                 LEFT JOIN LATERAL (
+                     SELECT texter_at(t.account_email,
+                                      (e.d->>'culprit_at')::timestamptz) AS texter
+                 ) r ON TRUE
+                GROUP BY t.id
+           )
+           UPDATE conversation_scores cs
+              SET flag_details = rb.new_details
+             FROM rebuilt rb
+            WHERE cs.id = rb.id
+              AND cs.flag_details IS DISTINCT FROM rb.new_details""",
+        lc, day,
+    )
+
+    # ── conversation-level owner ──────────────────────────────────────────────
+    # The thread lands on whoever owned the account at its last outgoing
+    # message; the per-flag owners above keep a split thread honest.
+    convos = await conn.execute(
+        f"""UPDATE conversations c
+               SET texter_name = sub.texter_name
+              FROM (
+                  SELECT c2.id, p.texter_name
+                    FROM conversations c2
+                    JOIN accounts a ON a.id = c2.agent_id
+                    JOIN LATERAL (
+                        SELECT m.sent_at
+                          FROM messages m
+                         WHERE m.conversation_id = c2.id
+                           AND m.sent_at IS NOT NULL
+                           AND LOWER(m.sender) NOT IN {_OUTGOING_EXCLUDED_SQL}
+                         ORDER BY m.seq DESC, m.id DESC
+                         LIMIT 1
+                    ) last_out ON TRUE
+                    JOIN assignment_periods p
+                      ON LOWER(p.account_email) = LOWER(a.email)
+                     AND p.period @> last_out.sent_at
+                   WHERE LOWER(a.email) = ANY($1::text[])
+                     AND (CASE WHEN c2.convo_date <> ''
+                               THEN TO_DATE(c2.convo_date, 'MM/DD/YYYY')
+                               ELSE c2.audit_date END) = $2
+              ) sub
+             WHERE c.id = sub.id
+               AND c.texter_name IS DISTINCT FROM sub.texter_name""",
+        lc, day,
+    )
+
+    return {
+        "messages_exact":      _n(exact),
+        "messages_unassigned": _n(unassigned),
+        "scores_updated":      _n(flags),
+        "conversations":       _n(convos),
+    }
+
+
 async def _log_assignment(conn, *, account_email, action, from_texter, to_texter,
                           effective_at, performed_by, save_id=None, period_id=None,
                           reason=None):
@@ -2722,6 +3054,306 @@ async def api_save_all_assignments(body: SaveAllAssignmentsRequest, request: Req
         raise
     except Exception as exc:
         logger.exception("Error in POST /api/assignments/save-all")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/assignments/day-segments")
+async def api_assignment_day_segments(date: str = ""):
+    """
+    Every account's ownership for one local day, as editable time ranges.
+
+    Accounts with no recorded period fall back to the day-grained
+    account_assignments value rendered as a single all-day range, so a day that
+    predates period tracking opens in the editor already filled in.
+    """
+    from datetime import date as _date
+
+    if not date:
+        date = get_now().date().isoformat()
+    try:
+        day = _date.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
+
+    day_start, day_end = _local_day_bounds(day)
+
+    def _hhmm(ts: datetime | None, *, fallback: str) -> str:
+        if ts is None:
+            return fallback
+        local = ts.astimezone(TIMEZONE)
+        if local >= day_end:
+            return "24:00"
+        if local <= day_start:
+            return "00:00"
+        return local.strftime("%H:%M")
+
+    try:
+        async with app.state.pool.acquire() as conn:
+            accounts = await conn.fetch(
+                """SELECT email, name FROM accounts
+                    WHERE email IS NOT NULL ORDER BY name NULLS LAST, email"""
+            )
+            periods = await conn.fetch(
+                """SELECT account_email, texter_name, started_at, ended_at, source
+                     FROM assignment_periods
+                    WHERE period && tstzrange($1, $2, '[)')
+                    ORDER BY account_email, started_at""",
+                day_start, day_end,
+            )
+            legacy = await conn.fetch(
+                """SELECT account_email, agent_name FROM account_assignments
+                    WHERE assigned_date = $1""",
+                day,
+            )
+
+        by_account: dict[str, list[dict]] = {}
+        for p in periods:
+            by_account.setdefault(p["account_email"].lower(), []).append({
+                "texter_name": p["texter_name"],
+                "start_time":  _hhmm(p["started_at"], fallback="00:00"),
+                "end_time":    _hhmm(p["ended_at"],   fallback="24:00"),
+                "source":      p["source"],
+            })
+        legacy_by = {r["account_email"].lower(): r["agent_name"] for r in legacy}
+
+        data = []
+        for a in accounts:
+            key  = a["email"].lower()
+            segs = by_account.get(key, [])
+            if not segs and legacy_by.get(key):
+                segs = [{
+                    "texter_name": legacy_by[key],
+                    "start_time":  "00:00",
+                    "end_time":    "24:00",
+                    "source":      "legacy",
+                }]
+            data.append({
+                "account_email": a["email"],
+                "account_name":  a["name"],
+                "segments":      segs,
+            })
+
+        return {"success": True, "date": date, "timezone": TIMEZONE_STR, "data": data}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Error in GET /api/assignments/day-segments")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/assignments/save-day", dependencies=[Depends(require_admin)])
+async def api_save_day_segments(body: SaveDaySegmentsRequest, request: Request):
+    """
+    Rewrite one day's ownership timeline from explicit time ranges.
+
+    This is the manual counterpart to Save All. Save All can only stamp a
+    shuffle at the server's clock, which is useless for auditing yesterday — the
+    head of texting knows a shuffle happened at 8:30 PM, and this is where that
+    gets recorded. Each account submits its own ranges:
+
+        17:00–20:30  Agent A
+        20:30–23:00  Agent B
+
+    Ownership outside the day is preserved: a period that merely overlaps the
+    day is trimmed, one that spans it is split. Accounts absent from the request
+    are left completely alone.
+
+    account_assignments is mirrored with the day's dominant owner so every
+    day-grained reader keeps working, and attribution is replayed over the day
+    so already-scored audits move to the right texter.
+    """
+    from datetime import date as _date
+
+    performed_by = (request.session.get("user_email") or "unknown").lower().strip()
+
+    try:
+        target_date = _date.fromisoformat(body.assigned_date.strip())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="assigned_date must be YYYY-MM-DD")
+
+    today = get_now().date()
+    if target_date > today:
+        raise HTTPException(status_code=400, detail="Cannot assign a future date")
+
+    day_start, day_end = _local_day_bounds(target_date)
+    is_today = target_date == today
+
+    async with app.state.pool.acquire() as conn:
+        known = {
+            r["email"].lower(): r["email"]
+            for r in await conn.fetch("SELECT email FROM accounts WHERE email IS NOT NULL")
+        }
+
+    # Validate everything before writing anything — a half-applied day would
+    # leave the timeline in a state nobody asked for.
+    errors: list[str] = []
+    plan: dict[str, list[tuple[datetime, datetime, str]]] = {}
+    for entry in body.accounts:
+        email_lc = entry.account_email.strip().lower()
+        if email_lc not in known:
+            errors.append(f"Unknown account: {entry.account_email.strip()}")
+            continue
+        try:
+            plan[known[email_lc]] = _normalize_segments(target_date, entry.segments)
+        except ValueError as exc:
+            errors.append(f"{known[email_lc]}: {exc}")
+
+    if errors:
+        raise HTTPException(status_code=400, detail="; ".join(errors))
+    if not plan:
+        return {"success": True, "accounts": 0, "periods": 0, "shuffles": [],
+                "reattribution": None, "save_id": None}
+
+    emails   = sorted(plan)          # stable lock order — avoids deadlocks
+    shuffles: list[dict] = []
+    written  = 0
+
+    try:
+        async with app.state.pool.acquire() as conn:
+            async with conn.transaction():
+                save_id = await conn.fetchval(
+                    """INSERT INTO assignment_saves (saved_by, target_date, source)
+                       VALUES ($1, $2, 'dashboard') RETURNING id""",
+                    performed_by, target_date,
+                )
+
+                for email in emails:
+                    segs = plan[email]
+
+                    # Who held the account the instant before this day began —
+                    # that is what the day's first range is a handover from.
+                    prior = await conn.fetchval(
+                        """SELECT texter_name FROM assignment_periods
+                            WHERE LOWER(account_email) = LOWER($1)
+                              AND period @> ($2::timestamptz - interval '1 microsecond')
+                            LIMIT 1""",
+                        email, day_start,
+                    )
+
+                    await _clear_day_periods(conn, email, day_start, day_end,
+                                             is_today=is_today)
+
+                    # Re-saving a day replaces only its own previous rows; live
+                    # shuffles recorded by Save All stay in the log.
+                    await conn.execute(
+                        """DELETE FROM assignment_audit_log
+                            WHERE LOWER(account_email) = LOWER($1)
+                              AND effective_at >= $2 AND effective_at < $3
+                              AND reason LIKE $4""",
+                        email, day_start, day_end, f"{_DAY_EDIT_REASON}%",
+                    )
+
+                    previous = prior
+                    prev_end: datetime | None = None
+                    for idx, (start, end, texter) in enumerate(segs):
+                        # The final range of TODAY stays open — closing it at
+                        # tonight's midnight would invent an end that hasn't
+                        # happened and leave the account ownerless after it.
+                        open_ended = (is_today and idx == len(segs) - 1
+                                      and end == day_end)
+                        period_id = await conn.fetchval(
+                            """INSERT INTO assignment_periods
+                                   (account_email, texter_name, started_at, ended_at,
+                                    started_by, save_id, source)
+                               VALUES ($1, $2, $3, $4, $5, $6, 'dashboard')
+                               RETURNING id""",
+                            email, texter, start, None if open_ended else end,
+                            performed_by, save_id,
+                        )
+                        written += 1
+
+                        # A shuffle needs a DIFFERENT texter who was still
+                        # holding the account at this exact instant. A range
+                        # that opens after a gap is not a handover, and the
+                        # same texter continuing is not a change at all.
+                        contiguous = (start == day_start if idx == 0
+                                      else prev_end == start)
+                        handover = (contiguous and previous is not None
+                                    and previous != texter)
+                        action = "shuffle" if handover else "open"
+                        await _log_assignment(
+                            conn, account_email=email, action=action,
+                            from_texter=previous if handover else None,
+                            to_texter=texter, effective_at=start,
+                            performed_by=performed_by, save_id=save_id,
+                            period_id=period_id,
+                            reason=f"{_DAY_EDIT_REASON}: manual timeline for "
+                                   f"{target_date.isoformat()}",
+                        )
+                        shuffles.append({
+                            "account_email": email, "action": action,
+                            "from": previous if handover else None, "to": texter,
+                            "at": start.isoformat(),
+                        })
+                        previous = texter
+                        prev_end = end
+
+                    # A range that stops before the next one starts (or before
+                    # the day ends) is an unowned gap, recorded as such.
+                    for idx, (_s, end, texter) in enumerate(segs):
+                        nxt = segs[idx + 1][0] if idx + 1 < len(segs) else day_end
+                        if end < nxt:
+                            await _log_assignment(
+                                conn, account_email=email, action="unassign",
+                                from_texter=texter, to_texter=None,
+                                effective_at=end, performed_by=performed_by,
+                                save_id=save_id,
+                                reason=f"{_DAY_EDIT_REASON}: gap on "
+                                       f"{target_date.isoformat()}",
+                            )
+
+                    # ── Legacy day-grained mirror ────────────────────────────
+                    # Day-grained readers can only hold one name, so the day
+                    # goes to whoever owned the account longest.
+                    if segs:
+                        held: dict[str, float] = {}
+                        for start, end, texter in segs:
+                            held[texter] = held.get(texter, 0.0) + (end - start).total_seconds()
+                        dominant = max(held.items(), key=lambda kv: kv[1])[0]
+                        await conn.execute(
+                            """INSERT INTO account_assignments
+                                   (account_email, agent_name, assigned_date)
+                               VALUES ($1, $2, $3)
+                               ON CONFLICT (account_email, assigned_date) DO UPDATE
+                                   SET agent_name  = EXCLUDED.agent_name,
+                                       assigned_at = CURRENT_TIMESTAMP""",
+                            email, dominant, target_date,
+                        )
+                    else:
+                        await conn.execute(
+                            """DELETE FROM account_assignments
+                                WHERE account_email = $1 AND assigned_date = $2""",
+                            email, target_date,
+                        )
+
+                await conn.execute(
+                    "UPDATE assignment_saves SET changed = $1 WHERE id = $2",
+                    written, save_id,
+                )
+
+                reattribution = None
+                if body.reattribute:
+                    reattribution = await _reattribute_day(
+                        conn, emails, target_date, day_start, day_end
+                    )
+
+        logger.info(
+            f"Save Day by {performed_by} for {target_date}: "
+            f"{len(emails)} account(s), {written} period(s)"
+        )
+        return {
+            "success":       True,
+            "save_id":       save_id,
+            "accounts":      len(emails),
+            "periods":       written,
+            "shuffles":      shuffles,
+            "reattribution": reattribution,
+            "errors":        [],
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Error in POST /api/assignments/save-day")
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -3202,7 +3834,7 @@ async def api_detailed_dashboard(
                             WHEN c.convo_date <> '' THEN TO_DATE(c.convo_date, 'MM/DD/YYYY')
                             ELSE c.audit_date
                         END AS effective_date,
-                        COALESCE(aa.agent_name, c.texter_name) AS texter_name,
+                        COALESCE(ap.texter_name, aa.agent_name, c.texter_name) AS texter_name,
                         cs.compliance_score,
                         cs.sentiment_score,
                         cs.professionalism_score,
@@ -3232,6 +3864,8 @@ async def api_detailed_dashboard(
                         ORDER BY cs2.id DESC
                         LIMIT 1
                     ) cs ON TRUE
+                    -- Time-ranged ownership takes precedence over the day-grained row
+                    {period_texter_lateral}
                     -- Resolve texter against conversation date, not scrape date
                     LEFT JOIN LATERAL (
                         SELECT agent_name FROM account_assignments
@@ -3264,7 +3898,12 @@ async def api_detailed_dashboard(
     params: list = [start_d, end_d]
     texter_clause = "TRUE"
     if not all_texters:
-        texter_clause = f"c.texter_name = ${len(params) + 1}"
+        # Filter on the SAME resolved owner the row displays, or a shuffled
+        # conversation would show one name and answer to a different filter.
+        texter_clause = (
+            f"LOWER(COALESCE(ap.texter_name, aa.agent_name, c.texter_name)) "
+            f"= LOWER(${len(params) + 1})"
+        )
         params.append(texter_name)
 
     contact_clause = ""
@@ -3285,6 +3924,7 @@ async def api_detailed_dashboard(
     try:
         async with app.state.pool.acquire() as conn:
             sql = _DETAILED_SQL.format(
+                period_texter_lateral=_PERIOD_TEXTER_LATERAL,
                 texter_clause=texter_clause,
                 contact_clause=contact_clause,
                 account_clause=account_clause,
@@ -3330,13 +3970,15 @@ async def api_conversation_messages(conversation_id: int):
         async with app.state.pool.acquire() as conn:
             # Basic conversation info
             conv_row = await conn.fetchrow(
-                """SELECT c.id, ct.name AS contact_name, c.assigned_labels,
+                f"""SELECT c.id, ct.name AS contact_name, c.assigned_labels,
                           c.audit_date, c.convo_date,
-                          COALESCE(aa.agent_name, c.texter_name) AS texter_name,
+                          COALESCE(ap.texter_name, aa.agent_name, c.texter_name) AS texter_name,
                           a.id AS agent_id, a.email AS account_email, a.name AS account_name
                    FROM conversations c
                    JOIN contacts ct ON ct.id = c.contact_id
                    JOIN accounts a ON a.id = c.agent_id
+                   -- Time-ranged ownership takes precedence over the day-grained row
+                   {_PERIOD_TEXTER_LATERAL}
                    -- Resolve texter against conversation date, not scrape date
                    LEFT JOIN LATERAL (
                        SELECT agent_name FROM account_assignments

@@ -941,6 +941,70 @@
 
     button { cursor: pointer; font-family: var(--font-text); }
 
+    /* ── Time-ranged assignment rows ── */
+    /* A card holds one row per ownership range. In "all day" mode the time
+       inputs are hidden, so an account that never shuffled looks exactly like
+       the single dropdown it has always been. */
+    .assign-rows { display:flex; flex-direction:column; gap:9px; }
+    .assign-row  { display:flex; flex-direction:column; gap:5px; }
+    .assign-row + .assign-row {
+      padding-top:9px; border-top:1px dashed var(--surface-border);
+    }
+    .assign-row .searchable-select-container { flex:1; min-width:0; }
+    .assign-row-times { display:flex; align-items:center; gap:4px; }
+    /* Typed hour + AM/PM picker: any minute is expressible, and morning vs
+       night is a choice rather than something to infer from a 24-hour number. */
+    .assign-tgroup { display:flex; align-items:center; gap:3px; flex:1; min-width:0; }
+    .assign-time {
+      flex:1; min-width:0; width:100%; font-size:.72rem; padding:6px 4px;
+      border:1px solid var(--surface-border); border-radius:7px;
+      background:var(--surface); color:var(--text-primary);
+      outline:none; transition:.15s; font-family:var(--font-text);
+      text-align:center; letter-spacing:-.01em;
+    }
+    .assign-ampm {
+      flex-shrink:0; width:52px; font-size:.68rem; font-weight:600;
+      padding:6px 2px 6px 4px;
+      border:1px solid var(--surface-border); border-radius:7px;
+      background:var(--surface); color:var(--text-primary);
+      outline:none; transition:.15s; font-family:var(--font-text);
+      cursor:pointer; appearance:auto; color-scheme:inherit;
+    }
+    .assign-ampm option { background:var(--surface-elevated); color:var(--text-primary); }
+    [data-theme="light"] .assign-ampm option { background:var(--input-bg); color:var(--text-primary); }
+    .assign-time:focus, .assign-ampm:focus {
+      border-color:var(--brand); box-shadow:0 0 0 3px rgba(37,99,235,.1);
+    }
+    .assign-time.is-invalid { border-color:var(--danger); box-shadow:0 0 0 3px rgba(220,38,38,.12); }
+    .assign-dash { font-size:.7rem; color:var(--text-muted); flex-shrink:0; }
+    .assign-row-del {
+      flex-shrink:0; width:20px; height:20px; padding:0; line-height:1;
+      display:flex; align-items:center; justify-content:center;
+      border:none; border-radius:6px; background:transparent;
+      color:var(--text-muted); font-size:.9rem; transition:.15s;
+    }
+    .assign-row-del:hover { background:rgba(220,38,38,.12); color:var(--danger); }
+    .assign-card[data-mode="allday"] .assign-row-times { display:none; }
+    .assign-card[data-mode="allday"] .assign-row + .assign-row {
+      padding-top:0; border-top:none;
+    }
+    .assign-card-foot {
+      display:flex; align-items:center; justify-content:space-between; gap:8px;
+      margin-top:1px;
+    }
+    .assign-mini {
+      font-size:.64rem; font-weight:500; letter-spacing:-.01em;
+      padding:3px 7px; border-radius:6px; border:1px solid transparent;
+      background:transparent; color:var(--text-muted); transition:.15s;
+      display:inline-flex; align-items:center; gap:4px;
+    }
+    .assign-mini:hover { background:var(--brand-bg); border-color:var(--brand-border); color:var(--brand); }
+    .assign-warn {
+      font-size:.62rem; color:var(--danger); letter-spacing:-.01em;
+      min-height:0; display:none;
+    }
+    .assign-warn.show { display:block; }
+
     /* ── Assignment dropdowns ── */
     .assign-select { appearance: auto; }
     .assign-select option {
@@ -2079,7 +2143,7 @@
           </div>
           <div>
             <div style="font-size:1.05rem; font-weight:600; color:var(--text-primary); letter-spacing:-0.02em; font-family:var(--font-display);">Daily Assignments</div>
-            <div style="font-size:.76rem; color:var(--text-muted); margin-top:1px; letter-spacing:-0.01em;">Assign a texter to each account for today</div>
+            <div style="font-size:.76rem; color:var(--text-muted); margin-top:1px; letter-spacing:-0.01em;">Assign a texter per account — split the day to record a shuffle at an exact time</div>
           </div>
         </div>
         <div style="display:flex; align-items:center; gap:10px;">
@@ -5839,11 +5903,15 @@ function _ahRender() {
         .sort((a, b) => new Date(a.effective_at) - new Date(b.effective_at))
         .map(s => {
           const by = (s.performed_by || "").split("@")[0];
+          // A hand-entered time is weaker evidence than one the server watched
+          // happen, so it says so rather than passing for a recorded shuffle.
+          const manual = (s.reason || "").startsWith("day-edit")
+            ? `<span class="ah-badge" title="Entered by hand, not observed live">manual</span>` : "";
           return `
             <div class="ah-strip-row">
               <span class="ah-strip-time">${esc(_ahTime(s.effective_at))}</span>
               <span class="ah-strip-acct">${esc(s.account_name || s.account_email || "—")}</span>
-              <span class="ah-strip-move">${esc(s.from || "—")} &rarr; <strong>${esc(s.to || "Unassigned")}</strong></span>
+              <span class="ah-strip-move">${esc(s.from || "—")} &rarr; <strong>${esc(s.to || "Unassigned")}</strong>${manual}</span>
               <span class="ah-strip-by" title="${esc(s.performed_by || "")}">by ${esc(by || "unknown")}</span>
             </div>`;
         }).join("");
@@ -6424,6 +6492,304 @@ function selectSearchableOption(optionEl, val, label) {
   _onAssignChange(input);
 }
 
+// ── Time-ranged ownership rows ────────────────────────────────────────────────
+// Every card holds one row per ownership range. A card in "allday" mode hides
+// its time inputs, so an account that never shuffled looks exactly like the
+// single dropdown it has always been. Splitting the day is the only way to
+// record a shuffle the server never witnessed — auditing yesterday, mostly.
+
+// Times are 24-hour: 11:00 is morning, 23:00 is night. "11pm" and "8:30 PM"
+// are accepted too and normalised on the way out, and every card prints its
+// day back in plain English — typing 11:00 when you meant 11 at night would
+// otherwise silently blame the wrong texter for a whole evening.
+const _TIME_RE = /^(\d{1,2})(?::([0-5]\d))?\s*(am|pm)?$/i;
+
+/** "HH:MM" / "11pm" / "8:30 PM" → minutes past local midnight. null if unparseable. */
+function _tmin(txt) {
+  const m = _TIME_RE.exec((txt || "").trim());
+  if (!m) return null;
+  let h = +m[1];
+  const mi = m[2] === undefined ? 0 : +m[2];
+  const ap = m[3] ? m[3].toLowerCase() : "";
+  if (ap) {
+    if (h < 1 || h > 12) return null;
+    if (ap === "am") h = (h === 12 ? 0 : h);
+    else             h = (h === 12 ? 12 : h + 12);
+  } else {
+    if (h === 24) return mi === 0 ? 1440 : null;
+    if (h > 23) return null;
+  }
+  return h * 60 + mi;
+}
+
+function _fmtMin(mins) {
+  if (mins >= 1440) return "24:00";
+  return `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
+}
+
+/** The clock label a person reads — "11:00 AM", "8:30 PM", "Midnight". */
+function _fmt12(mins) {
+  if (mins >= 1440 || mins === 0) return "Midnight";
+  const h = Math.floor(mins / 60), mi = mins % 60;
+  const suffix = h < 12 ? "AM" : "PM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(mi).padStart(2, "0")} ${suffix}`;
+}
+
+// ── Clock face: a typed hour:minute plus an AM/PM picker ──────────────────────
+// The number is free text so any minute can be recorded — a shuffle at 8:37
+// is expressible — while AM/PM is a picker so it can never be ambiguous.
+
+/** 24-hour minutes → what the two controls should show. */
+function _split12(mins) {
+  if (mins === null || mins >= 1440) return { text: "12:00", ap: "AM" };  // end of day
+  const h = Math.floor(mins / 60), mi = mins % 60;
+  return {
+    text: `${h % 12 === 0 ? 12 : h % 12}:${String(mi).padStart(2, "0")}`,
+    ap:   h < 12 ? "AM" : "PM",
+  };
+}
+
+/**
+ * What the two controls show → 24-hour minutes, or null if unusable.
+ *
+ * "8", "8:3", "8:30", "0830" and "8.30" all mean the same thing — people type
+ * a time however they type it, and rejecting them would just be pedantry.
+ * As an END, 12:00 AM is the FOLLOWING midnight: "11 PM to 12 AM" is the
+ * natural way to say a range that runs out the end of the day.
+ */
+function _join12(text, ap, isEnd) {
+  const raw = (text || "").trim().replace(/[.\s]/g, ":");
+  let m = /^(\d{1,2}):(\d{1,2})$/.exec(raw);
+  if (!m) {
+    const bare = /^(\d{1,4})$/.exec(raw);
+    if (!bare) return null;
+    const d = bare[1];
+    m = d.length <= 2 ? [null, d, "0"]
+                      : [null, d.slice(0, d.length - 2), d.slice(-2)];
+  }
+  let h = +m[1];
+  const mi = +m[2];
+  if (h < 1 || h > 12 || mi > 59) return null;
+  h = (ap === "AM") ? (h === 12 ? 0 : h) : (h === 12 ? 12 : h + 12);
+  const mins = h * 60 + mi;
+  return (isEnd && mins === 0) ? 1440 : mins;
+}
+
+/** Read one edge of a range off its row. */
+function _boundMins(row, which) {
+  return _join12(
+    row.querySelector(`.assign-${which}`)?.value,
+    row.querySelector(`.assign-${which}-ap`)?.value,
+    which === "end",
+  );
+}
+
+/** Write one edge of a range back onto its row. */
+function _setBound(row, which, mins) {
+  const { text, ap } = _split12(mins);
+  const t = row.querySelector(`.assign-${which}`);
+  const a = row.querySelector(`.assign-${which}-ap`);
+  if (t) t.value = text;
+  if (a) a.value = ap;
+}
+
+function _ampmSelectHtml(cls, ap) {
+  return `<select class="assign-ampm ${cls}" onchange="_onTimeInput(this)">`
+    + ["AM", "PM"].map(x =>
+        `<option value="${x}"${x === ap ? " selected" : ""}>${x}</option>`).join("")
+    + `</select>`;
+}
+
+function _assignRowHtml(seg) {
+  const texter = (seg && seg.texter_name) || "";
+  const start  = (seg && seg.start_time)  || "00:00";
+  const end    = (seg && seg.end_time)    || "24:00";
+  const s12 = _split12(_tmin(start) ?? 0);
+  const e12 = _split12(_tmin(end) ?? 1440);
+  // Times on their own line so the texter's full name fits underneath instead
+  // of being truncated to "Omar Osama Moh…".
+  return `
+    <div class="assign-row">
+      <div class="assign-row-times">
+        <span class="assign-tgroup">
+          <input type="text" class="assign-time assign-start" value="${esc(s12.text)}"
+                 maxlength="5" inputmode="numeric" placeholder="9:00"
+                 title="Start time — type the hour, e.g. 8:30"
+                 oninput="_onTimeInput(this)" onblur="_onTimeBlur(this)">
+          ${_ampmSelectHtml("assign-start-ap", s12.ap)}
+        </span>
+        <span class="assign-dash">&ndash;</span>
+        <span class="assign-tgroup">
+          <input type="text" class="assign-time assign-end" value="${esc(e12.text)}"
+                 maxlength="5" inputmode="numeric" placeholder="5:00"
+                 title="End time — type the hour, e.g. 11:00. 12:00 AM = end of day"
+                 oninput="_onTimeInput(this)" onblur="_onTimeBlur(this)">
+          ${_ampmSelectHtml("assign-end-ap", e12.ap)}
+        </span>
+        <button class="assign-row-del" title="Remove this range" onclick="_removeAssignRow(this)">&times;</button>
+      </div>
+      <div class="searchable-select-container" data-type="texter">
+        <input type="text" class="searchable-select-input assign-select" placeholder="— unassigned —"
+          data-value="${esc(texter)}" value="${esc(texter)}"
+          onfocus="showSearchableDropdown(this)" oninput="filterSearchableDropdown(this)"
+          onblur="setTimeout(()=>hideSearchableDropdown(this), 250)">
+        <svg class="searchable-select-arrow" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+        <div class="searchable-select-dropdown"></div>
+      </div>
+    </div>`;
+}
+
+/**
+ * Read a card's rows back out as the segment list the API expects.
+ * Times are canonicalised here rather than trusted as typed, so "8:30pm"
+ * still reaches the server as 20:30 even if the field was never blurred.
+ */
+function _cardSegments(card) {
+  return Array.from(card.querySelectorAll(".assign-row")).map(row => {
+    const s = _boundMins(row, "start");
+    const e = _boundMins(row, "end");
+    return {
+      texter_name: row.querySelector(".assign-select")?.getAttribute("data-value") || "",
+      start_time:  s === null ? "00:00" : _fmtMin(s),
+      end_time:    e === null ? "24:00" : _fmtMin(e),
+    };
+  }).filter(s => s.texter_name);
+}
+
+/**
+ * Reject a day the server would reject anyway, before anything is sent.
+ * Returns "" when the card is fine.
+ */
+function _validateCard(card) {
+  const rows = Array.from(card.querySelectorAll(".assign-row"));
+  const spans = [];
+  for (const row of rows) {
+    const sEl = row.querySelector(".assign-start");
+    const eEl = row.querySelector(".assign-end");
+    const texter = row.querySelector(".assign-select")?.getAttribute("data-value") || "";
+    const s = _boundMins(row, "start"), e = _boundMins(row, "end");
+    sEl.classList.toggle("is-invalid", s === null);
+    eEl.classList.toggle("is-invalid", e === null);
+    if (s === null) return `“${sEl.value}” isn’t a time — try 8:30`;
+    if (e === null) return `“${eEl.value}” isn’t a time — try 11:00`;
+    if (e <= s)     return `${_fmt12(s)} – ${_fmt12(e)} ends before it starts`;
+    if (texter) spans.push([s, e]);
+  }
+  spans.sort((a, b) => a[0] - b[0]);
+  for (let i = 1; i < spans.length; i++) {
+    if (spans[i][0] < spans[i - 1][1]) {
+      return `ranges overlap at ${_fmt12(spans[i][0])} — one account, one texter at a time`;
+    }
+  }
+  return "";
+}
+
+function _onTimeInput(input) {
+  const card = input.closest(".assign-card");
+  if (card) { card.classList.add("is-dirty"); _refreshCard(card); }
+}
+
+/** Tidy "8" into "8:00" once the field is left, so what's stored is visible. */
+function _onTimeBlur(input) {
+  const row   = input.closest(".assign-row");
+  const which = input.classList.contains("assign-start") ? "start" : "end";
+  const mins  = _boundMins(row, which);
+  if (mins !== null) _setBound(row, which, mins);
+  const card = input.closest(".assign-card");
+  if (card) _refreshCard(card);
+}
+
+function _addAssignRow(btn) {
+  const card = btn.closest(".assign-card");
+  const rowsEl = card.querySelector(".assign-rows");
+  const rows = Array.from(rowsEl.querySelectorAll(".assign-row"));
+  const last = rows[rows.length - 1];
+
+  let start = 0;
+  if (last) {
+    const lastStart = _boundMins(last, "start") ?? 0;
+    const lastEnd   = _boundMins(last, "end")   ?? 1440;
+    if (lastEnd >= 1440) {
+      // Carve the tail off the final range rather than appending past midnight.
+      // Half-way to the end, on the nearest 30 minutes, is a starting point the
+      // user edits — not a guess we pretend is right.
+      const mid = Math.min(1410, Math.max(lastStart + 30,
+        Math.round((lastStart + 1440) / 2 / 30) * 30));
+      _setBound(last, "end", mid);
+      start = mid;
+    } else {
+      start = lastEnd;
+    }
+  }
+
+  card.dataset.mode = "ranges";
+  rowsEl.insertAdjacentHTML("beforeend", _assignRowHtml({
+    texter_name: "", start_time: _fmtMin(start), end_time: "24:00",
+  }));
+  card.classList.add("is-dirty");
+  _refreshCard(card);
+}
+
+function _removeAssignRow(btn) {
+  const card = btn.closest(".assign-card");
+  const rowsEl = card.querySelector(".assign-rows");
+  btn.closest(".assign-row").remove();
+  if (!rowsEl.querySelector(".assign-row")) {
+    rowsEl.innerHTML = _assignRowHtml(null);
+    card.dataset.mode = "allday";
+  }
+  card.classList.add("is-dirty");
+  _refreshCard(card);
+}
+
+/** Collapse a split day back to one all-day range, keeping the first texter. */
+function _toggleAssignMode(btn) {
+  const card = btn.closest(".assign-card");
+  const rowsEl = card.querySelector(".assign-rows");
+  if (card.dataset.mode === "allday") {
+    card.dataset.mode = "ranges";
+  } else {
+    const first = _cardSegments(card)[0];
+    rowsEl.innerHTML = _assignRowHtml({
+      texter_name: first ? first.texter_name : "",
+      start_time: "00:00", end_time: "24:00",
+    });
+    card.dataset.mode = "allday";
+  }
+  card.classList.add("is-dirty");
+  _refreshCard(card);
+}
+
+/** Repaint a card's status colours, footer label and validation warning. */
+function _refreshCard(card) {
+  const segs = _cardSegments(card);
+  const hasTexter = segs.length > 0;
+  const ranged = card.dataset.mode === "ranges";
+
+  card.style.borderColor = hasTexter ? "rgba(37,99,235,.35)" : "rgba(255,255,255,.07)";
+  card.style.background  = hasTexter ? "rgba(37,99,235,.07)" : "var(--surface-subtle)";
+
+  card.querySelectorAll(".assign-select").forEach(sel => {
+    const on = !!sel.getAttribute("data-value");
+    sel.style.borderColor = on ? "rgba(37,99,235,.3)" : "rgba(255,255,255,.08)";
+    sel.style.color = on ? "var(--text-primary)" : "var(--text-muted)";
+  });
+
+  const dot = card.querySelector(".assign-dot");
+  if (dot) dot.style.background = hasTexter ? "#22c55e" : "#ef4444";
+
+  const toggle = card.querySelector(".assign-toggle");
+  if (toggle) toggle.textContent = ranged ? "↩ All day" : "⏱ Split day";
+
+  const warnEl = card.querySelector(".assign-warn");
+  if (warnEl) {
+    const problem = _validateCard(card);
+    warnEl.textContent = problem;
+    warnEl.classList.toggle("show", !!problem);
+  }
+}
+
 async function loadAssignments() {
   const dateEl = document.getElementById("assign-date");
   if (!dateEl) return;
@@ -6434,7 +6800,9 @@ async function loadAssignments() {
   listEl.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;padding:2rem 0;"><span class="spin"></span></div>`;
 
   try {
-    const res  = await fetch(`/api/assignments?date=${encodeURIComponent(date)}`);
+    // day-segments returns the real ownership timeline, falling back to the
+    // day-grained row rendered as a single all-day range.
+    const res  = await fetch(`/api/assignments/day-segments?date=${encodeURIComponent(date)}`);
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "Failed to load");
 
@@ -6444,34 +6812,41 @@ async function loadAssignments() {
       return;
     }
 
-    const rosterOptions = AGENT_ROSTER.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join("");
     listEl.style.display = "grid";
 
-    // Split into assigned and unassigned accounts
-    const full = rows.filter(r => !!r.agent_name);
-    const none = rows.filter(r => !r.agent_name);
+    const full = rows.filter(r => (r.segments || []).length > 0);
+    const none = rows.filter(r => (r.segments || []).length === 0);
 
     function cardHtml(r) {
-      const hasTexter = !!r.agent_name;
-      const status    = hasTexter ? "full" : "none";
-      const borderColor = status === "full" ? "rgba(37,99,235,.35)" : "rgba(255,255,255,.07)";
-      const bgColor     = status === "full" ? "rgba(37,99,235,.07)" : "var(--surface-subtle)";
-      const dotColor   = status === "full" ? "#22c55e" : "#ef4444";
+      const segs = (r.segments || []);
+      const hasTexter = segs.length > 0;
+      const isAllDay =
+        segs.length <= 1 &&
+        (!segs[0] || ((segs[0].start_time || "00:00") === "00:00" &&
+                      (segs[0].end_time || "24:00") === "24:00"));
+      const borderColor = hasTexter ? "rgba(37,99,235,.35)" : "rgba(255,255,255,.07)";
+      const bgColor     = hasTexter ? "rgba(37,99,235,.07)" : "var(--surface-subtle)";
+      const dotColor    = hasTexter ? "#22c55e" : "#ef4444";
       const displayName = r.account_name || (r.account_email || "").split("@")[0];
+      const rowsHtml = (segs.length ? segs : [null]).map(_assignRowHtml).join("");
       return `
-        <div style="display:flex;flex-direction:column;gap:7px;padding:12px 14px;border-radius:10px;border:1px solid ${borderColor};background:${bgColor};transition:border-color .18s;" data-email="${esc(r.account_email)}">
+        <div class="assign-card" data-mode="${isAllDay ? "allday" : "ranges"}"
+             style="display:flex;flex-direction:column;gap:7px;padding:12px 14px;border-radius:10px;border:1px solid ${borderColor};background:${bgColor};transition:border-color .18s;"
+             data-email="${esc(r.account_email)}">
           <div style="display:flex;align-items:center;gap:6px;">
-            <span style="width:7px;height:7px;border-radius:50%;background:${dotColor};flex-shrink:0;"></span>
+            <span class="assign-dot" style="width:7px;height:7px;border-radius:50%;background:${dotColor};flex-shrink:0;"></span>
             <div style="min-width:0;">
               <div style="font-size:.76rem;font-weight:700;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(r.account_email)}">${esc(displayName)}</div>
               <div style="font-size:.62rem;color:var(--text-muted);margin-top:1px;">${esc(r.account_email)}</div>
             </div>
           </div>
-          <div class="searchable-select-container" data-type="texter">
-            <input type="text" class="searchable-select-input assign-select" placeholder="— unassigned —"
-              onfocus="showSearchableDropdown(this)" oninput="filterSearchableDropdown(this)" onblur="setTimeout(()=>hideSearchableDropdown(this), 250)">
-            <svg class="searchable-select-arrow" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
-            <div class="searchable-select-dropdown"></div>
+          <div class="assign-rows">${rowsHtml}</div>
+          <div class="assign-warn"></div>
+          <div class="assign-card-foot">
+            <button class="assign-mini assign-toggle" onclick="_toggleAssignMode(this)"
+              title="Record a mid-day handover at an exact time">${isAllDay ? "⏱ Split day" : "↩ All day"}</button>
+            <button class="assign-mini" onclick="_addAssignRow(this)"
+              title="Add another time range">+ Add range</button>
           </div>
         </div>`;
     }
@@ -6483,17 +6858,7 @@ async function loadAssignments() {
       ...none.map(cardHtml),
     ].join("");
 
-    // Pre-fill existing assignments
-    rows.forEach(r => {
-      const row = listEl.querySelector(`[data-email="${r.account_email.replace(/"/g,'&quot;')}"]`);
-      if (!row) return;
-      const sel = row.querySelector(".assign-select");
-      if (sel) {
-        sel.setAttribute("data-value", r.agent_name || "");
-        sel.value = r.agent_name || "";
-      }
-      _onAssignChange(sel, false);
-    });
+    listEl.querySelectorAll(".assign-card").forEach(_refreshCard);
 
     // Populate the history account dropdown
     const histSel = document.getElementById("assign-history-account");
@@ -6507,25 +6872,10 @@ async function loadAssignments() {
 }
 
 function _onAssignChange(sel, isUserChange = true) {
-  const card = sel ? sel.closest("[data-email]") : null;
+  const card = sel ? sel.closest(".assign-card") : null;
   if (!card) return;
   if (isUserChange) card.classList.add("is-dirty");
-  const texterSel = card.querySelector(".assign-select");
-  const texterVal = texterSel ? (texterSel.getAttribute("data-value") || "") : "";
-
-  const hasTexter = !!texterVal;
-  const status = hasTexter ? "full" : "none";
-  const borderColor = status === "full" ? "rgba(37,99,235,.35)" : "rgba(255,255,255,.07)";
-  const bgColor = status === "full" ? "rgba(37,99,235,.07)" : "var(--surface-subtle)";
-
-  card.style.borderColor = borderColor;
-  card.style.background  = bgColor;
-  if (texterSel) {
-    texterSel.style.borderColor = status === "full" ? "rgba(37,99,235,.3)" : "rgba(255,255,255,.08)";
-    texterSel.style.color = (hasTexter ? "var(--text-primary)" : "var(--text-muted)");
-  }
-  const dot = card.querySelector("span[style*='border-radius:50%']");
-  if (dot) dot.style.background = status === "full" ? "#22c55e" : "#ef4444";
+  _refreshCard(card);
 }
 
 async function copyLatestAssignments(btn) {
@@ -6578,67 +6928,121 @@ async function saveAssignments() {
   const dateEl = document.getElementById("assign-date");
   const date   = dateEl ? dateEl.value : _todayISO();
   const msgEl  = document.getElementById("assign-msg");
+  const isToday = date === _todayISO();
 
-  const allCards = document.querySelectorAll("#assign-list [data-email]");
-  const rows = Array.from(allCards).filter(card => {
-    const sel       = card.querySelector(".assign-select");
-    const agentName = sel ? (sel.getAttribute("data-value") || "") : "";
-    return agentName || card.classList.contains("is-dirty");
+  const setMsg = (text, color, hold = 5000) => {
+    if (!msgEl) return;
+    msgEl.style.color = color;
+    msgEl.textContent = text;
+    setTimeout(() => { if (msgEl && msgEl.textContent === text) msgEl.textContent = ""; }, hold);
+  };
+
+  const allCards = Array.from(document.querySelectorAll("#assign-list .assign-card"));
+
+  // Nothing is sent until every card is valid — a half-applied day would leave
+  // the timeline in a state nobody asked for.
+  for (const card of allCards) {
+    const problem = _validateCard(card);
+    if (problem) {
+      _refreshCard(card);
+      card.scrollIntoView({ behavior: "smooth", block: "center" });
+      setMsg(`${card.dataset.email}: ${problem}`, "#dc2626", 7000);
+      return;
+    }
+  }
+
+  // Two shapes of save, routed by what the card actually says:
+  //  · an all-day card on TODAY is a live shuffle — the existing Save All path,
+  //    which stamps the boundary at the server clock and diffs before writing.
+  //  · anything else (explicit ranges, or any past date) rewrites that day's
+  //    timeline at the times the user typed. Past dates only send DIRTY cards,
+  //    so an account nobody touched keeps its recorded history byte-for-byte.
+  const simple = [], ranged = [], simpleCards = [], rangedCards = [];
+  allCards.forEach(card => {
+    const segs  = _cardSegments(card);
+    const dirty = card.classList.contains("is-dirty");
+    if (card.dataset.mode === "allday" && isToday) {
+      if (segs.length || dirty) {
+        simple.push({
+          account_email: card.dataset.email,
+          agent_name:    segs.length ? segs[0].texter_name : "",
+        });
+        simpleCards.push(card);
+      }
+    } else if (dirty) {
+      ranged.push({ account_email: card.dataset.email, segments: segs });
+      rangedCards.push(card);
+    }
   });
 
-  if (rows.length === 0) {
-    if (msgEl) {
-      msgEl.style.color = "var(--text-muted)";
-      msgEl.textContent = "Nothing to save — select a texter first";
-      setTimeout(() => { if (msgEl) msgEl.textContent = ""; }, 3000);
-    }
+  if (!simple.length && !ranged.length) {
+    setMsg(isToday ? "Nothing to save — select a texter first"
+                   : "Nothing changed on this date",
+           "var(--text-muted)", 3000);
     return;
   }
 
-  // One request carrying the desired state of every card. The server diffs it
-  // against current ownership and records a shuffle only where the texter
-  // actually changed — clicking Save All with nothing changed writes nothing.
-  const assignments = rows.map(row => {
-    const sel = row.querySelector(".assign-select");
-    return {
-      account_email: row.dataset.email,
-      agent_name:    sel ? (sel.getAttribute("data-value") || "") : "",
-    };
-  });
+  const parts = [];
+  let warn = false;
 
   try {
-    const res  = await fetch("/api/assignments/save-all", {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ assigned_date: date, assignments }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.detail || "Save failed");
+    if (simple.length) {
+      const res  = await fetch("/api/assignments/save-all", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ assigned_date: date, assignments: simple }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || "Save failed");
+      simpleCards.forEach(card => card.classList.remove("is-dirty"));
 
-    rows.forEach(row => row.classList.remove("is-dirty"));
-
-    if (msgEl) {
-      const shuffles = (data.shuffles || []).filter(s => s.action === "shuffle");
-      let text = `✓ Saved — ${data.changed} change${data.changed !== 1 ? "s" : ""}`;
+      let text = `${data.changed} change${data.changed !== 1 ? "s" : ""}`;
       if (data.unchanged) text += `, ${data.unchanged} unchanged`;
-      if (shuffles.length) {
-        const at = new Date(shuffles[0].at).toLocaleTimeString([], {
+      const live = (data.shuffles || []).filter(s => s.action === "shuffle");
+      if (live.length) {
+        const at = new Date(live[0].at).toLocaleTimeString([], {
           hour: "2-digit", minute: "2-digit",
         });
-        text += ` · ${shuffles.length} shuffle${shuffles.length !== 1 ? "s" : ""} at ${at}`;
+        text += ` · ${live.length} shuffle${live.length !== 1 ? "s" : ""} at ${at}`;
       }
-      msgEl.style.color = (data.errors && data.errors.length) ? "#d97706" : "#059669";
-      msgEl.textContent = text;
-      if (data.errors && data.errors.length) console.warn("Assignment save notes:", data.errors);
-      setTimeout(() => { if (msgEl) msgEl.textContent = ""; }, 5000);
+      parts.push(text);
+      if (data.errors && data.errors.length) {
+        warn = true;
+        console.warn("Assignment save notes:", data.errors);
+      }
     }
+
+    if (ranged.length) {
+      const res  = await fetch("/api/assignments/save-day", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ assigned_date: date, accounts: ranged, reattribute: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || "Save failed");
+      rangedCards.forEach(card => card.classList.remove("is-dirty"));
+
+      const moves = (data.shuffles || []).filter(s => s.action === "shuffle");
+      let text = `${data.periods} range${data.periods !== 1 ? "s" : ""} on `
+               + `${data.accounts} account${data.accounts !== 1 ? "s" : ""}`;
+      if (moves.length) {
+        text += ` · ${moves.length} shuffle${moves.length !== 1 ? "s" : ""}`;
+      }
+      const ra = data.reattribution;
+      if (ra) {
+        const touched = (ra.messages_exact || 0) + (ra.messages_unassigned || 0);
+        if (touched) text += ` · re-attributed ${touched} message${touched !== 1 ? "s" : ""}`;
+      }
+      parts.push(text);
+    }
+
+    setMsg(`✓ Saved — ${parts.join(" · ")}`, warn ? "#d97706" : "#059669");
     await refreshTodayAssignments();
+    // The day's ranges were normalised server-side (merged, trimmed), so reload
+    // rather than leaving the cards showing what was typed.
+    if (ranged.length) await loadAssignments();
   } catch (err) {
-    if (msgEl) {
-      msgEl.style.color = "#dc2626";
-      msgEl.textContent = `Save failed: ${err.message}`;
-      setTimeout(() => { if (msgEl) msgEl.textContent = ""; }, 5000);
-    }
+    setMsg(`Save failed: ${err.message}`, "#dc2626");
   }
 }
 
