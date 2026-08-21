@@ -6747,10 +6747,16 @@ function _removeAssignRow(btn) {
 function _toggleAssignMode(btn) {
   const card = btn.closest(".assign-card");
   const rowsEl = card.querySelector(".assign-rows");
+  const first = _cardSegments(card)[0];
   if (card.dataset.mode === "allday") {
+    // Give the new range a sensible starting shift (10a–7p) instead of
+    // midnight–midnight — the head edits it from here, doesn't retype it.
+    rowsEl.innerHTML = _assignRowHtml({
+      texter_name: first ? first.texter_name : "",
+      start_time: "10:00", end_time: "19:00",
+    });
     card.dataset.mode = "ranges";
   } else {
-    const first = _cardSegments(card)[0];
     rowsEl.innerHTML = _assignRowHtml({
       texter_name: first ? first.texter_name : "",
       start_time: "00:00", end_time: "24:00",
