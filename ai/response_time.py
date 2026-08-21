@@ -46,18 +46,37 @@ BUSINESS_START_HOUR = _env_int("BUSINESS_START_HOUR", 8)   # 8:00 AM
 BUSINESS_END_HOUR = _env_int("BUSINESS_END_HOUR", 20)     # 8:00 PM
 
 # Conversation labels that get response-time auditing.
-TARGET_LABELS = {"lead", "potential", "hl", "wl", "ap", "undefined"}
+# Includes the bare funnel labels plus the WL/AP/HL Drip follow-up tracks —
+# those are still an "engaged lead awaiting reply", just later in the funnel.
+TARGET_LABELS = {"lead", "potential", "hl", "wl", "ap", "undefined", "wl drip", "ap drip", "hl drip"}
+
+# Terminal/disqualifying labels — when one of these is also assigned (e.g.
+# "FUI, WL Drip, Not Interested"), the lead is no longer actively engaged, so a
+# slow reply shouldn't be penalized even though the base track label matches.
+_EXCLUDE_LABELS = {
+    "not interested", "no response", "dnc", "do not call", "wrong number",
+    "sold", "under contract", "voicemail", "no answer", "stopped responding",
+    "remove", "remove me", "unsubscribe",
+}
 
 _LABEL_SPLIT_RE = re.compile(r"[,;/|+]")
 
 
 def _labels_match(assigned_labels) -> bool:
-    """True if any assigned label is one of the live/target categories."""
+    """True if the assigned labels put this conversation in scope for
+    response-time auditing (an active lead or WL/AP/HL Drip track), and none
+    of them mark it as terminal/disqualified (opted out, DNC, sold, etc.)."""
+    parts = set()
     for raw in assigned_labels or []:
         for part in _LABEL_SPLIT_RE.split(str(raw).lower()):
-            if part.strip() in TARGET_LABELS:
-                return True
-    return False
+            p = part.strip()
+            if p:
+                parts.add(p)
+
+    if parts & _EXCLUDE_LABELS:
+        return False
+
+    return bool(parts & TARGET_LABELS)
 
 
 def _is_agent(sender: str | None) -> bool:
