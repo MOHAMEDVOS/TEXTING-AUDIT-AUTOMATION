@@ -33,6 +33,9 @@ from config.settings import (
     SEMANTIC_MAX_SIMILARITY,
     SEMANTIC_MIN_PROMOTE,
     SEMANTIC_MAX_PER_RUN,
+    PREFILTER_T2_LIVE,
+    PREFILTER_T3_LIVE,
+    PREFILTER_SHADOW_MODE,
 )
 
 logger = logging.getLogger(__name__)
@@ -244,9 +247,24 @@ def _trigger_rebuild(dsn: str) -> bool:
     """
     Trigger FAISS index rebuild + T3 retrain.
 
+    Skipped entirely when neither Tier 2 nor Tier 3 can consume the artifacts:
+    a full rebuild re-embeds the whole training corpus through the transformer,
+    which is the single most expensive thing this codebase does. Promotion still
+    happens, so the corpus keeps growing — run the rebuild by hand
+    (`python -m ai.prefilter.index_builder --rebuild` then `python -m
+    ai.prefilter.train`) when turning a tier live.
+
     Imports are deferred to avoid circular imports at module load time.
     Returns True if rebuild completed successfully.
     """
+    if not (PREFILTER_T2_LIVE or PREFILTER_T3_LIVE or PREFILTER_SHADOW_MODE):
+        logger.info(
+            "[SemanticLearner] Skipping rebuild — T2/T3 are not live, so the "
+            "index and classifier are never read. Candidates stay promoted; "
+            "rebuild manually when enabling a tier."
+        )
+        return False
+
     try:
         from ai.prefilter.index_builder import main as rebuild_index
         from ai.prefilter.train import main as retrain_classifier

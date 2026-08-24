@@ -116,6 +116,13 @@ PREFILTER_T3_LABEL_CONFIDENCE = float(os.getenv("PREFILTER_T3_LABEL_CONFIDENCE",
 # Embedding model (sentence-transformers, downloaded on first use).
 PREFILTER_EMBEDDING_MODEL = os.getenv("PREFILTER_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 
+# Torch intra-op threads per process. Default 1: several audit subprocesses may
+# embed concurrently, and torch otherwise grabs one thread per visible host core
+# (ignoring the container's CPU quota), so N processes x C cores oversubscribes
+# badly — the CPU is spent context-switching, not embedding. Raise only when a
+# single process has the box to itself.
+PREFILTER_TORCH_THREADS = int(os.getenv("PREFILTER_TORCH_THREADS", "1"))
+
 # Persistent embedding service (Solution B). When set, embedder.py fetches
 # vectors over HTTP from a long-lived process (the dashboard) instead of
 # loading the ~80MB sentence-transformer model in every audit subprocess.

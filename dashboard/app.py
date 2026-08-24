@@ -406,31 +406,8 @@ async def _fetch_agents_with_scores() -> list[dict]:
             )
         ORDER BY a.name
     """
-    # All audit_scores rows — aggregate per_conversation across every run per agent.
-    # ORDER BY id ASC so that later rows overwrite earlier ones for the same contact.
-    sql_all = "SELECT agent_id, details FROM audit_scores ORDER BY id ASC"
-
     async with app.state.pool.acquire() as conn:
-        rows     = await conn.fetch(sql)
-        all_rows = await conn.fetch(sql_all)
-
-    # Per agent: deduplicated contact map — latest run’s entry wins for same contact
-    agg: dict[int, dict[str, dict]] = {}
-    for ar in all_rows:
-        aid = ar["agent_id"]
-        if aid not in agg:
-            agg[aid] = {}
-        try:
-            d = ar["details"] or {}
-            if isinstance(d, str):
-                try: d = json.loads(d)
-                except Exception: d = {}
-            for pc in d.get("per_conversation", []):
-                key = (pc.get("contact") or "").lower().strip()
-                if key:
-                    agg[aid][key] = pc
-        except (json.JSONDecodeError, TypeError):
-            pass
+        rows = await conn.fetch(sql)
 
     # ── Batched per-agent stats: fixed query count regardless of agent count ──
     # (agent_id, latest audit_date) pairs for agents that have been scored

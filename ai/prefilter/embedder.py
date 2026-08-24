@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import threading
 import urllib.request
 from typing import Optional
@@ -25,6 +26,12 @@ from typing import Optional
 from config import settings
 
 logger = logging.getLogger(__name__)
+
+# Cap BLAS/OpenMP threading before torch is imported — these are read at import
+# time, so setting them later has no effect. Only fills in what the environment
+# hasn't already chosen.
+for _var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
+    os.environ.setdefault(_var, str(settings.PREFILTER_TORCH_THREADS))
 
 _model = None
 _model_lock = threading.Lock()
@@ -54,8 +61,16 @@ def get_model():
                 "Install with: pip install sentence-transformers"
             )
             return None
+        # Belt-and-braces: the env vars above only bind if nothing imported torch
+        # first, so pin the thread count on the live runtime too.
+        try:
+            import torch
+            torch.set_num_threads(settings.PREFILTER_TORCH_THREADS)
+        except Exception as _e:
+            logger.debug("swallowed: %r", _e)
         logger.info(
-            f"[Prefilter] Loading embedding model: {settings.PREFILTER_EMBEDDING_MODEL}"
+            f"[Prefilter] Loading embedding model: {settings.PREFILTER_EMBEDDING_MODEL} "
+            f"(torch threads={settings.PREFILTER_TORCH_THREADS})"
         )
         _model = SentenceTransformer(settings.PREFILTER_EMBEDDING_MODEL)
         logger.info("[Prefilter] Embedding model loaded.")
