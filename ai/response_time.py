@@ -46,9 +46,14 @@ BUSINESS_START_HOUR = _env_int("BUSINESS_START_HOUR", 8)   # 8:00 AM
 BUSINESS_END_HOUR = _env_int("BUSINESS_END_HOUR", 20)     # 8:00 PM
 
 # Conversation labels that get response-time auditing.
-# Includes the bare funnel labels plus the WL/AP/HL Drip follow-up tracks —
-# those are still an "engaged lead awaiting reply", just later in the funnel.
-TARGET_LABELS = {"lead", "potential", "hl", "wl", "ap", "undefined", "wl drip", "ap drip", "hl drip"}
+# Includes the bare funnel labels, the WL/AP/HL Drip follow-up tracks, and the
+# push-stage labels (ai/prefilter/label_validator.py's _LOCAL_PUSH_LABELS) —
+# all still an "engaged lead awaiting reply", just later in the funnel.
+TARGET_LABELS = {
+    "lead", "potential", "hl", "wl", "ap", "undefined",
+    "wl drip", "ap drip", "hl drip",
+    "lead pushed", "pushed to client", "waiting to be pushed",
+}
 
 # Terminal/disqualifying labels — when one of these is also assigned (e.g.
 # "FUI, WL Drip, Not Interested"), the lead is no longer actively engaged, so a
