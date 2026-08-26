@@ -12,33 +12,24 @@ from typing import Optional
 
 import httpx
 
-from config.settings import DEFAULT_SAMPLE_SIZE, get_now
+from config.settings import (
+    DEFAULT_SAMPLE_SIZE, get_now, TIMEZONE,
+    is_all_labels_filter_value as _is_all_labels_shared,
+    normalize_label_filter as _normalize_label_shared,
+)
 from scraper.firebase_auth import firebase_sign_in
 from scraper.gql_client import SmarterContactGQL, _date_range_for_filter
 import re
 
-_ALL_LABEL_FILTER_VALUES = {"all labels", "all label", "all lable", "all", "all lables"}
-
-
-def _is_all_labels_filter_value(value: str) -> bool:
-    normalized = re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
-    return normalized in _ALL_LABEL_FILTER_VALUES
+# Delegates to the single shared implementation in config.settings (deep review
+# F37). The previous local copy had to stay in lockstep with dashboard/app.py's
+# copy across the dashboard->subprocess boundary, and nothing enforced that.
+_is_all_labels_filter_value = _is_all_labels_shared
 
 
 def normalize_label_filter(labels: str | None) -> str | None:
-    """
-    Normalize the optional SmarterContact label filter.
-    Copied locally to avoid importing browser_bot (which loads Playwright).
-    """
-    if not labels:
-        return None
-    requested = [label.strip() for label in labels.split(",") if label.strip()]
-    if not requested:
-        return None
-    requested = [label for label in requested if not _is_all_labels_filter_value(label)]
-    if not requested:
-        return None
-    return ",".join(requested)
+    """Normalize the optional SmarterContact label filter. None means 'no filter'."""
+    return _normalize_label_shared(labels) or None
 
 
 logger = logging.getLogger(__name__)
@@ -242,7 +233,16 @@ class SmarterContactAPIBot:
 
                 last_at = convo.get("lastMessageAt") or ""
                 try:
-                    convo_date = datetime.fromisoformat(last_at.replace("Z", "+00:00")).strftime("%m/%d/%Y") if last_at else ""
+                    # lastMessageAt is UTC. Formatting it directly filed every
+                    # conversation after ~8 PM local under the NEXT day, which
+                    # mis-attributed evening work to the next day's texter and
+                    # hid it from the correct day's report (deep review F23).
+                    convo_date = (
+                        datetime.fromisoformat(last_at.replace("Z", "+00:00"))
+                        .astimezone(TIMEZONE)
+                        .strftime("%m/%d/%Y")
+                        if last_at else ""
+                    )
                 except Exception:
                     convo_date = ""
 
@@ -254,6 +254,11 @@ class SmarterContactAPIBot:
                     "convo_date": convo_date,
                     "full_transcript": full_transcript,
                     "parsed_messages": parsed_messages,
+                    # Dedup key for db.mark_chat_audited(), written by the scorer
+                    # once this conversation has actually been scored. Must match
+                    # exactly what is_chat_audited() checks above (deep review F7).
+                    "_dedup_preview": convo.get("lastMessage", {}).get("content") or "",
+                    "_dedup_agent_email": self.email,
                 }
 
             for batch_start in range(0, len(convos), MSG_BATCH_SIZE):

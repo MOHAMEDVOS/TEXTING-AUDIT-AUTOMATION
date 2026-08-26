@@ -35,3 +35,7 @@ xgboost>=2.0.0
 scikit-learn==1.7.2  # pinned: highest version compatible with Python 3.10 (Railway). .joblib artifacts are version-sensitive — retrain after any upgrade.
 pytz>=2024.1
 
+# Testing (deep review F20 — the project previously had no tests and no CI)
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+

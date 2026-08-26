@@ -19,6 +19,12 @@ logger = logging.getLogger(__name__)
 
 GQL_URL = "https://api.smartercontact.com/gql"
 
+# Upper bound on inbox pagination (deep review F39). At the default batch size of
+# 50 this scans up to 10,000 conversations before giving up — generous for any
+# legitimate run, but bounded, so an "all time" + rare-label combination can no
+# longer page indefinitely.
+_MAX_PAGES = 200
+
 # ── Captured GQL queries (verbatim from browser network sniffer) ──────────────
 
 Q_FIND_CONVERSATIONS = """
@@ -227,8 +233,21 @@ class SmarterContactGQL:
         eligible = []
         next_id, next_ts, page = None, None, 0
         total_seen = skip_date = skip_no_label = skip_label_filter = skip_blacklist = 0
+        hit_page_cap = False
 
         while len(eligible) < limit * 2:
+            # Hard page cap. With date_filter="all_time" the date-boundary break
+            # below never applies, so a restrictive label filter could page through
+            # an entire inbox unbounded until the 45-minute run timeout killed the
+            # process (deep review F39). Truncating loudly beats being killed.
+            if page >= _MAX_PAGES:
+                hit_page_cap = True
+                logger.warning(
+                    f"[GQL] Page cap reached ({_MAX_PAGES} pages, {total_seen} "
+                    f"conversations scanned, {len(eligible)} eligible). Results are "
+                    f"TRUNCATED — narrow the date range or label filter for full coverage."
+                )
+                break
             pg = {"moveTo": "NEXT", "limit": batch_size}
             if next_id:
                 pg["nextId"] = next_id
@@ -293,6 +312,7 @@ class SmarterContactGQL:
             f"[GQL] find_conversations done: pages={page} seen={total_seen} eligible={len(eligible)} | "
             f"skipped: date={skip_date} no_label={skip_no_label} "
             f"label_filter={skip_label_filter} blacklist={skip_blacklist}"
+            + ("  [TRUNCATED AT PAGE CAP]" if hit_page_cap else "")
         )
         return eligible[:limit]
 

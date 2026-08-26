@@ -127,10 +127,33 @@ class RateLimiter:
     that key after creation).
     """
 
+    # Buckets idle longer than this are discarded. Without eviction the dict grew
+    # without bound — one entry per (actor, route) forever (deep review F26).
+    _IDLE_EVICT_SECONDS = 3600.0
+    _EVICT_EVERY = 500  # checks between sweeps
+
     def __init__(self) -> None:
         self._buckets: dict[str, TokenBucket] = {}
         self._lock = threading.Lock()
         self._global_rejected: int = 0
+        self._checks_since_evict: int = 0
+
+    def _evict_idle_locked(self) -> int:
+        """Drop buckets untouched for _IDLE_EVICT_SECONDS. Caller must hold _lock.
+
+        A full bucket that has been idle carries no state worth keeping — a fresh
+        one starts full too — so eviction cannot let anyone exceed their limit.
+        """
+        cutoff = time.monotonic() - self._IDLE_EVICT_SECONDS
+        stale = [
+            k for k, b in self._buckets.items()
+            if b._last_refill < cutoff and b._tokens >= b.capacity
+        ]
+        for k in stale:
+            del self._buckets[k]
+        if stale:
+            logger.debug(f"[RateLimiter] Evicted {len(stale)} idle bucket(s)")
+        return len(stale)
 
     # ------------------------------------------------------------------
 
@@ -152,6 +175,10 @@ class RateLimiter:
         """
         # Lazy bucket creation (thread-safe)
         with self._lock:
+            self._checks_since_evict += 1
+            if self._checks_since_evict >= self._EVICT_EVERY:
+                self._checks_since_evict = 0
+                self._evict_idle_locked()
             if key not in self._buckets:
                 self._buckets[key] = TokenBucket(capacity=capacity, rate=rate)
                 logger.debug(
@@ -182,7 +209,14 @@ class RateLimiter:
         top-level summary.
         """
         with self._lock:
-            buckets = {name: bucket.status() for name, bucket in self._buckets.items()}
+            self._evict_idle_locked()
+            # Keys embed the actor (an email address, or ip:<addr>). Returning them
+            # raw disclosed every user's identity/IP to any authenticated caller,
+            # so they are masked here (deep review F26).
+            buckets = {
+                _mask_bucket_key(name): bucket.status()
+                for name, bucket in self._buckets.items()
+            }
             total_rejected = self._global_rejected
 
         return {
@@ -227,7 +261,31 @@ def get_rate_limiter() -> RateLimiter:
 # Bucket key helpers (keeps naming consistent across modules)
 # ---------------------------------------------------------------------------
 
-def route_bucket(ip: str, route_prefix: str) -> str:
-    """Bucket key for a dashboard route + client IP."""
+def _mask_bucket_key(key: str) -> str:
+    """Hide the actor portion of a bucket key for monitoring output.
+
+    Keys look like "route_<actor>_<route>" where actor is an email address or
+    "ip:<addr>". Both identify a person, so neither belongs in a response any
+    authenticated user can fetch (deep review F26).
+    """
+    if not key.startswith("route_"):
+        return key
+    rest = key[len("route_"):]
+    parts = rest.split("_")
+    if len(parts) < 2:
+        return key
+    actor, route = parts[0], "_".join(parts[1:])
+    if "@" in actor:
+        name, _, domain = actor.partition("@")
+        actor = f"{name[:2]}***@{domain}"
+    elif actor.startswith("ip:"):
+        actor = "ip:***"
+    else:
+        actor = actor[:2] + "***"
+    return f"route_{actor}_{route}"
+
+
+def route_bucket(actor: str, route_prefix: str) -> str:
+    """Bucket key for a dashboard route + actor (user email, or ip:<addr>)."""
     safe_route = route_prefix.replace("/", "_").strip("_")
-    return f"route_{ip}_{safe_route}"
+    return f"route_{actor}_{safe_route}"

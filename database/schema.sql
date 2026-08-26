@@ -220,17 +220,70 @@ CREATE INDEX IF NOT EXISTS idx_trends_agent ON trend_snapshots(agent_name);
 CREATE INDEX IF NOT EXISTS idx_trends_date  ON trend_snapshots(audit_date);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_trends_unique ON trend_snapshots(agent_name, audit_date, account_email);
 
--- ── api_keys (Groq shared pool) ───────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS api_keys (
-    id           SERIAL PRIMARY KEY,
-    provider     TEXT NOT NULL,                -- 'groq'
-    api_key      TEXT NOT NULL,
-    agent_name   TEXT,                         -- NULL = shared pool key (preferred)
-    created_at   TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(provider, api_key, agent_name)
+-- ── ML pre-filter telemetry (folded in from migration 001) ───────────────────
+-- These were ONLY ever in database/migrations/001_*.sql, which is applied by
+-- hand. schema.sql is what actually runs on every boot, so on any database
+-- provisioned the documented way these tables never existed and every
+-- prefilter decision insert failed silently — leaving shadow mode, the eval
+-- harness, and the FALSE-CLEAN promotion gate with no data at all
+-- (deep review F8).
+CREATE TABLE IF NOT EXISTS prefilter_decisions (
+    id               BIGSERIAL PRIMARY KEY,
+    conversation_id  INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    tier_hit         SMALLINT NOT NULL CHECK (tier_hit BETWEEN 1 AND 4),
+    decision         TEXT CHECK (decision IN ('short_circuit', 'escalate')),
+    confidence       REAL,
+    predicted_scores JSONB,
+    groq_scores      JSONB,
+    agreement        REAL,
+    shadow_mode      BOOLEAN NOT NULL DEFAULT TRUE,
+    notes            TEXT,
+    created_at       TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_api_keys_provider ON api_keys(provider);
+-- Repair path: migration 002_prefilter.sql (now deleted) declared this table
+-- with an INCOMPATIBLE shape — short_circuited/predicted/groq_actual and no
+-- decision/predicted_scores/notes. Both used CREATE TABLE IF NOT EXISTS, so
+-- whichever ran first won and the other silently no-opped. These ALTERs make a
+-- 002-shaped table accept the inserts the code actually issues, and are no-ops
+-- on a correctly-shaped one.
+ALTER TABLE prefilter_decisions ADD COLUMN IF NOT EXISTS decision         TEXT;
+ALTER TABLE prefilter_decisions ADD COLUMN IF NOT EXISTS predicted_scores JSONB;
+ALTER TABLE prefilter_decisions ADD COLUMN IF NOT EXISTS groq_scores      JSONB;
+ALTER TABLE prefilter_decisions ADD COLUMN IF NOT EXISTS agreement        REAL;
+ALTER TABLE prefilter_decisions ADD COLUMN IF NOT EXISTS notes            TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_prefilter_decisions_convo
+    ON prefilter_decisions(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_prefilter_decisions_tier
+    ON prefilter_decisions(tier_hit);
+CREATE INDEX IF NOT EXISTS idx_prefilter_decisions_created
+    ON prefilter_decisions(created_at);
+
+-- Embedding cache: skip re-embedding the same conversation across runs.
+CREATE TABLE IF NOT EXISTS conversation_embeddings (
+    conversation_id INTEGER PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+    embedding       REAL[] NOT NULL,
+    model_name      TEXT NOT NULL,
+    text_hash       TEXT,
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE conversation_embeddings ADD COLUMN IF NOT EXISTS text_hash TEXT;
+CREATE INDEX IF NOT EXISTS idx_conv_embeddings_model
+    ON conversation_embeddings(model_name);
+
+-- Drop the CHECK migration 001 used to install: its value list predates
+-- 'groq_override' and the Groq decommission, so it rejects legitimate writes.
+ALTER TABLE conversation_scores DROP CONSTRAINT IF EXISTS conversation_scores_source_check;
+CREATE INDEX IF NOT EXISTS idx_conv_scores_source ON conversation_scores(source);
+
+
+-- ── api_keys — REMOVED (deep review F36) ─────────────────────────────────────
+-- Held the Groq shared key pool. Groq was decommissioned; the scoring pipeline
+-- is ML-only and nothing reads this table. No longer created on fresh installs.
+-- Existing databases still have the table; drop it manually once you have
+-- confirmed no keys in it are needed elsewhere:
+--     DROP TABLE IF EXISTS api_keys;
 
 -- ── semantic_candidates (auto-learning queue) ────────────────────────────────
 CREATE TABLE IF NOT EXISTS semantic_candidates (
@@ -351,11 +404,17 @@ CREATE TABLE IF NOT EXISTS blacklist_labels (
     skip_mode  TEXT NOT NULL DEFAULT 'any' CHECK (skip_mode IN ('any', 'only')),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
--- Seed built-in defaults (safe to re-run)
-INSERT INTO blacklist_labels (name, skip_mode) VALUES
+-- Seed built-in defaults ONLY on a fresh install.
+-- ON CONFLICT DO NOTHING is idempotent against duplicates but NOT against
+-- deletion: this file is executed on every boot, so a label a user removed via
+-- the UI silently reappeared after the next redeploy (deep review F13).
+-- The NOT EXISTS guard makes the seed a true first-run-only operation.
+INSERT INTO blacklist_labels (name, skip_mode)
+SELECT * FROM (VALUES
     ('Extra',    'any'),
     ('New Lead', 'only')
-ON CONFLICT (name) DO NOTHING;
+) AS seed(name, skip_mode)
+WHERE NOT EXISTS (SELECT 1 FROM blacklist_labels);
 
 -- ── Time-ranged account ownership (migration 006) ────────────────────────────
 -- Replaces the day-grained account_assignments model for attribution purposes.
@@ -488,7 +547,6 @@ SELECT setval(pg_get_serial_sequence('flag_feedback',      'id'), COALESCE(MAX(i
 SELECT setval(pg_get_serial_sequence('session_events',     'id'), COALESCE(MAX(id), 0) + 1, false) FROM session_events;
 SELECT setval(pg_get_serial_sequence('account_assignments','id'), COALESCE(MAX(id), 0) + 1, false) FROM account_assignments;
 SELECT setval(pg_get_serial_sequence('trend_snapshots',    'id'), COALESCE(MAX(id), 0) + 1, false) FROM trend_snapshots;
-SELECT setval(pg_get_serial_sequence('api_keys',           'id'), COALESCE(MAX(id), 0) + 1, false) FROM api_keys;
 SELECT setval(pg_get_serial_sequence('semantic_candidates','id'), COALESCE(MAX(id), 0) + 1, false) FROM semantic_candidates;
 SELECT setval(pg_get_serial_sequence('audit_overrides',    'id'), COALESCE(MAX(id), 0) + 1, false) FROM audit_overrides;
 SELECT setval(pg_get_serial_sequence('validation_log',     'id'), COALESCE(MAX(id), 0) + 1, false) FROM validation_log;

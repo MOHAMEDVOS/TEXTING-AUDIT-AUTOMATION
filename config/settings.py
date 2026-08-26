@@ -3,6 +3,7 @@ Configuration settings for SmarterContact Audit Automation.
 Loads from .env file and provides defaults.
 """
 import os
+import re
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -72,6 +73,46 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 
 # ─── Credentials ────────────────────────────────────────────
 CREDENTIALS_KEY = os.getenv("CREDENTIALS_KEY", "")
+
+# ─── Label filter normalisation ─────────────────────────────
+# Single definition (deep review F37). This logic used to be duplicated in
+# dashboard/app.py and scraper/api_bot.py — on opposite sides of the
+# dashboard->subprocess boundary, where the two MUST agree. api_bot.py even
+# carried a comment noting it was a copy. A fix applied to one was silently
+# absent from the other.
+ALL_LABEL_FILTER_VALUES = {"all", "all label", "all labels", "all lable", "all lables"}
+
+
+def is_all_labels_filter_value(value: str) -> bool:
+    """True when `value` is one of the 'no label filter' sentinels (typos included)."""
+    normalized = re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
+    return normalized in ALL_LABEL_FILTER_VALUES
+
+
+def normalize_label_filter(labels: str | None) -> str:
+    """Normalise a comma-separated label filter, dropping 'all labels' sentinels.
+
+    Returns "" when the filter is empty or means 'no filtering'. Callers that
+    need None instead should map "" themselves.
+    """
+    if not labels:
+        return ""
+    requested = [lbl.strip() for lbl in labels.split(",") if lbl.strip()]
+    requested = [lbl for lbl in requested if not is_all_labels_filter_value(lbl)]
+    return ",".join(requested)
+
+
+# ─── Firebase (SmarterContact auth) ─────────────────────────
+# Lives here, not in scraper/firebase_auth.py. Read at import time there, it
+# raised a bare KeyError with no explanation whenever a new entry point imported
+# the scraper before config.settings had loaded .env (deep review F38).
+_raw_firebase_key = os.getenv("FIREBASE_API_KEY")
+if not _raw_firebase_key:
+    raise RuntimeError(
+        "FIREBASE_API_KEY is not set. Define it in .env (local) or as a "
+        "Railway service variable (production). No hardcoded fallback."
+    )
+FIREBASE_API_KEY = _raw_firebase_key
 
 # ─── Dream Worker (Self-Learning) ───────────────────────────
 DREAM_WORKER_MIN_HOURS    = int(os.getenv("DREAM_WORKER_MIN_HOURS",    "4"))

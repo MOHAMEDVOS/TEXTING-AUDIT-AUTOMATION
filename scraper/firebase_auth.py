@@ -4,15 +4,16 @@ Firebase REST Authentication for SmarterContact HTTP client.
 Handles sign-in, token refresh, and auto-expiry management.
 No browser required — pure HTTP via Firebase REST API.
 """
-import os
+import asyncio
 import time
 import logging
 import httpx
 from dataclasses import dataclass, field
 
+from config.settings import FIREBASE_API_KEY
+
 logger = logging.getLogger(__name__)
 
-FIREBASE_API_KEY      = os.environ["FIREBASE_API_KEY"]
 SIGN_IN_URL           = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={FIREBASE_API_KEY}"
 REFRESH_URL           = f"https://securetoken.googleapis.com/v1/token?key={FIREBASE_API_KEY}"
 TOKEN_BUFFER_SECONDS  = 120   # refresh 2 min before expiry
@@ -24,6 +25,11 @@ class AuthSession:
     id_token:      str
     refresh_token: str
     expires_at:    float  # unix timestamp
+    # Serialises concurrent refreshes. The scraper fans out 10 concurrent message
+    # fetches, each awaiting ensure_fresh(); without this all 10 could observe
+    # is_expired before any of them wrote back, firing 10 refresh POSTs with
+    # last-write-wins on refresh_token (deep review F25).
+    _lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False, compare=False)
 
     @property
     def is_expired(self) -> bool:
@@ -31,12 +37,23 @@ class AuthSession:
 
     async def ensure_fresh(self, client: httpx.AsyncClient) -> str:
         """Return a valid id_token, refreshing if needed."""
-        if self.is_expired:
+        if not self.is_expired:
+            return self.id_token
+
+        async with self._lock:
+            # Re-check inside the lock: whoever held it first may have refreshed
+            # already, in which case this caller must not refresh again.
+            if not self.is_expired:
+                return self.id_token
+
             logger.debug("Firebase token near expiry — refreshing...")
             resp = await client.post(REFRESH_URL, data={
                 "grant_type": "refresh_token",
                 "refresh_token": self.refresh_token,
             })
+            # Without this, a non-JSON error page from Google surfaced as an
+            # opaque JSONDecodeError instead of the intended RuntimeError.
+            resp.raise_for_status()
             data = resp.json()
             if "id_token" not in data:
                 raise RuntimeError(f"Token refresh failed: {data}")
@@ -44,7 +61,7 @@ class AuthSession:
             self.refresh_token = data["refresh_token"]
             self.expires_at    = time.time() + int(data.get("expires_in", 3600))
             logger.debug("Firebase token refreshed successfully")
-        return self.id_token
+            return self.id_token
 
 
 async def firebase_sign_in(email: str, password: str, client: httpx.AsyncClient) -> AuthSession:

@@ -70,7 +70,9 @@ scripts/*
 !scripts/post_audit_reflection.py
 !scripts/report.py
 !scripts/backfill_assignment_periods.py
-tests/
+# tests/ intentionally NOT ignored — the repo had zero tests and this line was
+# actively preventing anyone from adding them (deep review F20).
+.pytest_cache/
 ruflo/
 validation_run.txt
 START.bat

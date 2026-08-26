@@ -44,9 +44,13 @@ CREATE INDEX IF NOT EXISTS idx_conv_embeddings_model
 
 -- 3. Track which tier produced each conversation_score so we can later
 --    distinguish local predictions from Groq ground-truth in training data.
+-- NOTE: the original CHECK constraint here is deliberately omitted. The value
+-- set has already changed once ('groq_override' was added, and Groq itself has
+-- since been decommissioned), so a hardcoded CHECK would reject writes the app
+-- legitimately makes. schema.sql declares this column nullable with no CHECK,
+-- which is now the authoritative definition (deep review F36).
 ALTER TABLE conversation_scores
-    ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'groq'
-    CHECK (source IN ('groq', 'prefilter_t1', 'prefilter_t2', 'prefilter_t3', 'prefilter_t4'));
+    ADD COLUMN IF NOT EXISTS source TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_conv_scores_source
     ON conversation_scores(source);

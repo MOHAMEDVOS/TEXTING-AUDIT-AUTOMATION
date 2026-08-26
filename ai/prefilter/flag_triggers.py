@@ -19,6 +19,8 @@ from __future__ import annotations
 import re
 from typing import Optional
 
+from database.db import _is_outgoing
+
 
 # ── Pattern groups ────────────────────────────────────────────────────────────
 # Each entry: (pattern_name, compiled_regex, apply_to)
@@ -70,9 +72,12 @@ def _split_text(messages: list[dict], agent_name: str) -> tuple[str, str]:
     contact_parts: list[str] = []
     agent_parts: list[str] = []
     for m in messages:
-        sender = (m.get("sender") or "").lower()
         body = m.get("body") or ""
-        if sender == "agent":
+        # Was `sender == "agent"`, which never matches — the scraper writes the
+        # agent's first name. Every message landed in contact_parts and agent_text
+        # was always empty. Latent rather than live: this module currently has no
+        # importers (deep review F10 family).
+        if _is_outgoing(m.get("sender")):
             agent_parts.append(body)
         else:
             contact_parts.append(body)

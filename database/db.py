@@ -173,6 +173,12 @@ class Database:
     def __init__(self, dsn: str | None = None):
         self.dsn = dsn or DATABASE_URL
         self.pool: asyncpg.Pool | None = None
+        # Whether migration 007 has installed
+        # UNIQUE(agent_id, contact_id, audit_date) on conversations. Probed once at
+        # initialize(). Lets save_extraction() upsert where the constraint exists
+        # and fall back to a plain INSERT where it does not, so the code is safe to
+        # deploy before or after the migration is applied (deep review F7).
+        self._has_convo_unique: bool = False
 
     async def initialize(self):
         """Create connection pool and ensure all tables exist.
@@ -199,6 +205,19 @@ class Database:
                     await conn.execute("SELECT pg_advisory_unlock(987654321)")
             else:
                 logger.debug("Database schema already initialized. Skipping schema DDL execution.")
+
+            self._has_convo_unique = bool(await conn.fetchval(
+                """SELECT EXISTS (
+                       SELECT 1 FROM pg_constraint
+                        WHERE conname = 'uq_conversations_agent_contact_day'
+                   )"""
+            ))
+            if not self._has_convo_unique:
+                logger.warning(
+                    "Re-ingestion dedup constraint missing — every re-run will "
+                    "duplicate conversations. Apply "
+                    "database/migrations/007_data_integrity.sql (deep review F7)."
+                )
         logger.info("Database initialized (PostgreSQL)")
 
     async def close(self):
@@ -245,16 +264,38 @@ class Database:
     # ── Contacts ──────────────────────────────────────────────────────────────
 
     async def _upsert_contact(self, conn: asyncpg.Connection, name: str) -> int:
-        """Insert or find a contact by name. Returns contact_id."""
-        row = await conn.fetchrow(
-            "SELECT id FROM contacts WHERE name = $1 LIMIT 1", name
+        """Insert or find a contact by name. Returns contact_id.
+
+        Matching is case- and whitespace-insensitive to agree with every reader,
+        which normalises via LOWER(TRIM(...)). The old exact match meant
+        "John Smith" and "john smith" were separate contacts at write time but
+        the same contact at read time, and the dashboard silently dropped one of
+        the two conversations (deep review F29).
+
+        Still a check-then-act, but now race-safe: up to 20 audit subprocesses
+        run concurrently, so two can pass the SELECT for the same new contact.
+        Once migration 007 installs the unique index the loser gets a
+        UniqueViolationError and re-reads the winner's row. Before the migration
+        runs this behaves exactly as before, so it is safe to deploy either way.
+        """
+        _lookup = (
+            "SELECT id FROM contacts "
+            "WHERE LOWER(TRIM(name)) = LOWER(TRIM($1)) ORDER BY id LIMIT 1"
         )
+        row = await conn.fetchrow(_lookup, name)
         if row:
             return row["id"]
-        row = await conn.fetchrow(
-            "INSERT INTO contacts (name) VALUES ($1) RETURNING id", name
-        )
-        return row["id"]
+        try:
+            row = await conn.fetchrow(
+                "INSERT INTO contacts (name) VALUES ($1) RETURNING id", name
+            )
+            return row["id"]
+        except asyncpg.UniqueViolationError:
+            # Lost the race — the concurrent writer's row is authoritative.
+            row = await conn.fetchrow(_lookup, name)
+            if row:
+                return row["id"]
+            raise
 
     # ── Extractions + Conversations + Messages ────────────────────────────────
 
@@ -343,7 +384,31 @@ class Database:
                     labels = convo.get("assigned_labels") or []
                     convo_date = (convo.get("convo_date") or "").strip()
 
+                    # Upsert, not a bare INSERT. Re-running an agent for the same
+                    # day used to append a complete duplicate set of conversations,
+                    # messages and scores every time (deep review F7). Migration 007
+                    # adds the matching UNIQUE(agent_id, contact_id, audit_date);
+                    # until it is applied the ON CONFLICT clause simply never fires,
+                    # so this is safe to deploy before or after the migration.
                     conv_row = await conn.fetchrow(
+                        """INSERT INTO conversations
+                               (agent_id, contact_id, texter_name, assigned_labels, extracted_at, audit_date, convo_date)
+                           VALUES ($1, $2, $3, $4, $5, $6, $7)
+                           ON CONFLICT ON CONSTRAINT uq_conversations_agent_contact_day
+                           DO UPDATE SET texter_name     = EXCLUDED.texter_name,
+                                         assigned_labels = EXCLUDED.assigned_labels,
+                                         extracted_at    = EXCLUDED.extracted_at,
+                                         convo_date      = EXCLUDED.convo_date,
+                                         is_archived     = FALSE
+                           RETURNING id""",
+                        agent_id,
+                        contact_id,
+                        texter_name,
+                        labels,
+                        extracted_at,
+                        audit_date,
+                        convo_date,
+                    ) if self._has_convo_unique else await conn.fetchrow(
                         """INSERT INTO conversations
                                (agent_id, contact_id, texter_name, assigned_labels, extracted_at, audit_date, convo_date)
                            VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -358,6 +423,14 @@ class Database:
                     )
                     conversation_id = conv_row["id"]
                     convo["conversation_id"] = conversation_id
+
+                    # Re-scraping an existing conversation replaces its messages
+                    # rather than appending them a second time.
+                    if self._has_convo_unique:
+                        await conn.execute(
+                            "DELETE FROM messages WHERE conversation_id = $1",
+                            conversation_id,
+                        )
 
                     # Insert messages (seq preserves chronological scrape order)
                     parsed_messages = convo.get("parsed_messages") or []
@@ -416,59 +489,10 @@ class Database:
                 agent_id,
             ) or 0
 
-    async def save_conversation_score(self, conversation_id: int, score_data: dict):
-        """Insert a conversation_scores row for the given conversation."""
-        import json as _json
-        from ai.prefilter._guards import build_flag_details
-        from ai.prompts import PROMPT_VERSION
-
-        # Phase 1: persist rule-assigned flag_details. Use what the caller
-        # provides, else build from red_flags (no messages here → metadata
-        # without evidence, which is still useful).
-        flag_details = score_data.get("flag_details")
-        if flag_details is None:
-            flag_details = build_flag_details(
-                score_data.get("red_flags") or [], [],
-                source=score_data.get("source"),
-            )
-
-        async with self.pool.acquire() as conn:
-            try:
-                await attribute_flag_details(
-                    conn, conversation_id, flag_details,
-                    score_data.get("flag_culprits"),
-                )
-            except Exception as e:
-                # Attribution is additive metadata — never block saving a score.
-                logger.warning(f"[DB] Flag attribution skipped for conv {conversation_id}: {e}")
-            await conn.execute(
-                """INSERT INTO conversation_scores
-                       (conversation_id, compliance_score, sentiment_score,
-                        professionalism_score, script_adherence_score,
-                        funnel_stage, pillars_gathered, rebuttals_used,
-                        label_assigned, label_correct, label_should_be, label_reason,
-                        red_flags, actions_triggered, summary, model_used,
-                        flag_details, prompt_version)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::jsonb,$18)""",
-                conversation_id,
-                score_data.get("compliance_score"),
-                score_data.get("sentiment_score"),
-                score_data.get("professionalism_score"),
-                score_data.get("script_adherence_score"),
-                score_data.get("funnel_stage_reached"),
-                score_data.get("pillars_gathered") or [],
-                score_data.get("rebuttals_used") or [],
-                score_data.get("label_assigned"),
-                score_data.get("label_correct"),
-                score_data.get("label_should_be"),
-                score_data.get("label_reason"),
-                score_data.get("red_flags") or [],
-                score_data.get("actions_triggered") or [],
-                score_data.get("summary"),
-                score_data.get("model_used"),
-                _json.dumps(flag_details or []),
-                score_data.get("prompt_version") or PROMPT_VERSION,
-            )
+    # NOTE: save_conversation_score() was removed here (deep review F36). It had
+    # zero callers — ai/scorer.py inlines its own INSERT — and would have failed
+    # if called, binding a Python list to the red_flags JSONB column with no
+    # ::jsonb cast.
 
     async def get_conversation_messages(self, conversation_id: int) -> list[dict]:
         """Return all messages for a conversation, ordered by sent_at."""
@@ -616,20 +640,45 @@ class Database:
             for r in scored_rows:
                 valid.setdefault(r["agent_id"], set()).add(r["contact_name"].lower().strip())
 
-            # Delete audit_scores rows for agents with no live convos
-            await conn.execute(
-                """DELETE FROM audit_scores s
-                   WHERE NOT EXISTS (
-                       SELECT 1 FROM conversations c
-                       JOIN conversation_scores cs ON cs.conversation_id = c.id
-                       WHERE c.agent_id = s.agent_id
-                         AND c.is_archived = FALSE
-                         AND cs.compliance_score IS NOT NULL
-                   )"""
-            )
+            # Delete audit_scores rows for agents with no live convos.
+            # MUST be scoped the same way as the deletes above: unscoped, an agent
+            # finishing its run wiped every other agent's summary row, and the
+            # nightly archive reset made that fire for the whole roster
+            # (deep review F11).
+            if agent_id is not None:
+                await conn.execute(
+                    """DELETE FROM audit_scores s
+                       WHERE s.agent_id = $1
+                         AND NOT EXISTS (
+                           SELECT 1 FROM conversations c
+                           JOIN conversation_scores cs ON cs.conversation_id = c.id
+                           WHERE c.agent_id = s.agent_id
+                             AND c.is_archived = FALSE
+                             AND cs.compliance_score IS NOT NULL
+                       )""",
+                    agent_id,
+                )
+            else:
+                await conn.execute(
+                    """DELETE FROM audit_scores s
+                       WHERE NOT EXISTS (
+                           SELECT 1 FROM conversations c
+                           JOIN conversation_scores cs ON cs.conversation_id = c.id
+                           WHERE c.agent_id = s.agent_id
+                             AND c.is_archived = FALSE
+                             AND cs.compliance_score IS NOT NULL
+                       )"""
+                )
 
-            # Strip entries from details that no longer exist in conversation_scores
-            as_rows = await conn.fetch("SELECT id, agent_id, details FROM audit_scores")
+            # Strip entries from details that no longer exist in conversation_scores.
+            # Scoped for the same reason as the delete above.
+            if agent_id is not None:
+                as_rows = await conn.fetch(
+                    "SELECT id, agent_id, details FROM audit_scores WHERE agent_id = $1",
+                    agent_id,
+                )
+            else:
+                as_rows = await conn.fetch("SELECT id, agent_id, details FROM audit_scores")
             for r in as_rows:
                 d = r["details"] or {}
                 if isinstance(d, str):

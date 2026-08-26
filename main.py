@@ -141,6 +141,9 @@ async def run_single_agent(agent_name: str, date_filter: str = "today", limit: i
     agent_id: int | None = None
     audit_scored = False
     final_status: tuple | None = None
+    # Bound before the try so `finally` can mark it failed even if we never got
+    # as far as assigning it (deep review F6).
+    result: dict | None = None
     try:
         _write_run_status(agent_name, "running", "database", "Connecting to database")
         await db.initialize()
@@ -228,10 +231,18 @@ async def run_single_agent(agent_name: str, date_filter: str = "today", limit: i
                             "failed",
                             "scoring",
                             "Scoring failed — no conversations were saved. "
-                            "Check Groq key assignment and re-run.",
+                            "Check the audit log for per-conversation errors and re-run.",
                             "scoring_failed",
                             ["All conversations failed scoring or were removed during cleanup"],
                         )
+                        # Surface the failure to main()'s exit code. `result` is
+                        # the same dict the try block already returned, so
+                        # mutating it here still reaches the caller.
+                        if isinstance(result, dict):
+                            result["status"] = "scoring_failed"
+                            result.setdefault("errors", []).append(
+                                "All conversations failed scoring"
+                            )
                     else:
                         final_status = (
                             "done",
@@ -240,15 +251,19 @@ async def run_single_agent(agent_name: str, date_filter: str = "today", limit: i
                         )
             await db.close()
 
-    if final_status:
-        _write_run_status(
-            agent_name,
-            final_status[0],
-            final_status[1],
-            final_status[2],
-            final_status[3] if len(final_status) > 3 else None,
-            final_status[4] if len(final_status) > 4 else None,
-        )
+        # Must live inside `finally`: every path through the try/except returns,
+        # so anything after the try block is unreachable. Before this was moved,
+        # a run where every conversation failed to score still reported "done"
+        # (deep review F6).
+        if final_status:
+            _write_run_status(
+                agent_name,
+                final_status[0],
+                final_status[1],
+                final_status[2],
+                final_status[3] if len(final_status) > 3 else None,
+                final_status[4] if len(final_status) > 4 else None,
+            )
 
 
 async def run_test(date_filter: str = "today", limit: int = 20,

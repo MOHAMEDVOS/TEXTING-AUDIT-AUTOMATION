@@ -17,6 +17,7 @@ from ai.analyzer import analyze_conversation
 from ai.prefilter.label_validator import _label_key as _lk
 from ai.prefilter.label_validator import is_defensible_alternative
 from ai.prefilter._guards import build_flag_details, DEFENSIBLE_ALTERNATIVE_SUFFIX
+from ai.analyzer import filter_recent_messages
 from ai.response_time import check_response_time, FLAG_TEXT as RESPONSE_TIME_FLAG
 from ai.prompts import PROMPT_VERSION
 
@@ -64,30 +65,21 @@ _ALLOWED_LABELS = {
 
 # ── Invalid flag filter ───────────────────────────────────────────────────────
 
-def _load_invalid_flag_patterns(dsn: str) -> set[str]:
-    """
-    Load all red_flag strings from flag_feedback as a set of lowercase patterns.
-    Used to suppress known-invalid flags from new audit results.
-    Returns empty set on any error so scoring always continues.
-    """
-    try:
-        with psycopg2.connect(dsn) as con:
-            with con.cursor() as cur:
-                cur.execute("SELECT red_flag FROM flag_feedback")
-                patterns = {row[0].lower().strip() for row in cur.fetchall() if row[0]}
-        logger.debug(f"[Scorer] Loaded {len(patterns)} invalid flag patterns from flag_feedback")
-        return patterns
-    except Exception as e:
-        logger.warning(f"[Scorer] Could not load invalid flag patterns: {e}")
-        return set()
+# NOTE: a global _load_invalid_flag_patterns() used to live here. It loaded EVERY
+# row of flag_feedback with no agent/conversation/status scoping and fuzzy
+# substring-matched it against every new flag, so a single reviewer clicking
+# "Not Valid" once permanently suppressed that flag for every agent, forever.
+# Removed deliberately (deep review F1). Suppression is conversation-scoped only —
+# see _load_invalid_flags_by_conversation below. Do not reintroduce a global path
+# without an explicit, separately-owned suppression table and a visible UI banner.
 
 
 def _load_invalid_flags_by_conversation(dsn: str) -> dict[int, set[str]]:
     """
     Load reviewer-rejected flags keyed by their exact source conversation.
 
-    Conversation-scoped counterpart to _load_invalid_flag_patterns: when a
-    reviewer marks a flag "Not Valid" on a specific conversation, that flag
+    The only suppression path (see the F1 note above): when a reviewer marks a
+    flag "Not Valid" on a specific conversation, that flag
     must never re-appear on a re-audit of THAT conversation — even if the same
     flag text is legitimate elsewhere. Precise, no global over-suppression.
 
@@ -116,44 +108,62 @@ def _load_invalid_flags_by_conversation(dsn: str) -> dict[int, set[str]]:
         return {}
 
 
-def _filter_flags(flags: list[str], patterns: set[str]) -> list[str]:
+_NULL_FLAGS = {"none", "n/a", "na", "no flags", "no red flags", "-", ""}
+
+
+def _strip_null_flags(flags: list[str]) -> list[str]:
     """
-    Remove any flag whose text fuzzy-matches a known-invalid pattern.
-
-    Match logic (both sides lowercased):
-      - flag is a substring of a pattern, OR
-      - pattern is a substring of the flag, OR
-      - pattern contains '...' (truncation marker): all non-empty segments split
-        by '...' must each be a substring of the flag (wildcard/truncation match)
-    Either direction catches truncated DB entries and slight wording variations.
+    Drop placeholder/sentinel values the model sometimes emits instead of an
+    empty list ("none", "N/A", "-", ...). Applies to every conversation and
+    suppresses nothing real.
     """
-    if not patterns:
-        return flags
-
-    def _matches(f: str, p: str) -> bool:
-        # Guard: very short patterns (< 15 chars) only match exactly to avoid
-        # accidentally suppressing legitimate flags (e.g. a bare word like "continued").
-        if len(p) < 15:
-            return f == p
-        if f in p or p in f:
-            return True
-        # Handle truncated patterns stored with '...' as a wildcard
-        if "..." in p:
-            segments = [s for s in p.split("...") if s]
-            return all(seg in f for seg in segments)
-        return False
-
-    _NULL_FLAGS = {"none", "n/a", "na", "no flags", "no red flags", "-", ""}
-
     clean = []
     for flag in flags:
-        f = flag.lower().strip()
-        if f in _NULL_FLAGS:
+        if flag.lower().strip() in _NULL_FLAGS:
             logger.debug(f"[Scorer] Stripped null-sentinel flag: {flag!r}")
             continue
-        suppressed = any(_matches(f, p) for p in patterns)
-        if suppressed:
-            logger.debug(f"[Scorer] Suppressed known-invalid flag: {flag!r}")
+        clean.append(flag)
+    return clean
+
+
+def _filter_flags(flags: list[str], patterns: set[str]) -> list[str]:
+    """
+    Remove flags a reviewer rejected ON THIS CONVERSATION.
+
+    `patterns` must always be conversation-scoped (see
+    _load_invalid_flags_by_conversation). Never pass a global pattern set —
+    that was F1, and it silently disabled compliance flags product-wide.
+
+    Match logic (both sides lowercased):
+      - exact match, OR
+      - pattern contains '...' (truncation marker): every non-empty segment
+        must appear in the flag, OR
+      - a long (>= 15 char) stored pattern appears inside the flag, which
+        catches DB entries truncated at write time.
+
+    Deliberately NOT matched: `flag in pattern`. That direction let a long
+    stored pattern swallow a short unrelated flag ("Rude" killed by "Rude tone
+    throughout the entire conversation").
+    """
+    if not patterns:
+        return _strip_null_flags(flags)
+
+    def _matches(f: str, p: str) -> bool:
+        if f == p:
+            return True
+        if "..." in p:
+            segments = [s for s in p.split("...") if s]
+            return bool(segments) and all(seg in f for seg in segments)
+        # Long stored patterns may be a truncated form of the full flag text.
+        if len(p) >= 15 and p in f:
+            return True
+        return False
+
+    clean = []
+    for flag in _strip_null_flags(flags):
+        f = flag.lower().strip()
+        if any(_matches(f, p) for p in patterns):
+            logger.debug(f"[Scorer] Suppressed reviewer-rejected flag: {flag!r}")
         else:
             clean.append(flag)
     return clean
@@ -245,10 +255,9 @@ async def score_agent_conversations(
         logger.info(f"[Scorer] {agent_name} — no conversations, skipping")
         return {}
 
-    # Loaded once per run — mid-run DB changes are fine; they take effect on the next full run.
-    invalid_patterns = _load_invalid_flag_patterns(DATABASE_URL)
     # Conversation-scoped rejections: a flag a reviewer killed on conversation X
     # must not re-appear when X is re-audited (one query, applied per conversation).
+    # Loaded once per run — mid-run DB changes take effect on the next full run.
     conv_rejected = _load_invalid_flags_by_conversation(DATABASE_URL)
 
     # ── Per-account audit config (funnel tier + guidelines) ────────────────
@@ -322,7 +331,7 @@ async def score_agent_conversations(
             if convo.get("conversation_id") and not result.get("conversation_id"):
                 result["conversation_id"] = convo["conversation_id"]
 
-            result["red_flags"] = _filter_flags(result.get("red_flags") or [], invalid_patterns)
+            result["red_flags"] = _strip_null_flags(result.get("red_flags") or [])
             # Conversation-scoped: drop flags a reviewer rejected on THIS exact conversation.
             _cid = convo.get("conversation_id")
             if _cid is not None:
@@ -334,7 +343,11 @@ async def score_agent_conversations(
             # Runs after analysis regardless of which tier produced the result,
             # so a "clean"/short-circuited convo is still checked. Deducting
             # here feeds the script_adherence aggregation below.
-            _rt = check_response_time(parsed, labels)
+            # Same rolling window analyze_conversation() applies. Passing the full
+            # unfiltered thread meant a single slow reply from months ago was
+            # re-flagged (and re-deducted 25 points) on every audit, forever, on
+            # data the rest of the audit deliberately excludes (deep review F28).
+            _rt = check_response_time(filter_recent_messages(parsed), labels)
             if _rt:
                 rflags = list(result.get("red_flags") or [])
                 if RESPONSE_TIME_FLAG not in rflags:
@@ -360,11 +373,34 @@ async def score_agent_conversations(
             return result
 
     coros = [_process_convo(idx, convo) for idx, convo in enumerate(conversations, 1)]
-    results = await asyncio.gather(*coros)
+    # return_exceptions=True: without it, one malformed conversation raising out of
+    # gather discarded every successfully-scored result in the batch, and the run
+    # was then marked failed and its extracted rows cleaned up (deep review F27).
+    results = await asyncio.gather(*coros, return_exceptions=True)
 
-    for r in results:
+    failed = 0
+    for idx, r in enumerate(results):
+        if isinstance(r, BaseException):
+            failed += 1
+            _contact = "?"
+            try:
+                _contact = conversations[idx].get("contact_name") or "?"
+            except Exception:
+                pass
+            logger.error(
+                f"[Scorer] {agent_name} — conversation {idx + 1} ({_contact}) "
+                f"failed to score: {r!r}",
+                exc_info=r if isinstance(r, Exception) else None,
+            )
+            continue
         if r is not None:
             per_convo.append(r)
+
+    if failed:
+        logger.warning(
+            f"[Scorer] {agent_name}: {len(per_convo)} of {len(conversations)} "
+            f"conversation(s) scored — {failed} failed and were skipped"
+        )
 
     if not per_convo:
         logger.warning(f"[Scorer] {agent_name}: all conversations had empty parsed_messages")
@@ -416,7 +452,7 @@ async def score_agent_conversations(
 
     # Strip any injected wrong-label flags that are known-invalid
     for r in per_convo:
-        r["red_flags"] = _filter_flags(r.get("red_flags") or [], invalid_patterns)
+        r["red_flags"] = _strip_null_flags(r.get("red_flags") or [])
         _cid = r.get("conversation_id")
         if _cid is not None and str(_cid).isdigit():
             _cr = conv_rejected.get(int(_cid))
@@ -637,6 +673,9 @@ async def score_agent_conversations(
             # ── Write per-conversation scores for CURRENT run only ────────
             # per_convo may be replaced by merged historical details, which does not
             # always carry conversation_id. Use scored_this_run to avoid ghost rows.
+            # Conversations whose score row committed cleanly — these, and only
+            # these, are safe to mark in the dedup cache below (F7).
+            _scored_ok: list[dict] = []
             for r in scored_this_run:
                 conv_id = r.get("conversation_id")
                 if conv_id:
@@ -697,6 +736,46 @@ async def score_agent_conversations(
                         )
                     except Exception as _e:
                         logger.error(f"[Scorer] Failed to write conversation_scores for conv_id={conv_id}: {_e}")
+                    else:
+                        _scored_ok.append(r)
+
+            # ── Populate the dedup cache (deep review F7) ─────────────────
+            # db.mark_chat_audited() existed but had ZERO callers, so
+            # audited_chats was always empty and is_chat_audited() always
+            # returned False — every re-run of the same day re-scraped,
+            # re-inserted and re-scored the same conversations, growing the
+            # tables by a full copy each time.
+            #
+            # Marked HERE, after the score row is committed, not in the
+            # scraper: marking before scoring would suppress conversations that
+            # then failed to score, and they would never be retried.
+            # One batched statement rather than a call per conversation.
+            _dedup_rows = [
+                (
+                    r.get("_dedup_agent_email") or "",
+                    r.get("contact_name") or "",
+                    r.get("_dedup_preview") or "",
+                )
+                for r in _scored_ok
+                if r.get("_dedup_agent_email") and r.get("contact_name")
+            ]
+            if _dedup_rows:
+                try:
+                    await conn.executemany(
+                        """INSERT INTO audited_chats
+                               (agent_email, contact_name, message_preview, audited_at)
+                           VALUES ($1, $2, $3, NOW())
+                           ON CONFLICT (agent_email, contact_name)
+                           DO UPDATE SET message_preview = EXCLUDED.message_preview,
+                                         audited_at = NOW()""",
+                        _dedup_rows,
+                    )
+                    logger.info(
+                        f"[Scorer] {agent_name}: dedup cache updated for "
+                        f"{len(_dedup_rows)} conversation(s)"
+                    )
+                except Exception as _e:
+                    logger.warning(f"[Scorer] Could not update dedup cache: {_e}")
 
             # ── Write trend snapshot ──────────────────────────────────────
             # Resolve the assigned texter name from account_assignments
@@ -713,7 +792,6 @@ async def score_agent_conversations(
             snapshot_texter = assign_row["texter_name"] if assign_row else agent_name
             snapshot_email  = assign_row["account_email"] if assign_row else agent_email
             total_flag_count = sum(len(r.get("red_flags") or []) for r in per_convo)
-            from datetime import datetime as _dt
             await conn.execute(
                 """INSERT INTO trend_snapshots
                    (agent_name, audit_date, audit_timestamp, account_email,
@@ -732,7 +810,11 @@ async def score_agent_conversations(
 """,
                 snapshot_texter,
                 audit_date,
-                _dt.now(),  # asyncpg needs a datetime object, not an isoformat string
+                # Timezone-AWARE. A naive datetime.now() bound to a TIMESTAMPTZ
+                # column is interpreted by asyncpg as UTC, so local wall-clock time
+                # was stored 4-5 hours off — and disagreed with the dashboard's
+                # backfill, which already used get_now() (deep review F24).
+                get_now(),
                 snapshot_email,
                 total_flag_count,
                 overall,

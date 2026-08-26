@@ -1,8 +1,12 @@
 # Texting Audit Automation
 
-An advanced, high-performance automated auditing system for SMS/texting conversations. Scrapes SmarterContact via GraphQL and REST APIs, evaluates agent performance using Groq AI (Llama 3.3 70B), and uses a **4-Tier ML Pre-Filter** to cut API costs by skipping clean chats.
+An advanced, high-performance automated auditing system for SMS/texting conversations. Scrapes SmarterContact via GraphQL and REST APIs and evaluates agent performance with a **fully local, deterministic ML/rules pipeline**.
 
-> **Performance**: ~2,000 conversations scraped and fully audited in under 5 minutes — powered by async parallel workers (up to 20 concurrent) and the ML pre-filter skipping clean chats before they reach Groq.
+> **Note (2026-08-25):** Groq/LLM scoring has been **decommissioned**. There are no
+> hosted AI calls anywhere in the scoring path. Scoring is produced entirely by the
+> deterministic rule engines in `ai/prefilter/`.
+
+> **Performance**: ~2,000 conversations scraped and fully audited in under 5 minutes — powered by async parallel workers (up to 20 concurrent) and the pre-filter short-circuiting clean chats.
 
 ## Key Features
 
@@ -14,10 +18,10 @@ An advanced, high-performance automated auditing system for SMS/texting conversa
   - **Script Adherence**: 3-rebuttal playbook, 4-pillar qualification, WF hand-raise validation, F16 no-handoff flag.
 - **4-Tier ML Pre-Filter**: Cost-saving local pipeline for obviously clean chats:
   - **Tier 1**: Keyword/phrase scanning.
-  - **Tier 2**: kNN similarity matching (FAISS, 911+ examples).
+  - **Tier 2**: kNN similarity matching (FAISS). **Disabled in production** — see `docs/reviews/`.
   - **Tier 3**: Logistic Regression pattern predictor.
-  - **Tier 4**: Groq AI fallback (full audit).
-- **Shared AI Key Pool**: LRU load balancing across Groq keys with automatic rotation and cooldown. Up to 140 key attempts before a skip — no conversation dropped due to rate limits.
+  - **Tier 4**: Deterministic flag generator (terminal tier — produces effectively all output).
+- **No API keys, no rate limits, no per-conversation cost**: scoring runs entirely on the local machine.
 - **High Throughput**: 20 parallel async workers + ML pre-filter = ~2,000 conversations scraped and audited in under 5 minutes.
 - **Performance Dashboard**: Real-time audit scores, red flags, AI provider status, and read-ack "Done" status (clears on account open).
 
@@ -58,7 +62,7 @@ Required for NF / Hot Lead classification:
 |-------|-----------|
 | Core | Python 3.10+ |
 | Scraping | HTTPX (async), Firebase Auth JWT rotation |
-| AI Models | Groq Llama 3.3 70B, scikit-learn, FAISS, sentence-transformers |
+| AI Models | scikit-learn, FAISS, sentence-transformers (all local) |
 | Database | PostgreSQL 14+ (asyncpg, pgvector) |
 | UI / Dashboard | FastAPI + Jinja2, Vanilla JS, anime.js, Apple/Glass CSS |
 
@@ -66,7 +70,7 @@ Required for NF / Hot Lead classification:
 
 | Package | Purpose |
 |---------|---------|
-| `ai/` | Groq analyzer, scorer, dream worker, 4-tier ML pre-filter |
+| `ai/` | Analyzer, scorer, dream worker, 4-tier ML pre-filter (no LLM) |
 | `config/` | Settings, rate limiter, key pool config |
 | `dashboard/` | FastAPI app, HTML templates, static assets |
 | `database/` | Postgres schema, migrations, asyncpg helpers |
@@ -78,7 +82,7 @@ Required for NF / Hot Lead classification:
 
 - Python 3.10+
 - PostgreSQL 14+ with `pgvector` extension
-- Groq API keys loaded into the `api_keys` table (`provider='groq'`)
+- (No AI keys required — the `api_keys` table is dead and no longer created)
 - SmarterContact credentials in `.env` (Firebase auth handled automatically)
 
 ## Getting Started
@@ -91,7 +95,7 @@ Required for NF / Hot Lead classification:
 2. **Configure environment**:
    ```bash
    cp .env.example .env
-   # Fill in DB creds, SmarterContact creds, and Groq keys
+   # Fill in DB creds and SmarterContact creds
    ```
 
 3. **Run a single audit**:
@@ -124,7 +128,7 @@ python scripts/promote_prefilter.py
 
 ```env
 PREFILTER_ENABLED=true
-PREFILTER_SHADOW_MODE=true      # true = Groq scores everything for validation
+PREFILTER_SHADOW_MODE=true      # true = run tiers without acting on their output
 PREFILTER_T1_LIVE=true
 PREFILTER_T2_LIVE=false
 PREFILTER_T3_LIVE=false

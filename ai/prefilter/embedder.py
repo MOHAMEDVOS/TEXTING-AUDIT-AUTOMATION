@@ -24,6 +24,7 @@ import urllib.request
 from typing import Optional
 
 from config import settings
+from database.db import _is_outgoing
 
 logger = logging.getLogger(__name__)
 
@@ -149,8 +150,13 @@ def conversation_to_text(messages: list[dict], agent_name: str = "Agent") -> str
     """
     parts: list[str] = []
     for m in messages:
-        sender = (m.get("sender") or "").lower()
-        role = "AGENT" if sender == "agent" else "CONTACT"
+        # Was: role = "AGENT" if sender == "agent" else "CONTACT".
+        # messages.sender never holds the literal "agent" — the scraper writes the
+        # agent's FIRST NAME ("Noah", "Resva1006") for outgoing and "Contact" for
+        # incoming. So this was ALWAYS "CONTACT", and every query vector was built
+        # from a transcript in which agent and lead were indistinguishable — which
+        # is the entire semantics of the audit (deep review F10).
+        role = "AGENT" if _is_outgoing(m.get("sender")) else "CONTACT"
         # Handle both "body" (scraper/test) and "message" (production DB alias)
         body = (m.get("body") or m.get("message") or "").strip()
         if not body:

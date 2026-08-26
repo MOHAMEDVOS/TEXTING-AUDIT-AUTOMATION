@@ -2597,7 +2597,8 @@
             try {
               const r = await fetch('/api/me');
               const d = await r.json();
-              if (d.email === 'mohamedibrahimpayonner@gmail.com') {
+              // Server-computed: no owner address is embedded in the client (F14).
+              if (d.is_owner) {
                 const el = document.getElementById('danger-zone-section');
                 if (el) el.style.display = 'block';
               }
@@ -3194,6 +3195,29 @@ function _normEmail(email) {
   return String(email || "").trim().toLowerCase();
 }
 
+
+// ── Session expiry handling (deep review F15) ────────────────────────────────
+// The server returns JSON 401 on /api/* once a session expires. Every call site
+// used to treat that like any other error, so the dashboard rendered
+// "Failed to load: HTTP 401" and never recovered, while the 3-second status poll
+// kept hammering the server forever. Intercepting at the fetch layer covers all
+// call sites at once, including any added later.
+(function installAuthInterceptor() {
+  const _fetch = window.fetch.bind(window);
+  let redirecting = false;
+  window.fetch = async function (input, init) {
+    const res = await _fetch(input, init);
+    try {
+      const url = typeof input === "string" ? input : (input && input.url) || "";
+      const isApi = url.startsWith("/api/") || url.includes(location.origin + "/api/");
+      if (res.status === 401 && isApi && !redirecting) {
+        redirecting = true;
+        window.location.href = "/login?error=session_expired";
+      }
+    } catch (e) { /* never let the interceptor break a real request */ }
+    return res;
+  };
+})();
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 const esc = s => String(s || "")
@@ -5063,17 +5087,17 @@ function renderDetailedResults(rows, filters = {}) {
     card.onclick = () => openDetailedConversation(row.conversation_id);
 
     card.innerHTML = `
-      <div style="width:36px; height:36px; border-radius:50%; background:var(--brand); color:#fff; display:flex; align-items:center; justify-content:center; font-size:.72rem; font-weight:700; flex-shrink:0;">${initials}</div>
+      <div style="width:36px; height:36px; border-radius:50%; background:var(--brand); color:#fff; display:flex; align-items:center; justify-content:center; font-size:.72rem; font-weight:700; flex-shrink:0;">${esc(initials)}</div>
       <div style="flex:1; min-width:0;">
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:2px;">
-          <span style="font-size:.85rem; font-weight:600; color:var(--text-primary);">${contact}</span>
-          ${showTexter && texter ? `<span style="font-size:.68rem; color:var(--text-muted);">${texter}</span>` : ""}
-          ${labels ? `<span style="font-size:.68rem; padding:1px 6px; border-radius:4px; background:rgba(37,99,235,.1); color:var(--brand);">${labels}</span>` : ""}
+          <span style="font-size:.85rem; font-weight:600; color:var(--text-primary);">${esc(contact)}</span>
+          ${showTexter && texter ? `<span style="font-size:.68rem; color:var(--text-muted);">${esc(texter)}</span>` : ""}
+          ${labels ? `<span style="font-size:.68rem; padding:1px 6px; border-radius:4px; background:rgba(37,99,235,.1); color:var(--brand);">${esc(labels)}</span>` : ""}
         </div>
-        <div style="font-size:.75rem; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${preview}</div>
+        <div style="font-size:.75rem; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(preview)}</div>
       </div>
       <div style="flex-shrink:0; text-align:right;">
-        <div style="font-size:.7rem; color:var(--text-muted); margin-bottom:4px;">${date}</div>
+        <div style="font-size:.7rem; color:var(--text-muted); margin-bottom:4px;">${esc(date)}</div>
         <div style="display:flex; align-items:center; gap:6px; justify-content:flex-end;">
           ${issueBadge}
           <span style="font-size:.72rem; color:var(--text-muted);">adherence ${score}</span>
@@ -6300,8 +6324,9 @@ async function loadToolAccessList() {
       list.innerHTML = `<div style="font-size:.78rem; color:var(--text-muted); padding:4px 0;">No authorized users yet.</div>`;
       return;
     }
-    const OWNER = "mohamedibrahimpayonner@gmail.com";
-    const visible = emails.filter(e => e.email !== OWNER);
+    // The owner row is hidden by the server-supplied flag on each entry rather
+    // than by comparing against a hardcoded address in the client (F14).
+    const visible = emails.filter(e => !e.is_owner);
     if (count) count.textContent = visible.length;
     if (!visible.length) {
       list.innerHTML = `<div style="font-size:.78rem; color:var(--text-muted); padding:4px 0;">No authorized users yet.</div>`;

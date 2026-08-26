@@ -4,16 +4,21 @@
 An advanced, high-performance automated auditing system for SMS/Texting conversations.
 - **Target**: Scrapes SmarterContact conversations (via GraphQL and REST APIs).
 - **Audit**: Evaluates agents against 4 metrics: Compliance, Attitude, Professionalism, and Script Adherence.
-- **Efficiency**: Uses a **4-Tier ML Pre-Filter** (Keywords, kNN Similarity, Logistic Regression, Groq AI fallback) to reduce Groq AI costs by skipping "clean" chats.
-- **Tech Stack**: Python 3.10+, Groq (Llama 3.3 70B), FastAPI, PostgreSQL.
+- **Scoring**: **ML-only. There is no LLM in the pipeline.** Groq was decommissioned;
+  `ai/analyzer.py` makes no API calls and `groq` is not a dependency. Tier 4 is a
+  deterministic rule generator, not an AI fallback.
+- **Tech Stack**: Python 3.10+, FastAPI, PostgreSQL, scikit-learn/FAISS (local only).
 
 ---
 
 ## Core Rules
 - **API Extraction**: SmarterContact data is fetched directly using HTTPX via GraphQL and REST API endpoints. This is robust, fast, and does not require a browser.
 - **Firebase Auth Rotation**: The Firebase access token is automatically refreshed using `scraper/firebase_auth.py` when it expires.
-- **AI Key Pool**: Groq keys live in the `api_keys` Postgres table (`provider='groq'`, `agent_name IS NULL` = shared pool). LRU rotation; rate-limited keys rotate automatically.
-- **ML Gates**: Prefilter promotion requires FALSE-CLEAN ≤ 5%.
+- **No AI keys**: there is no LLM key pool. The `api_keys` table is dead and is no
+  longer created on fresh installs.
+- **ML Gates**: Prefilter promotion requires FALSE-CLEAN ≤ 5%. NOTE: the
+  `prefilter_decisions` telemetry table was missing from `schema.sql` until the
+  2026-08-25 review, so historic gate numbers were computed from no data.
 - **Documentation**: Keep Obsidian Brain (`C:\Users\vos\Desktop\obsidian_brain`) updated with verified API formats and known gotchas.
 
 ---
@@ -22,7 +27,7 @@ An advanced, high-performance automated auditing system for SMS/Texting conversa
 - **Backend**: Python 3.10+, FastAPI, uvicorn
 - **Database**: PostgreSQL (asyncpg, pgvector), SQLite (for some local caching)
 - **Scraping**: GraphQL / REST API Bot (pure HTTP request client via `httpx`)
-- **AI Models**: Groq (Llama 3.3 70B), Sentence-Transformers (Local), FAISS, XGBoost
+- **AI Models**: Sentence-Transformers (local), FAISS, scikit-learn. No hosted LLM.
 - **Frontend**: FastAPI + Jinja2, Vanilla JS, anime.js, Apple-inspired Custom CSS
 
 ---
@@ -44,7 +49,8 @@ An advanced, high-performance automated auditing system for SMS/Texting conversa
 ### Python
 - Use strict typing where possible (type hints).
 - Prefer `async`/`await` for all I/O, database, and browser operations.
-- Handle Groq rate limits using the built-in LRU KeyPoolManager rotation.
+- No external LLM calls — scoring is local and deterministic, so there are no API
+  rate limits to handle in the scoring path.
 - Log errors using the project's standard logger (`logging.basicConfig` level INFO).
 
 ### Frontend (Dashboard)
@@ -112,11 +118,19 @@ The system classifies every conversation into a **Funnel** type to apply relevan
 
 ## ML Pre-Filter Pipeline
 
-Reduces Groq API costs by handling "clean" conversations locally.
--   **Tier 1 (Phrase Matching)**: Instant catch for silent contacts or trivial opt-outs. Currently LIVE.
--   **Tier 2 (kNN Embedding)**: Matches against 911+ past clean conversations (FAISS index). Shadow mode.
--   **Tier 3 (Classifier)**: Logistic regression predicts P(flag) and audit scores. Shadow mode.
--   **Tier 4 (Groq AI)**: Full audit fallback when tiers 1–3 are uncertain or shadow-mode is on.
+Originally built to reduce Groq API costs by handling "clean" conversations
+locally. Groq is gone, so T2/T3 no longer save anything — see the 2026-08-25
+review for the recommendation to either repair or remove them.
+-   **Tier 1 (Phrase Matching)**: Instant catch for silent contacts or trivial opt-outs. LIVE.
+-   **Tier 2 (kNN Embedding)**: FAISS index. Built but DISABLED in production.
+-   **Tier 3 (Classifier)**: Logistic regression. Built but DISABLED in production.
+-   **Tier 4 (Deterministic rule generator)**: the terminal tier. Since Groq was
+    removed this produces effectively **100% of the product's output** — see
+    `ai/prefilter/tier4_flag_generator.py` and `tier1_phrases_v2.py`.
+
+**Caution:** T2/T3 committed artifacts were trained on scikit-learn 1.8.0 while
+`requirements.txt` pins 1.7.2, and the embedding text builder cannot distinguish
+agent from lead. Do not enable T2/T3 without rebuilding both.
 
 **Operational Commands:**
 -   **Run Evaluation**: `python scripts/eval_prefilter.py --limit 500`
@@ -126,7 +140,8 @@ Reduces Groq API costs by handling "clean" conversations locally.
 
 **Env Config (`.env`):**
 -   `PREFILTER_ENABLED=true`
--   `PREFILTER_SHADOW_MODE=true` (True = Groq scores everything for validation)
+-   `PREFILTER_SHADOW_MODE=true` (historically: run tiers without acting on them,
+    for validation against the then-available ground truth)
 -   `PREFILTER_T1_LIVE=true`, `PREFILTER_T2_LIVE=false`, `PREFILTER_T3_LIVE=false`
 
 ---
@@ -145,18 +160,22 @@ When significant changes happen, update the vault:
 
 ---
 
-## AI Key Pool Model (May 2026)
+## Scoring Engine (updated 2026-08-25)
 
-**Single shared Groq pool** in `ai.analyzer.KeyPoolManager`. Keys live in the
-`api_keys` Postgres table:
-- `provider = 'groq'`
-- `agent_name IS NULL` → shared pool key (preferred)
+**There is no AI key pool.** Groq was decommissioned; `ai/analyzer.py` opens with
+"ML-only conversation analyzer. No LLM calls" and `ai/prompts.py` records that the
+prompt builder was removed with it. The previous "AI Key Pool Model" section
+described a subsystem that no longer exists and is deleted.
 
-Selection is LRU. Rate-limited keys cool down and rotate automatically.
-Quota-exhausted keys are permanently removed from rotation for the process.
+Scoring is fully deterministic:
+- `ai/prefilter/tier1_phrases_v2.py` — phrase and pattern rules (LIVE)
+- `ai/prefilter/label_validator.py` — label correctness rules
+- `ai/prefilter/tier4_flag_generator.py` — terminal flag generation
 
-**Guarantee:** No conversation is skipped due to rate limits. The pool cycles
-up to 10 times (≈140 key attempts) before giving up. A skip only happens when
-the model returns malformed JSON — that is a data issue, not a key issue.
+Because these rules produce all output and there are no tests over them, treat any
+change to them as a change to the product's results. Capture golden-transcript
+output before editing and diff after.
+
+**Known review findings** are tracked in `docs/reviews/2026-08-25-deep-code-review.md`.
 
 

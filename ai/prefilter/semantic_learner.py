@@ -23,8 +23,12 @@ import logging
 import time
 from datetime import datetime, timezone
 
+import contextlib
+import threading
+
 import psycopg2
 import psycopg2.extras
+import psycopg2.pool
 
 from config.settings import (
     DATABASE_URL,
@@ -39,6 +43,51 @@ from config.settings import (
 )
 
 logger = logging.getLogger(__name__)
+
+# ── Bounded connection pool (deep review F21) ────────────────────────────────
+# capture_candidate() used to call psycopg2.connect() once PER CONVERSATION, from
+# inside asyncio.to_thread under a Semaphore(15), in each of up to 20 parallel
+# audit subprocesses — roughly 20 x 17 + 10 ≈ 350 connections against a default
+# max_connections of 100. The resulting "too many clients" errors were swallowed
+# into logger.warning, so a connection storm degraded scoring silently.
+#
+# Note also that `with psycopg2.connect(...) as conn:` commits but does NOT close;
+# these connections lingered until garbage collection.
+_POOL_LOCK = threading.Lock()
+_POOL: "psycopg2.pool.ThreadedConnectionPool | None" = None
+_POOL_DSN: str | None = None
+_POOL_MAX = 4
+
+
+def _get_pool(dsn: str):
+    """Lazily create one small pool per process, keyed on DSN."""
+    global _POOL, _POOL_DSN
+    with _POOL_LOCK:
+        if _POOL is None or _POOL_DSN != dsn:
+            if _POOL is not None:
+                with contextlib.suppress(Exception):
+                    _POOL.closeall()
+            _POOL = psycopg2.pool.ThreadedConnectionPool(1, _POOL_MAX, dsn)
+            _POOL_DSN = dsn
+        return _POOL
+
+
+@contextlib.contextmanager
+def _connection(dsn: str):
+    """Borrow a pooled connection, commit on success, roll back on error, always return it."""
+    pool = _get_pool(dsn)
+    conn = pool.getconn()
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        with contextlib.suppress(Exception):
+            conn.rollback()
+        raise
+    finally:
+        with contextlib.suppress(Exception):
+            pool.putconn(conn)
+
 
 
 def capture_candidate(
@@ -108,7 +157,7 @@ def capture_candidate(
     # ── Insert into semantic_candidates ──────────────────────────────
     try:
         dsn = dsn or DATABASE_URL
-        with psycopg2.connect(dsn) as conn:
+        with _connection(dsn) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """INSERT INTO semantic_candidates
@@ -171,7 +220,7 @@ def auto_promote(dsn: str | None = None, dry_run: bool = False) -> dict:
 
     try:
         dsn = dsn or DATABASE_URL
-        with psycopg2.connect(dsn) as conn:
+        with _connection(dsn) as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 # Find eligible candidates (24h stabilization window)
                 cur.execute(
@@ -209,7 +258,7 @@ def auto_promote(dsn: str | None = None, dry_run: bool = False) -> dict:
         promoted_ids = [c["id"] for c in candidates]
         now_iso = datetime.now(timezone.utc)
 
-        with psycopg2.connect(dsn) as conn:
+        with _connection(dsn) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """UPDATE semantic_candidates
@@ -287,7 +336,7 @@ def get_queue_stats(dsn: str | None = None) -> dict:
     """Get current queue statistics for monitoring."""
     try:
         dsn = dsn or DATABASE_URL
-        with psycopg2.connect(dsn) as conn:
+        with _connection(dsn) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """SELECT

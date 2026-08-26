@@ -271,6 +271,9 @@ def _record_decision_async(db_pool, conversation_id: int, decision: PrefilterRes
                     decision.notes or None,
                 )
         except Exception as e:
-            logger.debug(f"[Prefilter] failed to record decision: {e}")
+            # WARNING, not debug. At debug level this swallow is why nobody noticed
+            # that prefilter_decisions did not exist and every insert had been
+            # failing since the table was introduced (deep review F8).
+            logger.warning(f"[Prefilter] failed to record decision: {e}")
 
     loop.create_task(_do_record())

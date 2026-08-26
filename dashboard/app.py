@@ -14,6 +14,7 @@ Routes:
 """
 
 import asyncio
+from time import monotonic as _monotonic
 import json
 import logging
 import os
@@ -41,6 +42,7 @@ from config.settings import (
     DATABASE_URL, get_now, TIMEZONE, TIMEZONE_STR,
     GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, APP_BASE_URL,
     SESSION_SECRET_KEY, TOOL_ACCESS_SEED_EMAILS,
+    normalize_label_filter as _normalize_label_shared,
 )
 from config.rate_limiter import get_rate_limiter, route_bucket
 
@@ -70,12 +72,21 @@ RUN_STATUS_DIR = PROJECT_ROOT / "logs" / "run_status"
 # â"€â"€ App setup â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 
+# Advisory-lock key for the nightly reset. Distinct from db.py's schema lock
+# (987654321). Ensures only one instance performs the reset if the service is
+# ever scaled past a single replica (deep review F35).
+_RESET_ALL_LOCK_KEY = 987654322
+
+
 async def _scheduled_reset_all(pool):
-    """Background task to trigger the reset-all logic at 11:00 PM EST daily."""
-    est = pytz.timezone("US/Eastern")
+    """Background task to trigger the reset-all logic at 11:00 PM local time daily.
+
+    Uses the shared TIMEZONE from config.settings rather than a hardcoded zone,
+    so the reset stays aligned with the app's business day if TZ changes (F35).
+    """
     while True:
         try:
-            now = datetime.now(est)
+            now = get_now()
             # Target is 11:00 PM (23:00) today
             target = now.replace(hour=23, minute=0, second=0, microsecond=0)
             
@@ -84,21 +95,50 @@ async def _scheduled_reset_all(pool):
                 target += timedelta(days=1)
                 
             seconds_to_wait = (target - now).total_seconds()
-            logger.info(f"Schedule: Next automated 'Reset All' at {target.strftime('%Y-%m-%d %H:%M:%S')} EST (in {seconds_to_wait/3600:.1f}h)")
+            logger.info(
+                f"Schedule: Next automated 'Reset All' at "
+                f"{target.strftime('%Y-%m-%d %H:%M:%S')} {TIMEZONE_STR} "
+                f"(in {seconds_to_wait/3600:.1f}h)"
+            )
             
             await asyncio.sleep(seconds_to_wait)
             
             # Execute Reset All Logic
             logger.info("Schedule: Triggering 11:00 PM automated Reset All...")
             async with pool.acquire() as conn:
-                count_row = await conn.fetchrow("SELECT COUNT(*) AS cnt FROM accounts")
-                count = count_row["cnt"] if count_row else 0
-                await conn.execute("DELETE FROM audit_scores")
-                await conn.execute("UPDATE conversations SET is_archived = TRUE")
-            
-            global _snapshotted
-            _snapshotted.clear()
-            logger.info(f"Schedule: Automated reset complete for {count} accounts.")
+                # Only one instance may run the reset. pg_try_advisory_lock returns
+                # immediately rather than queueing, so a losing replica just skips.
+                got_lock = await conn.fetchval(
+                    "SELECT pg_try_advisory_lock($1)", _RESET_ALL_LOCK_KEY
+                )
+                if not got_lock:
+                    logger.info(
+                        "Schedule: another instance holds the reset lock — skipping."
+                    )
+                    count = 0
+                else:
+                    try:
+                        # Atomic: a failure between these two statements left every
+                        # agent's summary deleted but conversations unarchived (F12).
+                        async with conn.transaction():
+                            count_row = await conn.fetchrow(
+                                "SELECT COUNT(*) AS cnt FROM accounts"
+                            )
+                            count = count_row["cnt"] if count_row else 0
+                            await conn.execute("DELETE FROM audit_scores")
+                            await conn.execute(
+                                "UPDATE conversations SET is_archived = TRUE"
+                            )
+                    finally:
+                        await conn.execute(
+                            "SELECT pg_advisory_unlock($1)", _RESET_ALL_LOCK_KEY
+                        )
+
+                    global _snapshotted
+                    _snapshotted.clear()
+                    logger.info(
+                        f"Schedule: Automated reset complete for {count} accounts."
+                    )
             
             # Sleep briefly to ensure we don't re-trigger in the same second
             await asyncio.sleep(60)
@@ -268,12 +308,23 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         # Only gate API routes
         if path.startswith("/api/"):
-            ip = request.client.host if request.client else "unknown"
+            # Key on the authenticated user, not the IP (deep review F26).
+            # Behind Railway's edge proxy, request.client.host is the proxy
+            # address for ALL external traffic (uvicorn only trusts
+            # X-Forwarded-For from forwarded_allow_ips, which defaults to
+            # 127.0.0.1), so every manager shared one bucket and could 429 each
+            # other — or trivially deny service to everyone. This is an
+            # authenticated internal tool, so the user is both the meaningful
+            # unit and unspoofable. Unauthenticated requests fall back to the IP.
+            actor = (request.session.get("user_email") or "").strip().lower() \
+                if hasattr(request, "session") else ""
+            if not actor:
+                actor = f"ip:{request.client.host}" if request.client else "anon"
 
             # Match most-specific prefix first
             for prefix, capacity, rate in _ROUTE_LIMITS:
                 if path.startswith(prefix):
-                    bucket_key = route_bucket(ip, prefix)
+                    bucket_key = route_bucket(actor, prefix)
                     allowed, retry_after = _dashboard_rl.check(bucket_key, capacity, rate)
                     if not allowed:
                         return StarletteJSONResponse(
@@ -521,8 +572,12 @@ async def api_flags_realtime():
             rows = await conn.fetch(sql, today)
         return [dict(r) for r in rows]
     except Exception as e:
-        logger.error(f"Error in /api/flags/realtime: {e}")
-        return []
+        # Must NOT return [] — an empty array is indistinguishable from "no flags",
+        # so a database error silently rendered as a reassuring "0 flagged" in the
+        # header counter (deep review F36). 500 lets the client's existing
+        # .catch() fall back to the per-agent count instead.
+        logger.exception("Error in /api/flags/realtime")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 async def _fetch_agent_detail(agent_id: int) -> dict | None:
@@ -669,7 +724,51 @@ def _is_flagged_convo_reviewed(
     return False
 
 
+# Short-TTL memo for _compute_review_stats_bulk (deep review F16).
+# These four queries are unbounded — no LIMIT, no date filter, no agent filter —
+# so their cost scales with TOTAL historical rows, not with what the page shows.
+# /api/agents is polled by every open dashboard AND re-fetched on every audit
+# completion, so a 20-agent run triggered 20 full scans of conversations plus 20
+# sorts of the whole scores table. The numbers only change when an audit
+# finishes, so a few seconds of staleness is invisible to users.
+#
+# This is a mitigation, not the fix. The real fix is to push the whole
+# computation into one set-based query scoped to a date window — see F16 in
+# docs/reviews/2026-08-25-deep-code-review.md. That rewrite must be diffed
+# against current output for every agent before it ships.
+_REVIEW_STATS_TTL_SECONDS = 10.0
+_review_stats_cache: dict[str, object] = {"at": 0.0, "value": None}
+_review_stats_lock = asyncio.Lock()
+
+
+def invalidate_review_stats_cache() -> None:
+    """Drop the memo so the next /api/agents recomputes (call after an audit)."""
+    _review_stats_cache["at"] = 0.0
+    _review_stats_cache["value"] = None
+
+
 async def _compute_review_stats_bulk(conn) -> dict[int, tuple[int, int]]:
+    """Cached wrapper — see _compute_review_stats_bulk_uncached for the queries."""
+    now = _monotonic()
+    cached = _review_stats_cache.get("value")
+    if cached is not None and (now - float(_review_stats_cache["at"])) < _REVIEW_STATS_TTL_SECONDS:
+        return cached  # type: ignore[return-value]
+
+    async with _review_stats_lock:
+        # Re-check: a concurrent request may have refreshed it while we waited,
+        # which is the point — N simultaneous pollers cause ONE recomputation.
+        now = _monotonic()
+        cached = _review_stats_cache.get("value")
+        if cached is not None and (now - float(_review_stats_cache["at"])) < _REVIEW_STATS_TTL_SECONDS:
+            return cached  # type: ignore[return-value]
+
+        value = await _compute_review_stats_bulk_uncached(conn)
+        _review_stats_cache["value"] = value
+        _review_stats_cache["at"] = _monotonic()
+        return value
+
+
+async def _compute_review_stats_bulk_uncached(conn) -> dict[int, tuple[int, int]]:
     """
     Return {agent_id: (needs_review_count, flagged_count)} for ALL agents,
     mirroring the convo list UI. Uses a fixed number of set-based queries
@@ -1106,26 +1205,10 @@ _ALLOWED_DATE_FILTERS = {
 }
 # ISO date: YYYY-MM-DD. Used to validate custom-range args before subprocess.
 _ISO_DATE_RE = _re.compile(r"^\d{4}-\d{2}-\d{2}$")
-_ALL_LABEL_FILTER_VALUES = {"all", "all label", "all labels", "all lable", "all lables"}
-
-
-def _normalize_label_filter(labels: str | None) -> str:
-    if not labels:
-        return ""
-
-    requested = [label.strip() for label in labels.split(",") if label.strip()]
-    if not requested:
-        return ""
-
-    def is_all_labels(value: str) -> bool:
-        normalized = _re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
-        return normalized in _ALL_LABEL_FILTER_VALUES
-
-    requested = [label for label in requested if not is_all_labels(label)]
-    if not requested:
-        return ""
-
-    return ",".join(requested)
+# Delegates to config.settings — the single definition shared with
+# scraper/api_bot.py, which sits on the far side of the subprocess boundary and
+# must agree with this one (deep review F37).
+_normalize_label_filter = _normalize_label_shared
 
 
 class CustomLabelRequest(BaseModel):
@@ -1228,6 +1311,11 @@ _snapshotted: set[tuple[str, str]] = set()
 
 # ── Agent Roster - loaded from database at startup ────────────────────────────
 # In-memory cache; refreshed from DB on add/delete.
+# Read cache for GET /api/roster. NOT authoritative for write-path validation —
+# it is process-local, so an out-of-band change to the `texters` table (another
+# replica, a manual INSERT, a migration) left it stale and assignment saves
+# rejected perfectly valid texters until the app restarted (deep review F40).
+# Write paths must call _assert_texters_exist() against the database instead.
 AGENT_ROSTER: list[str] = []
 
 async def _load_agent_roster_from_db() -> list[str]:
@@ -1237,6 +1325,16 @@ async def _load_agent_roster_from_db() -> list[str]:
         rows = await conn.fetch("SELECT name FROM texters ORDER BY id")
     AGENT_ROSTER = [r["name"] for r in rows]
     return AGENT_ROSTER
+
+
+async def _known_texters(conn) -> set[str]:
+    """Authoritative texter-name set, read from the database.
+
+    Call inside the same transaction as the write it guards so validation and
+    write see the same snapshot (deep review F40).
+    """
+    rows = await conn.fetch("SELECT name FROM texters")
+    return {r["name"] for r in rows}
 
 
 async def _save_trend_snapshot(agent_name: str) -> None:
@@ -1353,7 +1451,10 @@ async def _save_trend_snapshot(agent_name: str) -> None:
 
 @app.get("/")
 async def index():
-    return FileResponse(str(Path(__file__).parent / "static" / "index.html"))
+    # Served from views/, NOT static/. While it lived under the StaticFiles mount
+    # the auth middleware skipped it, so GET /static/index.html returned the whole
+    # SPA — every API route and the owner's email — to anyone (deep review F14).
+    return FileResponse(str(Path(__file__).parent / "views" / "index.html"))
 
 
 # ── Auth routes ───────────────────────────────────────────────────────────────
@@ -1424,9 +1525,17 @@ async def auth_logout(request: Request):
 
 @app.get("/api/me")
 async def api_me(request: Request):
-    """Return the current session user's email."""
+    """Return the current session user's email and whether they are the owner.
+
+    `is_owner` is computed server-side so the client never needs to embed the
+    owner's address. The SPA used to hardcode it twice, which disclosed a real
+    personal email to anyone who fetched the page (deep review F14).
+    """
     email = request.session.get("user_email", "")
-    return {"email": email}
+    return {
+        "email": email,
+        "is_owner": bool(email) and email.lower() == OWNER_EMAIL.lower(),
+    }
 
 
 @app.delete("/api/reset-dedup-cache")
@@ -1453,15 +1562,19 @@ async def api_reset_history(request: Request):
         raise HTTPException(status_code=403, detail="Forbidden")
     try:
         async with app.state.pool.acquire() as conn:
-            await conn.execute("DELETE FROM flagged_conversation_reviews")
-            await conn.execute("DELETE FROM conversation_scores")
-            await conn.execute("DELETE FROM messages")
-            await conn.execute("DELETE FROM conversations")
-            await conn.execute("DELETE FROM contacts")
-            await conn.execute("DELETE FROM audit_scores")
-            await conn.execute("DELETE FROM extractions")
-            await conn.execute("DELETE FROM audited_chats")
-            await conn.execute("DELETE FROM session_events")
+            # All-or-nothing: a mid-sequence failure previously left the database
+            # partially wiped with no code path able to reconcile it (F12).
+            async with conn.transaction():
+                await conn.execute("DELETE FROM flagged_conversation_reviews")
+                await conn.execute("DELETE FROM validation_log")
+                await conn.execute("DELETE FROM conversation_scores")
+                await conn.execute("DELETE FROM messages")
+                await conn.execute("DELETE FROM conversations")
+                await conn.execute("DELETE FROM contacts")
+                await conn.execute("DELETE FROM audit_scores")
+                await conn.execute("DELETE FROM extractions")
+                await conn.execute("DELETE FROM audited_chats")
+                await conn.execute("DELETE FROM session_events")
         _snapshotted.clear()
         logger.info(f"reset-history: conversation history wiped by {requester}")
         return {"success": True}
@@ -1500,6 +1613,9 @@ async def api_tool_access_list():
                 "added_by": _mask_added_by(r["added_by"] or ""),
                 "added_at": r["added_at"].isoformat() if r["added_at"] else None,
                 "is_active": r["is_active"],
+                # Lets the client hide the owner row without embedding the
+                # owner's address in shipped JS (deep review F14).
+                "is_owner": (r["email"] or "").lower() == OWNER_EMAIL.lower(),
             }
             for r in rows
         ]}
@@ -1871,6 +1987,10 @@ async def api_status():
     for name, status in statuses.items():
         if status == "done":
             await _save_trend_snapshot(name)
+            # An audit finishing is the only thing that changes review stats, so
+            # drop the memo immediately rather than serving up to 10s of stale
+            # counts right when the user is watching for them (F16).
+            invalidate_review_stats_cache()
     return {
         "statuses": statuses,
         "status_details": status_details,
@@ -1924,22 +2044,9 @@ async def api_clear_stuck(body: ClearStuckRequest = ClearStuckRequest()):
     return {"cleared": cleared, "count": len(cleared)}
 
 
-@app.get("/api/ai/status")
-async def api_ai_status():
-    """
-    Report AI engine mode. ML-only — there is no LLM key pool anymore.
-
-    Response:
-        {"success": true, "data": {"mode": "ml-only", "groq_disabled": true}}
-    """
-    return {"success": True, "data": {
-        "mode": "ml-only",
-        "groq_disabled": True,
-        "total_keys": 0,
-        "available_keys": 0,
-        "cooling_keys": 0,
-        "providers": {},
-    }}
+# NOTE: GET /api/ai/status was removed here (deep review F36). It reported on a
+# Groq key pool that no longer exists, returning hardcoded zeros, and nothing in
+# the dashboard consumed it.
 
 
 @app.get("/api/agent/{agent_id}")
@@ -1979,10 +2086,13 @@ async def api_reset_all():
     Trend snapshots are also preserved."""
     try:
         async with app.state.pool.acquire() as conn:
-            count_row = await conn.fetchrow("SELECT COUNT(*) AS cnt FROM accounts")
-            count = count_row["cnt"] if count_row else 0
-            await conn.execute("DELETE FROM audit_scores")
-            await conn.execute("UPDATE conversations SET is_archived = TRUE")
+            # Atomic: a failure between the two statements left every agent's
+            # summary deleted but conversations unarchived (F12).
+            async with conn.transaction():
+                count_row = await conn.fetchrow("SELECT COUNT(*) AS cnt FROM accounts")
+                count = count_row["cnt"] if count_row else 0
+                await conn.execute("DELETE FROM audit_scores")
+                await conn.execute("UPDATE conversations SET is_archived = TRUE")
         _snapshotted.clear()
         logger.info(f"Reset-all: cleared audit_scores and archived all conversations for {count} agents")
         return {"status": "ok", "agents_cleared": count}
@@ -2129,18 +2239,25 @@ async def api_delete_agent(agent_id: int):
     """Remove an agent and all their data from the database."""
     try:
         async with app.state.pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT name, email FROM accounts WHERE id = $1", agent_id)
-            if not row:
-                raise HTTPException(status_code=404, detail="Agent not found")
-            name, email = row["name"], row["email"]
+            # One transaction: previously each DELETE autocommitted on its own, so a
+            # failure partway through destroyed the agent's history and then 500'd
+            # with the account row still present and unrecoverable (deep review F12).
+            async with conn.transaction():
+                row = await conn.fetchrow("SELECT name, email FROM accounts WHERE id = $1", agent_id)
+                if not row:
+                    raise HTTPException(status_code=404, detail="Agent not found")
+                name, email = row["name"], row["email"]
 
-            await conn.execute("DELETE FROM audited_chats   WHERE agent_email = $1", email)
-            await conn.execute("DELETE FROM session_events  WHERE agent_id   = $1", agent_id)
-            await conn.execute("DELETE FROM flag_feedback   WHERE agent_id   = $1", agent_id)
-            await conn.execute("DELETE FROM audit_scores    WHERE agent_id   = $1", agent_id)
-            await conn.execute("DELETE FROM extractions     WHERE agent_id   = $1", agent_id)
-            await conn.execute("DELETE FROM conversations   WHERE agent_id   = $1", agent_id)
-            await conn.execute("DELETE FROM accounts        WHERE id         = $1", agent_id)
+                await conn.execute("DELETE FROM audited_chats   WHERE agent_email = $1", email)
+                await conn.execute("DELETE FROM session_events  WHERE agent_id   = $1", agent_id)
+                await conn.execute("DELETE FROM flag_feedback   WHERE agent_id   = $1", agent_id)
+                # validation_log has a NOT NULL FK to accounts with no ON DELETE
+                # action; omitting it was what aborted the delete (F12).
+                await conn.execute("DELETE FROM validation_log  WHERE agent_id   = $1", agent_id)
+                await conn.execute("DELETE FROM audit_scores    WHERE agent_id   = $1", agent_id)
+                await conn.execute("DELETE FROM extractions     WHERE agent_id   = $1", agent_id)
+                await conn.execute("DELETE FROM conversations   WHERE agent_id   = $1", agent_id)
+                await conn.execute("DELETE FROM accounts        WHERE id         = $1", agent_id)
 
         logger.info(f"Deleted agent id={agent_id}: {name} <{email}>")
         return {"status": "ok", "agent_id": agent_id}
@@ -2564,7 +2681,8 @@ def _seg_instant(day: "date", hhmm: str, *, is_end: bool) -> datetime:
 
 
 def _normalize_segments(day: "date",
-                        segments: list[DaySegment]) -> list[tuple[datetime, datetime, str]]:
+                        segments: list[DaySegment],
+                        known_texters: set[str] | None = None) -> list[tuple[datetime, datetime, str]]:
     """
     Validate one account's day into ordered, non-overlapping (start, end, texter).
 
@@ -2580,7 +2698,10 @@ def _normalize_segments(day: "date",
         texter = (seg.texter_name or "").strip()
         if not texter:
             continue
-        if texter not in AGENT_ROSTER:
+        # Validate against the caller-supplied DB snapshot; fall back to the
+        # process cache only when none was provided (deep review F40).
+        _valid = known_texters if known_texters is not None else set(AGENT_ROSTER)
+        if texter not in _valid:
             raise ValueError(f"'{texter}' is not in the texter roster")
 
         start = _seg_instant(day, seg.start_time or "00:00", is_end=False)
@@ -2923,6 +3044,8 @@ async def api_save_all_assignments(body: SaveAllAssignmentsRequest, request: Req
             r["email"].lower(): r["email"]
             for r in await conn.fetch("SELECT email FROM accounts WHERE email IS NOT NULL")
         }
+        # Database-backed, not the stale process cache (deep review F40).
+        valid_texters = await _known_texters(conn)
 
     # Drop anything we can't attribute to a real account or a real texter.
     clean: dict[str, str] = {}
@@ -2930,7 +3053,7 @@ async def api_save_all_assignments(body: SaveAllAssignmentsRequest, request: Req
         if email_lc not in known:
             errors.append(f"Unknown account: {email_lc}")
             continue
-        if texter and texter not in AGENT_ROSTER:
+        if texter and texter not in valid_texters:
             errors.append(f"'{texter}' is not in the texter roster")
             continue
         clean[known[email_lc]] = texter
@@ -3256,6 +3379,9 @@ async def api_save_day_segments(body: SaveDaySegmentsRequest, request: Request):
             r["email"].lower(): r["email"]
             for r in await conn.fetch("SELECT email FROM accounts WHERE email IS NOT NULL")
         }
+        # Read the roster from the database rather than trusting the process
+        # cache, which goes stale on out-of-band changes (deep review F40).
+        valid_texters = await _known_texters(conn)
 
     # Validate everything before writing anything — a half-applied day would
     # leave the timeline in a state nobody asked for.
@@ -3267,7 +3393,9 @@ async def api_save_day_segments(body: SaveDaySegmentsRequest, request: Request):
             errors.append(f"Unknown account: {entry.account_email.strip()}")
             continue
         try:
-            plan[known[email_lc]] = _normalize_segments(target_date, entry.segments)
+            plan[known[email_lc]] = _normalize_segments(
+                target_date, entry.segments, known_texters=valid_texters
+            )
         except ValueError as exc:
             errors.append(f"{known[email_lc]}: {exc}")
 
@@ -3943,7 +4071,12 @@ async def api_detailed_dashboard(
                         (
                             SELECT m.body FROM messages m
                             WHERE m.conversation_id = c.id
-                              AND m.sender = 'agent'
+                              -- m.sender never holds the literal 'agent' (the
+                              -- scraper writes the agent's first name), so this
+                              -- always returned NULL and every card in the
+                              -- Detailed Dashboard read "No messages"
+                              -- (deep review F34, same root cause as F10).
+                              AND LOWER(TRIM(COALESCE(m.sender, ''))) NOT IN ('contact','lead','unknown','')
                             ORDER BY m.seq ASC, m.id ASC
                             LIMIT 1
                         ) AS preview_snippet

@@ -17,7 +17,8 @@ import logging
 from datetime import datetime, timedelta
 import pytz
 
-from database.db import _parse_msg_datetime
+from config.settings import TIMEZONE
+from database.db import _parse_msg_datetime, _is_outgoing
 
 logger = logging.getLogger(__name__)
 
@@ -85,8 +86,12 @@ def _labels_match(assigned_labels) -> bool:
 
 
 def _is_agent(sender: str | None) -> bool:
-    """Contact/lead messages use sender == 'Contact'; everything else is the agent."""
-    return (sender or "").strip().lower() != "contact"
+    """Delegates to the single shared predicate (deep review F10).
+
+    The local version only excluded 'contact', so 'lead', 'unknown' and empty
+    senders were counted as agent messages and could start a response-time clock.
+    """
+    return _is_outgoing(sender)
 
 
 def _business_minutes_between(dt1: datetime, dt2: datetime) -> float:
@@ -98,7 +103,9 @@ def _business_minutes_between(dt1: datetime, dt2: datetime) -> float:
     if not dt1 or not dt2 or dt2 <= dt1:
         return 0.0
 
-    est = pytz.timezone("US/Eastern")
+    # Shared business timezone rather than a third independent hardcoding of
+    # US/Eastern (deep review F37).
+    est = TIMEZONE
     if dt1.tzinfo is None:
         dt1 = est.localize(dt1)
     else:

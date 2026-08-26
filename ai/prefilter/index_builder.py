@@ -59,11 +59,16 @@ def fetch_training_rows(conn) -> list[dict]:
         cs.professionalism_score,
         cs.script_adherence_score,
         cs.red_flags,
+        -- Must match ai/prefilter/embedder.py::conversation_to_text exactly, or
+        -- the index is labelled differently from the queries run against it.
+        -- The old CASE compared sender against the ACCOUNT name, which only
+        -- matched single-token names ('Resva1006') and silently failed for any
+        -- name with a space ('Noah Mallen' -> sender 'Noah'), making the corpus
+        -- internally inconsistent AND skewed vs. the query distribution (F10).
         STRING_AGG(
-            CASE WHEN LOWER(m.sender) = LOWER(COALESCE(ac.name,'agent'))
-                      OR LOWER(m.sender) = 'agent'
-                 THEN 'AGENT: ' || m.body
-                 ELSE 'CONTACT: ' || m.body
+            CASE WHEN LOWER(TRIM(COALESCE(m.sender, ''))) IN ('contact','lead','unknown','')
+                 THEN 'CONTACT: ' || m.body
+                 ELSE 'AGENT: ' || m.body
             END,
             E'\n' ORDER BY m.sent_at NULLS LAST, m.id
         ) AS conversation_text
@@ -75,7 +80,15 @@ def fetch_training_rows(conn) -> list[dict]:
     WHERE
         cs.model_used IS NOT NULL
         AND cs.model_used <> ''
-        AND COALESCE(cs.source, 'groq') NOT IN ('prefilter_t1','prefilter_t2','prefilter_t3')
+        AND COALESCE(cs.source, 'groq') NOT IN
+            -- prefilter_t4 is EXCLUDED (deep review F32). With Groq gone, T4
+            -- writes the source for essentially every new score, so training the
+            -- index on it means learning to reproduce the rule engine from labels
+            -- the rule engine produced — no new information, and its errors become
+            -- self-reinforcing. Keeps the corpus anchored on independent ground
+            -- truth. Set PREFILTER_REQUIRE_VALIDATION=true once ~50 human
+            -- validations exist and prefer those instead.
+            ('prefilter_t1','prefilter_t2','prefilter_t3','prefilter_t4')
         -- Also include T4 results (deterministic, high-quality)
         -- OR cs.source = 'prefilter_t4'
         -- Never train on conversations the manager marked invalid
@@ -135,11 +148,16 @@ def fetch_promoted_candidates(conn) -> list[dict]:
         sc.professionalism_score,
         sc.script_adherence_score,
         '[]'::jsonb AS red_flags,
+        -- Must match ai/prefilter/embedder.py::conversation_to_text exactly, or
+        -- the index is labelled differently from the queries run against it.
+        -- The old CASE compared sender against the ACCOUNT name, which only
+        -- matched single-token names ('Resva1006') and silently failed for any
+        -- name with a space ('Noah Mallen' -> sender 'Noah'), making the corpus
+        -- internally inconsistent AND skewed vs. the query distribution (F10).
         STRING_AGG(
-            CASE WHEN LOWER(m.sender) = LOWER(COALESCE(ac.name,'agent'))
-                      OR LOWER(m.sender) = 'agent'
-                 THEN 'AGENT: ' || m.body
-                 ELSE 'CONTACT: ' || m.body
+            CASE WHEN LOWER(TRIM(COALESCE(m.sender, ''))) IN ('contact','lead','unknown','')
+                 THEN 'CONTACT: ' || m.body
+                 ELSE 'AGENT: ' || m.body
             END,
             E'\n' ORDER BY m.sent_at NULLS LAST, m.id
         ) AS conversation_text

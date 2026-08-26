@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"      # must match runtime.txt / the Railway image
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests
+        env:
+          # Never real values — nothing in the suite opens a connection.
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          FIREBASE_API_KEY: test-key-not-real
+          TZ: America/New_York
+        run: pytest
+
+      - name: Guard against naive datetime.now()
+        # Deep review F24: a naive datetime bound to a TIMESTAMPTZ column is
+        # interpreted as UTC, silently shifting timestamps by the UTC offset.
+        # Use config.settings.get_now() instead.
+        run: |
+          if grep -rn --include="*.py" "datetime\.now()" \
+               ai config dashboard database scraper scripts main.py \
+               | grep -v "config/settings.py" | grep -v "^\s*#" | grep -v "# "; then
+            echo "::error::Found naive datetime.now() — use get_now() from config.settings"
+            exit 1
+          fi
+          echo "OK: no naive datetime.now()"
+
+      - name: Guard against a global flag-suppression path returning
+        # Deep review F1: an unscoped SELECT over flag_feedback let one reviewer
+        # permanently disable a compliance flag for every agent.
+        run: |
+          if grep -rn "SELECT red_flag FROM flag_feedback\"" ai/ ; then
+            echo "::error::Unscoped flag_feedback query reintroduced (see deep review F1)"
+            exit 1
+          fi
+          echo "OK: flag suppression remains conversation-scoped"
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan for committed secrets
+        # Deep review F4: a live Firebase API key was committed and is still in
+        # history. This stops the next one.
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
