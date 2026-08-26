@@ -6735,10 +6735,17 @@ function _addAssignRow(btn) {
   if (last) {
     const lastStart = _boundMins(last, "start") ?? 0;
     const lastEnd   = _boundMins(last, "end")   ?? 1440;
-    if (lastEnd >= 1440) {
-      // Carve the tail off the final range rather than appending past midnight.
-      // Half-way to the end, on the nearest 30 minutes, is a starting point the
-      // user edits — not a guess we pretend is right.
+    if (lastEnd >= 1440 && lastStart === 0) {
+      // Untouched "All day" default — anchor to the same sensible 10a–7p
+      // shift the Split-day toggle uses, instead of a midnight-based guess.
+      _setBound(last, "start", 600);  // 10:00
+      _setBound(last, "end", 1140);   // 19:00
+      start = 1140;
+    } else if (lastEnd >= 1440) {
+      // A genuine custom range that runs to midnight — carve the tail off
+      // rather than appending past it. Half-way to the end, on the nearest
+      // 30 minutes, is a starting point the user edits — not a guess we
+      // pretend is right.
       const mid = Math.min(1410, Math.max(lastStart + 30,
         Math.round((lastStart + 1440) / 2 / 30) * 30));
       _setBound(last, "end", mid);
