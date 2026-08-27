@@ -171,6 +171,15 @@ _PROFANITY_DNC_PATTERNS = [
     re.compile(r"\bhow\s+(fucking\s+)?rude\b", re.I),
 ]
 
+# Contact self-discloses as a real estate professional → Do Not Call, used by
+# Check 8's realtor guard. Mirrors label_validator.py's _DNC realtor pattern
+# (lines ~325-326) — keep both in sync if either is extended.
+_REALTOR_SELF_DISCLOSURE_RE = re.compile(
+    r"\b(i\s+am|i'?m)\s+an?\s+(real\s+estate\s+)?(licensed\s+)?"
+    r"(agent|realtor|broker|real\s+estate\s+agent|real\s+estate\s+broker)\b",
+    re.I,
+)
+
 _HARD_OPTOUT_DNC_PATTERNS = [
     re.compile(r"\b(scammer|scam|fraud|harassing\s+me|harassment)\b", re.I),
     re.compile(r"\bstop\s+(texting|contacting|calling|messaging)\s+me\b", re.I),
@@ -2010,6 +2019,51 @@ def evaluate(
                 logger.info(
                     f"[T1] {contact_name}: NI detected but contact re-engaged after — "
                     "deferring to T4 for full-convo analysis"
+                )
+                return None
+
+            # ── Realtor self-disclosure guard (DNC beats Not Interested) ────
+            # "No, I'm a realtor" — contact disclosed being a real estate
+            # professional, not just declining. Duplicates the realtor pattern
+            # in label_validator.py's _DNC list (keep both in sync) since this
+            # check must run before this short-circuit hardcodes "Not
+            # Interested" below.
+            if _REALTOR_SELF_DISCLOSURE_RE.search(contact_text):
+                if _label_key(_actual_label) == "do not call":
+                    scores = {
+                        "compliance_score": 100, "sentiment_score": 80,
+                        "professionalism_score": 90, "script_adherence_score": 100,
+                    }
+                    from . import summary_builder as _sb_realtor
+                    _realtor_summary = _sb_realtor.build_summary(
+                        messages, agent_name, contact_name, scores,
+                        model_used="prefilter_t1_v2",
+                    )
+                    return PrefilterResult(
+                        tier_hit=1, decision="short_circuit", confidence=0.90,
+                        notes=f"[{funnel_tier}] realtor self-disclosure — DNC label accepted",
+                        predicted_scores=scores,
+                        result=_clean_result(
+                            contact_name,
+                            summary=_realtor_summary,
+                            scores=scores,
+                            funnel_tier=funnel_tier,
+                            funnel_stage="none",
+                            label_assigned=_actual_label,
+                            label_reason=(
+                                "Contact disclosed being a real estate agent/realtor/"
+                                "broker — Do Not Call takes priority over Not Interested."
+                            ),
+                            actual_label=_actual_label,
+                            all_assigned_labels=assigned_labels,
+                        ),
+                    )
+                # Any other assigned label — defer to T4/label_validator, which
+                # will correctly evaluate the realtor-DNC priority-1 rule instead
+                # of this short-circuit asserting "Not Interested".
+                logger.info(
+                    f"[T1] {contact_name}: realtor self-disclosure detected — "
+                    "deferring to T4 instead of short-circuiting to Not Interested"
                 )
                 return None
 

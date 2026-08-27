@@ -98,6 +98,11 @@ _WRONG_NUMBER = [
     # "I don't own" / "I don't have a home" / "I rent"
     re.compile(r"\bdon'?t\s+(own|have\s+a\s+(house|home|property))\b", re.I),
     re.compile(r"\bi\s+(rent|am\s+renting|don'?t\s+own)\b", re.I),
+    # "We no longer own the property" — ambiguous on its own (could be a former
+    # owner who sold, could be wrong-number/never-owned); defaults to Wrong
+    # Number unless an explicit sale-event phrase is also present, see the
+    # co-occurrence check in _expected_label().
+    re.compile(r"\bno\s+longer\s+own\b", re.I),
     # "Her number is X" — forwarding to actual owner
     re.compile(r"\b(her|his|their)\s+number\s+is\b", re.I),
     # "I don't have a home" — explicit WN phrase from real data
@@ -431,13 +436,17 @@ _DNC = _DNC + _DNC_RELATIVE_REALTOR + _DNC_MINOR_OWNER + _DNC_PROFANITY_INSULTS
 # "it could be sold if I get an outrageous offer" (a conditional, #12) — both
 # reviewer-rejected false Sold flags. Require an actual completed-action verb
 # form; conditionals/modals are explicitly vetoed by _SOLD_CONDITIONAL_SUPPRESS.
+# NOTE (2026-08-27): "no longer own" removed from here — on its own it's
+# ambiguous (could mean sold, could mean wrong-number/never-owned) and defaults
+# to Wrong Number (see _WRONG_NUMBER below). It only means Sold when paired
+# with an explicit sale-event phrase from this list — see the co-occurrence
+# check in _expected_label().
 _SOLD = [
     re.compile(r"\balready\s+sold\b", re.I),
     re.compile(r"\bjust\s+sold\b", re.I),
     re.compile(r"\bwe\s+sold\s+it\b|\bi\s+sold\s+it\b|\bsold\s+it\b", re.I),
     re.compile(r"\bhas\s+been\s+sold\b", re.I),
     re.compile(r"\bclosed\s+on\s+it\b", re.I),
-    re.compile(r"\bno\s+longer\s+own\b", re.I),
     re.compile(r"\bnew\s+owner\b", re.I),
 ]
 
@@ -1122,7 +1131,17 @@ def _expected_label(contact_text: str, messages: list[dict], assigned_label: str
         )
 
     # ── PRIORITY 2: Wrong Number (only if no DNC) ──────────────────────────────
+    # "No longer own" + an explicit sale-event phrase together ("...no longer
+    # own it, we sold it last year") means Sold, not Wrong Number — the "no
+    # longer own" phrase alone is ambiguous, but paired with real sold-language
+    # it's unambiguous. Only the bare/no-sold case defaults to Wrong Number.
     if has_wn:
+        _no_longer_own = re.search(r"\bno\s+longer\s+own\b", contact_text, re.I) is not None
+        if _no_longer_own and has_sold:
+            return "Sold", (
+                "ML detected sold-property language (\"no longer own\" combined "
+                "with an explicit sold phrase)."
+            )
         return "Wrong Number", "ML detected wrong-number language."
 
     # ── PRIORITY 3: Sold (only if no DNC) ──────────────────────────────────────
@@ -1198,6 +1217,19 @@ def _expected_label(contact_text: str, messages: list[dict], assigned_label: str
     # the contact is negotiating — don't override DNC/NI with a false Sold signal.
     if assigned_key == "do not call" and _sold_raw and _sold_neighbor and not has_dnc:
         return None, ""
+
+    # Guard: agent labeled DNC but the contact has no parseable text reply.
+    # This is usually NOT true silence — the contact likely replied with a
+    # picture/GIF (often NSFW) that the scraper can't read as text, and the
+    # human reviewer saw it and correctly tagged Do Not Call. Don't override
+    # to Stopped Responding just because the text side looks empty.
+    if assigned_key == "do not call":
+        _contact_messages_present = [m for m in messages if _sender(m) == "contact" and _body(m)]
+        if not _contact_messages_present:
+            return "Do Not Call", (
+                "Contact sent no parseable text reply (likely an image/GIF the "
+                "tool can't read) — Do Not Call as assigned stands."
+            )
 
     # Stopped Responding / Missed Call / Undefined / Listed:
     # correct if contact has no messages OR contact sent only very short ambiguous responses

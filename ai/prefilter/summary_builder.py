@@ -361,6 +361,11 @@ _CONTACT_PRICE_BARE_RE = re.compile(
     r"\b(\d[\d,]*(?:\.\d+)?)\s*(k|thousand|grand|million|mil)\b",
     re.I,
 )
+# Bare 6-7 digit number with no $ and no unit suffix — "Looking for 475000".
+# No suffix/prefix needed since a 6-7 digit run is unambiguous as a price (vs.
+# a 10-digit phone number or a short quantity); the >= 10_000 floor below still
+# applies as the final sanity check.
+_CONTACT_PRICE_BARE_DIGITS_RE = re.compile(r"\b(\d{6,7})\b")
 _WORD_NUMS = {
     "a": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
     "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
@@ -404,6 +409,17 @@ def _parse_contact_price(body: str) -> float | None:
         # Sanity floor — a real asking price, not "5k run" / "10k followers"
         if value >= 10_000:
             return value
+
+    # Bare 6-7 digit number, no $ and no suffix: "Looking for 475000"
+    dm = _CONTACT_PRICE_BARE_DIGITS_RE.search(body)
+    if dm:
+        try:
+            value = float(dm.group(1).replace(",", ""))
+        except ValueError:
+            return None
+        if value >= 10_000:
+            return value
+
     return None
 
 
