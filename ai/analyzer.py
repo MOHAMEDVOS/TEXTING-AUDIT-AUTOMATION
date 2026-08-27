@@ -13,10 +13,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# ── 30-day rolling window for conversation auditing ──────────────────────────
-# Only messages within the last 30 days from the newest message are audited.
-# This prevents stale history (months/years old) from skewing current scores.
-_AUDIT_WINDOW_DAYS = 30
+# ── 7-day rolling window for conversation auditing ────────────────────────────
+# Only messages within the last 7 days from the newest message are audited.
+# This prevents stale history (weeks/months/years old) from skewing current scores.
+_AUDIT_WINDOW_DAYS = 7
 
 
 def _parse_message_date(date_str: str):
@@ -56,7 +56,7 @@ def filter_recent_messages(
     falls outside the window. Without it a thread whose only engagement is
     older than `window_days` reads as "contact never replied" and gets
     mislabelled Stopped Responding — e.g. a lead who said "not now, maybe
-    fall/winter" 34 days ago is a Maybe Later, not a silent contact.
+    fall/winter" 9 days ago is a Maybe Later, not a silent contact.
     """
     from datetime import timedelta
 
@@ -96,6 +96,15 @@ def filter_recent_messages(
             None,
         )
         if rescued is not None:
+            # Tagged (on a copy, so the original dict used elsewhere — e.g. the
+            # chat UI — is untouched) so ai.response_time.check_response_time
+            # knows this message is a stitched-in historical artifact, not a
+            # fresh in-window reply, and won't open a response-time clock on
+            # it. Without this, a months-old rescued message paired with
+            # today's agent reply reads as one giant unanswered wait — the
+            # exact defect this rolling window (deep review F28) was meant to
+            # prevent, reintroduced through this rescue path.
+            rescued = {**rescued, "_stale_rescue": True}
             filtered = [rescued] + filtered
             logger.info(
                 f"[Analyzer] {window_days}-day window: kept contact's last reply "
@@ -105,7 +114,7 @@ def filter_recent_messages(
     if len(filtered) < len(messages):
         dropped = len(messages) - len(filtered)
         logger.info(
-            f"[Analyzer] 30-day window: kept {len(filtered)}/{len(messages)} messages "
+            f"[Analyzer] {window_days}-day window: kept {len(filtered)}/{len(messages)} messages "
             f"(dropped {dropped} older than {cutoff.isoformat()})"
         )
 
@@ -164,7 +173,7 @@ def analyze_conversation(
     if not messages:
         return _empty_result("No messages to analyze", contact_name)
 
-    # ── 30-day rolling window: drop messages older than 30 days ──────
+    # ── 7-day rolling window: drop messages older than 7 days ──────
     messages = filter_recent_messages(messages)
 
     # ── ML pre-filter (Tier 1/2/3) — may short-circuit ────────────────

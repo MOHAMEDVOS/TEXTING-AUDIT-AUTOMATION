@@ -311,6 +311,8 @@
       background:var(--surface-elevated); color:var(--text-muted);
       font-weight:600; font-style:italic;
     }
+    /* Two names and their minutes don't fit on one line at narrow widths. */
+    .rf-owner-split { white-space:normal; }
     .lp-item-active { background:var(--brand-bg) !important; color:var(--brand) !important; font-weight:600; }
     #vw-chat > div:first-child { background: var(--surface-subtle) !important; }
     #ch-ai { background: var(--surface) !important; }
@@ -1140,13 +1142,6 @@
       border-color: rgba(80,72,50,0.18) !important;
       box-shadow: 0 1px 4px rgba(0,0,0,0.06), 0 2px 12px rgba(0,0,0,0.04) !important;
     }
-    [data-theme="light"] #trends-chart-bars > div {
-      border-color: rgba(80,72,50,0.18) !important;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.06), 0 2px 12px rgba(0,0,0,0.04) !important;
-    }
-    [data-theme="light"] #trends-chart-wrap > div:first-child > div:first-child {
-      color: #0f1117 !important;
-    }
 
     /* Section dividers — subtle gradient line */
     [data-theme="dark"] #vw-settings-add > div:last-child > div > div[style*="border-top"],
@@ -1192,16 +1187,33 @@
     #vw-empty p { color: var(--text-primary) !important; }
     #sb-select-bar { background: var(--brand-bg) !important; border-color: var(--surface-border) !important; }
 
-    /* ── Not Valid feedback ── */
-    .btn-not-valid {
-      font-size: 10px; padding: 2px 8px; margin-left: 4px; flex-shrink: 0;
-      border-radius: 6px; border: 1px solid rgba(181,51,51,.4);
-      color: var(--danger); background: transparent; cursor: pointer;
-      transition: background .18s, color .18s, border-color .18s;
+    /* ── Manual validation ──
+       The only control that lets a conversation's flags count toward the
+       agent's record. Off = neutral outline, on = solid green confirmation. */
+    /* Unconfirmed: solid green so it reads as the one thing to click here.
+       Confirmed: quiet outline — the work is done, stop drawing the eye. */
+    .btn-validate {
+      font-size: 11px; padding: 5px 14px; flex-shrink: 0;
+      border-radius: 99px; border: 1px solid #059669;
+      color: #fff; background: #059669; cursor: pointer;
+      transition: background .18s, color .18s, border-color .18s, box-shadow .18s;
       line-height: 1.5; white-space: nowrap; letter-spacing: -0.01em;
+      font-weight: 700; text-transform: none;
+      box-shadow: 0 1px 6px rgba(5,150,105,.35);
     }
-    .btn-not-valid:hover:not(:disabled) { background: var(--danger); color: #fff; border-color: transparent; }
-    .btn-not-valid.rf-done { border-color: var(--surface-border); color: var(--text-muted); pointer-events: none; }
+    .btn-validate:hover:not(:disabled) {
+      background: #047857; border-color: #047857;
+      box-shadow: 0 2px 10px rgba(5,150,105,.5);
+    }
+    .btn-validate.is-valid {
+      background: transparent; border-color: rgba(5,150,105,.55);
+      color: #059669; box-shadow: none; font-weight: 600;
+    }
+    .btn-validate.is-valid:hover:not(:disabled) {
+      background: rgba(5,150,105,.1); border-color: #059669; color: #059669;
+      box-shadow: none;
+    }
+    .btn-validate:disabled { opacity: .55; cursor: default; }
     .rf-invalidated .rf-text { text-decoration: line-through; opacity: .4; }
 
     /* Label-only issue (no red-flag box) */
@@ -1216,38 +1228,6 @@
       color: #fca5a5; line-height: 1.45;
     }
     .label-issue-reason { color: var(--text-muted); font-style: italic; font-weight: 500; }
-    .label-issue-btn { margin-left: 0; flex-shrink: 0; align-self: center; }
-
-    /* ── Modal ── */
-    .nv-overlay {
-      position: fixed; inset: 0; background: rgba(20,20,19,.5);
-      backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
-      display: flex; align-items: center; justify-content: center; z-index: 9999;
-    }
-    .nv-box {
-      background: var(--surface); border: 1px solid var(--surface-border);
-      border-radius: 12px; padding: 28px 30px; width: 440px; max-width: 94vw;
-      box-shadow: var(--shadow-md);
-    }
-    .nv-box h3 { margin: 0 0 6px; font-size: 17px; font-weight: 600; font-family: var(--font-display); letter-spacing: -0.01em; }
-    .nv-flag-preview {
-      font-size: 12px; color: var(--text-secondary);
-      background: rgba(181,51,51,.06); border: 1px solid rgba(181,51,51,.14);
-      border-radius: 8px; padding: 8px 12px; margin-bottom: 16px; line-height: 1.5;
-    }
-    .nv-box label { display: block; font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .04em; }
-    .nv-box input, .nv-box select {
-      width: 100%; box-sizing: border-box; padding: 8px 12px; border-radius: 8px;
-      border: 1px solid var(--surface-border);
-      background: var(--input-bg); color: var(--text-primary);
-      font-size: 13px; margin-bottom: 14px; font-family: var(--font-text);
-    }
-    .nv-box input:focus, .nv-box select:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px rgba(37,99,235,.18); }
-    .nv-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
-    .nv-actions button { padding: 8px 20px; border-radius: 8px; font-size: 13px; cursor: pointer; border: none; font-family: var(--font-text); }
-    .nv-btn-submit { background: var(--brand); color: #faf9f5; font-weight: 500; }
-    .nv-btn-submit:hover { background: var(--brand-hover); }
-    .nv-btn-cancel { background: transparent; border: 1px solid var(--surface-border) !important; color: var(--text-secondary); }
 
     /* ── Score metric tooltips ── */
     .score-metric { position: relative; }
@@ -2754,19 +2734,6 @@
           </div>
         </div>
 
-        <!-- Leaderboard -->
-        <div id="trends-chart-wrap" style="display:none; margin-bottom:24px;">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-            <div style="font-size:.7rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.07em;">Leaderboard</div>
-            <div style="display:flex;gap:16px;font-size:.65rem;color:var(--text-muted);">
-              <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block;"></span>≥80</span>
-              <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>60–79</span>
-              <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block;"></span>&lt;60</span>
-            </div>
-          </div>
-          <div id="trends-chart-bars" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;"></div>
-        </div>
-
         <!-- Empty state -->
         <div id="trends-empty" style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding:4rem 0; text-align:center; gap:12px;">
           <div style="width:52px; height:52px; border-radius:14px; background:var(--brand-bg); border:1px solid var(--brand-border); display:flex; align-items:center; justify-content:center;">
@@ -2786,12 +2753,12 @@
                   <th style="padding:10px 14px; text-align:left; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Date</th>
                   <th style="padding:10px 14px; text-align:left; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Agent</th>
                   <th style="padding:10px 14px; text-align:left; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Account Used</th>
+                  <th style="padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Convos Audited</th>
                   <th style="padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Issues</th>
+                  <th style="padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Late Response</th>
+                  <th style="padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Wrong Label</th>
                   <th style="padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Score</th>
-                  <th style="padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Compliance</th>
-                  <th style="padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Sentiment</th>
-                  <th style="padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Professionalism</th>
-                  <th style="padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Script</th>
+                  <th style="padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;"></th>
                 </tr>
               </thead>
               <tbody id="trends-tbody"></tbody>
@@ -3955,6 +3922,14 @@ function labelWrongActive(a, invalidatedFlags) {
   return !isLabelWrongDismissed(a, invalidatedFlags);
 }
 
+/** Issues on a conversation as the audit found them.
+ *
+ *  This is deliberately NOT gated on manual validation. The conversation list
+ *  is the auditor's working surface — they have to see every flagged sample in
+ *  order to decide which ones to confirm. The validation gate is applied
+ *  server-side, where it belongs: only confirmed conversations reach the Trend
+ *  Dashboard, the Detailed Dashboard, and the agent's history.
+ */
 function issueCount(a, invalidatedFlags) {
   const inv = new Set((invalidatedFlags || []).map(f => String(f).trim().toLowerCase()));
   const activeFlags = (a?.red_flags || []).filter(f => {
@@ -3967,6 +3942,11 @@ function issueCount(a, invalidatedFlags) {
 
 function issueCountForConvo(c) {
   return issueCount(c?.analysis || {}, c?.invalidated_flags || []);
+}
+
+/** Has the auditor confirmed this conversation counts against the agent? */
+function isConvoValidated(c) {
+  return !!(c && c.validated);
 }
 
 /** Persist reviewed flagged convos locally + in DB (survives list reloads). */
@@ -4132,12 +4112,8 @@ function labelIssueBlockHtml(a, invalidatedFlags, withButton = false) {
     : "";
   const text = `✗ ${esc(wrong || "Label")} → should be <strong>${esc(should)}</strong>${reason}`;
 
-  if (withButton) {
-    return `<div class="label-issue-card">
-      <div class="label-issue-text">${text}</div>
-      <button type="button" class="btn-not-valid label-issue-btn" data-flag="${esc(wlFlag)}" onclick="openNotValidModal(this)">Not Valid</button>
-    </div>`;
-  }
+  // No per-flag button any more — a single conversation-level Valid button in
+  // the analysis header confirms every issue on the conversation at once.
   return `<div class="label-issue-card"><div class="label-issue-text">${text}</div></div>`;
 }
 
@@ -4364,7 +4340,7 @@ function selectConversation(index) {
     : "";
 
   renderChatMessages(msgs, convo);
-  renderAiAnalysis(a, convo.invalidated_flags || []);
+  renderAiAnalysis(a, convo.invalidated_flags || [], isConvoValidated(convo));
 
   if (issueCountForConvo(convo) > 0) {
     markFlagReviewed(convo);
@@ -4485,7 +4461,7 @@ function sevBadge(sev) {
   return `<span title="Severity" style="display:inline-flex;align-items:center;padding:1px 7px;border-radius:99px;background:${bg};border:1px solid ${col}44;color:${col};font-size:.56rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;flex-shrink:0;">${lbl}</span>`;
 }
 
-function renderAiAnalysis(a, invalidatedFlags) {
+function renderAiAnalysis(a, invalidatedFlags, isValidated = false) {
   const el = document.getElementById("ch-ai");
   const invalidatedSet = new Set((invalidatedFlags || []).map(f => f.trim()));
 
@@ -4538,15 +4514,35 @@ function renderAiAnalysis(a, invalidatedFlags) {
 
   // A conversation only needs per-flag ownership shown when the account was
   // shuffled mid-thread and the flags do NOT all belong to one texter.
-  const _owners = new Set(
-    (a.flag_details || [])
-      .filter(d => d && d.texter_name && d.attribution && d.attribution !== "legacy")
-      .map(d => d.texter_name)
-  );
+  // A split flag counts every shareholder, not just the scalar owner — one
+  // slow reply straddling a handover is exactly the case worth showing, and
+  // it has only one `texter_name`.
+  const _owners = new Set();
+  (a.flag_details || []).forEach(d => {
+    if (!d || !d.attribution || d.attribution === "legacy") return;
+    const split = Array.isArray(d.texter_split) ? d.texter_split : [];
+    if (split.length) {
+      split.forEach(s => { if (s && s.texter_name) _owners.add(s.texter_name); });
+    } else if (d.texter_name) {
+      _owners.add(d.texter_name);
+    }
+  });
   const _showFlagOwners = _owners.size > 1;
 
+  // One Valid button per conversation. Nothing here reaches the Trend or
+  // Detailed dashboards until it is clicked; clicking again takes it back out.
+  const hasIssues = issueCount(a, invalidatedFlags) > 0;
+  const validBtn = hasIssues ? `
+        <button id="btn-validate-convo"
+          class="btn-validate${isValidated ? " is-valid" : ""}"
+          onclick="submitValid(${isValidated ? "false" : "true"})"
+          title="${isValidated
+            ? "Counted in the Trend + Detailed dashboards. Click to remove it."
+            : "Confirm these flags so they count toward this agent's record."}"
+          >${isValidated ? "✓ Validated" : "Mark Valid"}</button>` : "";
+
   el.innerHTML = `
-    <div style="padding:.6rem 1.1rem;background:var(--surface-subtle);border-bottom:1px solid var(--surface-border);display:flex;align-items:center;gap:8px;">
+    <div style="padding:.6rem 1.1rem;background:var(--surface-subtle);border-bottom:1px solid var(--surface-border);display:flex;align-items:center;gap:8px;flex-wrap:wrap;row-gap:7px;min-width:0;">
       <div style="width:5px;height:5px;border-radius:50%;background:var(--brand);flex-shrink:0;"></div>
       <span style="font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--brand);">Audit Analysis</span>
       ${auditMethodPill(a.source)}
@@ -4559,10 +4555,15 @@ function renderAiAnalysis(a, invalidatedFlags) {
           ${scoreGrid}
         </div>` : ""}
 
-      ${a.funnel_stage_reached ? `
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:7px;padding:5px 9px;background:rgba(37,99,235,.06);border-radius:7px;border:1px solid rgba(37,99,235,.15);">
-          <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-secondary);">Funnel</span>
-          <span style="font-size:.73rem;font-weight:600;color:var(--brand);">${esc(a.funnel_stage_reached)}</span>
+      ${(a.funnel_stage_reached || validBtn) ? `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;flex-wrap:wrap;row-gap:7px;min-width:0;">
+          ${a.funnel_stage_reached ? `
+            <div style="display:flex;align-items:center;gap:6px;padding:5px 9px;background:rgba(37,99,235,.06);border-radius:7px;border:1px solid rgba(37,99,235,.15);">
+              <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-secondary);">Funnel</span>
+              <span style="font-size:.73rem;font-weight:600;color:var(--brand);">${esc(a.funnel_stage_reached)}</span>
+            </div>` : ""}
+          <div style="flex:1 1 0;min-width:0;"></div>
+          ${validBtn}
         </div>` : ""}
 
       ${pillars.length ? `
@@ -4589,10 +4590,6 @@ function renderAiAnalysis(a, invalidatedFlags) {
               <div style="display:flex;align-items:flex-start;gap:6px;">
                 <span class="rf-text" style="font-size:.72rem;color:var(--danger);opacity:.85;line-height:1.45;flex:1;">· ${esc(f)}${owner}</span>
                 ${sev}
-                <button class="btn-not-valid${isInvalid ? " rf-done" : ""}"
-                  data-flag="${esc(f)}"
-                  onclick="openNotValidModal(this)"
-                  ${isInvalid ? "disabled" : ""}>${isInvalid ? "✓ Invalid" : "Not Valid"}</button>
               </div>
               ${expl}
             </div>`;
@@ -4925,6 +4922,14 @@ function getDdDateRange() {
 // Set when the user arrives from an Assignments History segment, so results are
 // scoped to that one account. Cleared by any manual filter change — otherwise a
 // stale account would silently hide conversations on a later search.
+// Minutes as a badge-sized label. A sub-minute share still has to read as
+// non-zero, or a two-name split looks like one name and a rounding error.
+function _rfMins(m) {
+  const n = Number(m);
+  if (!isFinite(n)) return "";
+  return n > 0 && n < 1 ? "<1m" : `${Math.round(n)}m`;
+}
+
 /**
  * Badge naming the texter who earned a flag, for conversations where the
  * account changed hands mid-thread.
@@ -4934,9 +4939,23 @@ function getDdDateRange() {
  *   inferred   — the message had no usable timestamp
  *   unassigned — nobody owned the account at that moment
  *   legacy     — scored before attribution existed; shown as unverified
+ *
+ * `texter_split` (F17 only) means the wait straddled a handover, so the badge
+ * names every holder and their share instead of one owner.
  */
 function ddFlagOwner(d) {
   if (!d || !d.attribution) return "";
+  // A flag that measures a WAIT (F17) can straddle a handover, in which case
+  // it names every holder and what each of them cost — billing the whole delay
+  // to one person would be wrong.
+  const split = (Array.isArray(d.texter_split) ? d.texter_split : [])
+    .filter(s => s && s.texter_name);
+  if (split.length > 1) {
+    const body = split.map(s => `${esc(s.texter_name)} ${esc(_rfMins(s.minutes))}`).join(" · ");
+    const tip = "Wait split across a handover — "
+              + split.map(s => `${s.texter_name} ${_rfMins(s.minutes)}`).join(", ");
+    return `<span class="rf-owner rf-owner-split" title="${esc(tip)}">${body}</span>`;
+  }
   if (d.attribution === "unassigned") {
     return `<span class="rf-owner rf-owner-weak" title="No texter was assigned to this account at the time">unassigned</span>`;
   }
@@ -5138,6 +5157,9 @@ async function openDetailedConversation(conversationId) {
         label_should_be:   a.label_should_be,
         label_reason:      a.label_reason,
         red_flags:         a.red_flags || [],
+        // Without this the drill-down route loses every per-flag owner badge
+        // the sidebar route shows.
+        flag_details:      a.flag_details || [],
         summary:           a.summary || "",
         model_used:        a.model_used,
         source:            a.source,
@@ -6134,26 +6156,6 @@ function _showUnassignedBlock(blockedNames) {
   document.body.appendChild(modal);
   modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
 }
-// ── Not Valid Modal ───────────────────────────────────────────────────────────
-let _nvmCtx = {};
-
-function openNotValidModal(btn) {
-  _nvmCtx = { btn, flag: btn.dataset.flag };
-  document.getElementById("nvm-flag-text").textContent = _nvmCtx.flag;
-
-  const overlay = document.getElementById("notValidModal");
-  overlay.style.display = "flex";
-  anime({ targets: "#nvm-box", scale: [0.88, 1], opacity: [0, 1], easing: "spring(1, 80, 10, 0)", duration: 400 });
-}
-
-function closeNotValidModal() {
-  anime({
-    targets: "#nvm-box", scale: [1, 0.88], opacity: [1, 0],
-    easing: "easeInQuad", duration: 160,
-    complete: () => { document.getElementById("notValidModal").style.display = "none"; },
-  });
-}
-
 function refreshOpenChatAnalysis() {
   if (!currentContactName || !selectedAgent?.id) return;
   const convo = agentConvos.find(c =>
@@ -6161,45 +6163,51 @@ function refreshOpenChatAnalysis() {
   );
   if (!convo) return;
   const a = convo.analysis || {};
-  renderAiAnalysis(a, convo.invalidated_flags || []);
+  renderAiAnalysis(a, convo.invalidated_flags || [], isConvoValidated(convo));
 }
 
-async function submitNotValid() {
-  const { btn, flag } = _nvmCtx;
+/**
+ * Confirm (or un-confirm) the open conversation's flags.
+ *
+ * This is the ONLY way a flag reaches the Trend Dashboard, the Detailed
+ * Dashboard, or the agent's history. Unconfirmed flags stay visible here for
+ * review but are never recorded against the agent.
+ */
+async function submitValid(validated = true) {
+  const btn = document.getElementById("btn-validate-convo");
   const body = {
     agent_id:        selectedAgent?.id || 0,
     agent_name:      selectedAgent?.name || "",
     contact_name:    currentContactName,
-    red_flag:        flag,
-    evidence:        "",
-    reason:          "",
-    category:        "",
     conversation_id: currentConversationId,
+    validated:       validated,
   };
 
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = validated ? "Saving…" : "Removing…";
+  }
+
   try {
-    const res = await fetch("/api/redflag/invalid", {
+    const res = await fetch("/api/redflag/valid", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error(await res.text());
-    const data = await res.json();
 
-    // Mark this flag row as invalidated
-    const row = btn.closest(".rf-row");
-    if (row) row.classList.add("rf-invalidated");
-    btn.textContent = "✓ Invalid";
-    btn.disabled = true;
-    btn.classList.add("rf-done");
-
-    // Mark the flag row immediately so the user sees instant feedback
-    // Then reload agent data to sync the sidebar card and scores panel
-    closeNotValidModal();
+    // Reload so the sidebar, scores panel and button state all agree with the
+    // server rather than with an optimistic local guess.
     await loadAgents();
     await reloadAgentConvos();
     refreshOpenChatAnalysis();
+    toast(validated ? "Marked valid — now counted in the dashboards"
+                    : "Validation removed — no longer counted", 3000);
   } catch (err) {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = validated ? "Mark Valid" : "✓ Validated";
+    }
     alert("Error saving: " + err.message);
   }
 }
@@ -7189,6 +7197,24 @@ function _scoreClass(v) {
   return "sc-r";
 }
 
+// Row-highlight thresholds for the Trends Snapshot Records table, keyed off total_issues.
+// <=3 stays unstyled; >3 yellow; >5 orange; >8 red.
+function _issueRowBg(totalIssues) {
+  if (totalIssues > 8) return "rgba(239,68,68,.16)";   // red
+  if (totalIssues > 5) return "rgba(249,115,22,.16)";  // orange
+  if (totalIssues > 3) return "rgba(234,179,8,.16)";   // yellow
+  return null;
+}
+
+// Text-color thresholds for the Late Response / Wrong Label flag-count cells.
+// <3 stays the default muted color; >=3 yellow; >=5 orange; >=7 red.
+function _flagCountColor(n) {
+  if (n >= 7) return "#ef4444";  // red
+  if (n >= 5) return "#f97316";  // orange
+  if (n >= 3) return "#eab308";  // yellow
+  return "var(--text-secondary)";
+}
+
 function getTrDateRange() {
   const filter = document.getElementById("tr-date-filter")?.value || "this_month";
   if (filter === "custom") {
@@ -7215,14 +7241,12 @@ async function loadTrends() {
 
   const emptyEl      = document.getElementById("trends-empty");
   const statsEl      = document.getElementById("trends-stats");
-  const chartWrapEl  = document.getElementById("trends-chart-wrap");
   const tableWrapEl  = document.getElementById("trends-table-wrap");
   const tbodyEl      = document.getElementById("trends-tbody");
 
   // Show loading state
   emptyEl.style.display     = "flex";
   statsEl.style.display     = "none";
-  chartWrapEl.style.display = "none";
   tableWrapEl.style.display = "none";
   emptyEl.querySelector("div:nth-child(2)").textContent = "Loading…";
 
@@ -7246,9 +7270,14 @@ async function loadTrends() {
     const scores        = rows.map(r => r.overall_score).filter(v => v != null);
     const avgScore      = scores.length ? (scores.reduce((a,b)=>a+b,0)/scores.length).toFixed(1) : "—";
     const totalIssues   = rows.reduce((a,r)=>a+(r.total_issues||0),0);
-    const totalConvos   = data.summary?.unique_conversations != null
-      ? data.summary.unique_conversations
-      : rows.reduce((a,r)=>a+(r.conversations_analyzed||0),0);
+    // Sum the SAME per-row conversations_analyzed values the table below
+    // shows in "Convos Audited" — this stat card must always equal that
+    // column's total, or the two numbers contradict each other on screen.
+    // (Previously preferred data.summary.unique_conversations, which counts
+    // every conversation in the date range across ALL agents/accounts with
+    // no scoping to what's actually filtered/displayed — inflated and
+    // inconsistent with "Agents Tracked".)
+    const totalConvos = rows.reduce((a,r)=>a+(r.conversations_analyzed||0),0);
     const agentSet      = new Set(rows.map(r=>r.agent_name));
 
     document.getElementById("ts-avg-score").textContent      = avgScore !== "—" ? avgScore : "—";
@@ -7258,24 +7287,32 @@ async function loadTrends() {
     document.getElementById("ts-audit-count").textContent    = rows.length;
     statsEl.style.display = "grid";
 
-    // ── Line chart (SVG) ────────────────────────────────────────────────────
-    _renderTrendsChart(rows);
-    chartWrapEl.style.display = "block";
-
     // ── Data table ──────────────────────────────────────────────────────────
-    tbodyEl.innerHTML = rows.map(r => {
+    // Indexed (not keyed on agent/email in the onclick attribute) so names
+    // and addresses containing quotes never break the inline handler.
+    window._trSnapshotRows = rows;
+    tbodyEl.innerHTML = rows.map((r, i) => {
       const sc = v => v != null ? v.toFixed(1) : "—";
       const cl = v => `class="${_scoreClass(v)}"`;
-      return `<tr style="border-bottom:1px solid var(--surface-border);">
+      const rowBg = _issueRowBg(r.total_issues || 0);
+      return `<tr style="border-bottom:1px solid var(--surface-border);${rowBg ? ` background:${rowBg};` : ""}">
         <td style="padding:9px 14px;white-space:nowrap;color:var(--text-secondary);">${esc(r.audit_date)}</td>
         <td style="padding:9px 14px;white-space:nowrap;color:var(--text-primary);font-weight:500;">${esc(r.agent_name)}</td>
         <td style="padding:9px 14px;white-space:nowrap;color:var(--text-secondary);font-size:.75rem;">${esc(r.account_email || "—")}</td>
+        <td style="padding:9px 14px;text-align:center;color:var(--text-secondary);">${r.conversations_analyzed||0}</td>
         <td style="padding:9px 14px;text-align:center;color:${(r.total_issues||0)>0?'#dc2626':'#059669'};font-weight:600;">${r.total_issues||0}</td>
+        <td style="padding:9px 14px;text-align:center;color:${_flagCountColor(r.late_response_flags||0)};font-weight:600;">${r.late_response_flags||0}</td>
+        <td style="padding:9px 14px;text-align:center;color:${_flagCountColor(r.wrong_label_flags||0)};font-weight:600;">${r.wrong_label_flags||0}</td>
         <td style="padding:9px 14px;text-align:center;" ${cl(r.overall_score)}>${sc(r.overall_score)}</td>
-        <td style="padding:9px 14px;text-align:center;" ${cl(r.compliance_score)}>${sc(r.compliance_score)}</td>
-        <td style="padding:9px 14px;text-align:center;" ${cl(r.sentiment_score)}>${sc(r.sentiment_score)}</td>
-        <td style="padding:9px 14px;text-align:center;" ${cl(r.professionalism_score)}>${sc(r.professionalism_score)}</td>
-        <td style="padding:9px 14px;text-align:center;" ${cl(r.script_adherence_score)}>${sc(r.script_adherence_score)}</td>
+        <td style="padding:9px 14px;text-align:center;">
+          <button onclick="_trOpenDetailedForRow(${i})"
+            title="Open the Detailed Dashboard for ${esc(r.agent_name)} on ${esc(r.audit_date)}"
+            style="font-size:.68rem;font-weight:600;padding:4px 11px;border-radius:99px;border:1px solid var(--brand-border);color:var(--brand);background:var(--brand-bg);cursor:pointer;white-space:nowrap;transition:.15s;"
+            onmouseover="this.style.background='var(--brand)';this.style.color='#fff'"
+            onmouseout="this.style.background='var(--brand-bg)';this.style.color='var(--brand)'">
+            View →
+          </button>
+        </td>
       </tr>`;
     }).join("");
     tableWrapEl.style.display = "block";
@@ -7284,6 +7321,42 @@ async function loadTrends() {
     emptyEl.querySelector("div:nth-child(2)").textContent = "Error loading trends";
     emptyEl.querySelector("div:nth-child(3)").textContent = err.message;
   }
+}
+
+/**
+ * Jump from a Trends snapshot row to the Detailed Dashboard scoped to that
+ * exact agent, account, and day — so the row's Issues/Late Response/Wrong
+ * Label counts can be traced back to the actual flagged conversations.
+ * Mirrors _ahOpenDetailed(), the equivalent shortcut from Assignments History.
+ */
+function _trOpenDetailedForRow(i) {
+  const r = (window._trSnapshotRows || [])[i];
+  if (!r) return;
+
+  const sel = document.getElementById("dd-agent");
+  if (sel) sel.value = r.agent_name;
+
+  // This shortcut exists to trace the row's issue counts back to their source
+  // conversations, so land on flagged-only rather than the whole day's traffic.
+  const flaggedCheckbox = document.getElementById("dd-flagged-only");
+  if (flaggedCheckbox) flaggedCheckbox.checked = true;
+
+  _ddSetAccountScope(r.account_email || "", r.account_email || "");
+
+  // Pin the range to this row's single audit day, using the same custom-range
+  // state the date picker writes.
+  const date = r.audit_date;
+  const filterSel = document.getElementById("dd-date-filter");
+  if (filterSel) filterSel.value = "custom";
+  window._ddDrpDateStart = date;
+  window._ddDrpDateEnd   = date;
+  const labelEl = document.getElementById("dd-drp-label");
+  if (labelEl) labelEl.textContent = _fmtAssignDate(date);
+  document.querySelectorAll("#dd-drp-popover .dd-drp-preset")
+    .forEach(b => b.classList.remove("active"));
+
+  showTrendsSection("detailed");
+  loadDetailedDashboard();
 }
 
 // ── Trend Data Reset ──────────────────────────────────────────────────────────
@@ -7379,92 +7452,6 @@ document.addEventListener("keydown", function(e) {
     if (raModal && raModal.style.display === "flex") raModal.style.display = "none";
   }
 });
-
-function _renderTrendsChart(rows) {
-  const el = document.getElementById("trends-chart-bars");
-  if (!el) return;
-  el.innerHTML = "";
-
-  // Latest score per agent
-  const latest = {};
-  for (const r of rows) {
-    if (r.overall_score == null) continue;
-    if (!latest[r.agent_name] || r.audit_date > latest[r.agent_name].date) {
-      latest[r.agent_name] = {
-        score:         r.overall_score,
-        date:          r.audit_date,
-        issues:        r.total_issues || 0,
-        conversations: r.conversations_analyzed || 0,
-      };
-    }
-  }
-
-  const agents = Object.entries(latest).sort((a, b) => b[1].score - a[1].score);
-  if (!agents.length) return;
-
-  agents.forEach(([name, data], idx) => {
-    const s    = Math.round(data.score);
-    const rank = idx + 1;
-
-    // Score ring via SVG
-    const r = 22, circ = 2 * Math.PI * r;
-    const fill = (s / 100) * circ;
-    const color = s >= 80 ? "#22c55e" : s >= 60 ? "#f59e0b" : "#ef4444";
-    const glowId = `glow-${idx}`;
-
-    // Rank medal styling
-    const rankColor = rank === 1 ? "#f59e0b" : rank === 2 ? "#94a3b8" : rank === 3 ? "#b45309" : "rgba(255,255,255,.15)";
-    const rankText  = rank <= 3 ? ["🥇","🥈","🥉"][rank-1] : `#${rank}`;
-
-    // Issues badge
-    const issueHtml = data.issues > 0
-      ? `<div style="position:absolute;top:6px;right:6px;background:#ef4444;color:#fff;font-size:.55rem;font-weight:800;border-radius:99px;padding:1px 5px;line-height:1.6;">&#9873; ${data.issues}</div>`
-      : `<div style="position:absolute;top:6px;right:6px;background:rgba(34,197,94,.15);color:#22c55e;font-size:.55rem;font-weight:700;border-radius:99px;padding:1px 5px;line-height:1.6;">✓</div>`;
-
-    // Short name
-    const shortName = name.length > 16 ? name.slice(0, 15) + "…" : name;
-
-    el.innerHTML += `
-      <div style="position:relative;background:var(--surface-elevated);border:1px solid rgba(255,255,255,.07);border-radius:12px;padding:14px 12px 12px;display:flex;flex-direction:column;align-items:center;gap:8px;transition:border-color .18s,transform .18s;cursor:default;"
-           onmouseenter="this.style.borderColor='rgba(37,99,235,.35)';this.style.transform='translateY(-2px)'"
-           onmouseleave="this.style.borderColor='rgba(255,255,255,.07)';this.style.transform='translateY(0)'">
-
-        ${issueHtml}
-
-        <!-- Rank badge -->
-        <div style="position:absolute;top:8px;left:10px;font-size:.62rem;font-weight:700;color:${rankColor};">${rankText}</div>
-
-        <!-- Score ring -->
-        <svg width="58" height="58" viewBox="0 0 58 58" style="margin-top:4px;">
-          <defs>
-            <filter id="${glowId}" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur stdDeviation="2.5" result="blur"/>
-              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-            </filter>
-          </defs>
-          <!-- Track -->
-          <circle cx="29" cy="29" r="${r}" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="5"/>
-          <!-- Fill -->
-          <circle cx="29" cy="29" r="${r}" fill="none"
-            stroke="${color}" stroke-width="5"
-            stroke-dasharray="${fill} ${circ}"
-            stroke-dashoffset="${circ * 0.25}"
-            stroke-linecap="round"
-            filter="url(#${glowId})"
-            style="transition:stroke-dasharray .6s ease;"/>
-          <!-- Score text -->
-          <text x="29" y="34" text-anchor="middle" font-size="13" font-weight="800"
-            fill="${color}" font-family="-apple-system,sans-serif">${s}</text>
-        </svg>
-
-        <!-- Name -->
-        <div style="font-size:.72rem;font-weight:600;color:var(--text-primary);text-align:center;line-height:1.3;" title="${esc(name)}">${esc(shortName)}</div>
-
-        <!-- Date -->
-        <div style="font-size:.6rem;color:var(--text-muted);">${data.date ? data.date.slice(5) : ""}</div>
-      </div>`;
-  });
-}
 
 // Set default date range pickers on load
 document.addEventListener("DOMContentLoaded", () => {
@@ -8103,19 +8090,6 @@ function _trDrpBuildMonth(year, month) {
   return html;
 }
 </script>
-
-<!-- Not Valid Modal -->
-<div id="notValidModal" class="nv-overlay" style="display:none" onclick="if(event.target===this)closeNotValidModal()">
-  <div id="nvm-box" class="nv-box">
-    <h3>Clear this flag?</h3>
-    <div id="nvm-flag-text" class="nv-flag-preview"></div>
-
-    <div class="nv-actions">
-      <button class="nv-btn-cancel" onclick="closeNotValidModal()">Cancel</button>
-      <button class="nv-btn-submit" onclick="submitNotValid()">Clear Flag</button>
-    </div>
-  </div>
-</div>
 
 <footer id="app-footer">
   <div class="app-footer__sidebar" aria-hidden="true"></div>

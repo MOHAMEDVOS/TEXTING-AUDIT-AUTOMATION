@@ -220,6 +220,38 @@ CREATE INDEX IF NOT EXISTS idx_trends_agent ON trend_snapshots(agent_name);
 CREATE INDEX IF NOT EXISTS idx_trends_date  ON trend_snapshots(audit_date);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_trends_unique ON trend_snapshots(agent_name, audit_date, account_email);
 
+-- ── Per-flag-type breakdown of total_issues (additive) ────────────────────────
+-- total_issues counts flagged CONVERSATIONS, not raw flag instances (see the
+-- "single source of truth" recompute below). These two columns break that same
+-- count down by flag type so the Trends table can show what's driving it.
+-- No DEFAULT: existing rows land NULL so the backfill below can tell "never
+-- computed" apart from "computed to be zero", and only has to run once.
+ALTER TABLE trend_snapshots ADD COLUMN IF NOT EXISTS late_response_flags INTEGER;
+ALTER TABLE trend_snapshots ADD COLUMN IF NOT EXISTS wrong_label_flags   INTEGER;
+
+UPDATE trend_snapshots ts SET
+    late_response_flags = COALESCE((
+        SELECT COUNT(*) FROM conversations c
+        JOIN LATERAL (
+            SELECT red_flags FROM conversation_scores cs2
+            WHERE cs2.conversation_id = c.id ORDER BY cs2.id DESC LIMIT 1
+        ) cs ON TRUE
+        WHERE LOWER(c.texter_name) = LOWER(ts.agent_name) AND c.audit_date = ts.audit_date
+          AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(cs.red_flags::jsonb) ft
+                      WHERE LOWER(ft) = 'slow response time to an engaged lead.')
+    ), 0),
+    wrong_label_flags = COALESCE((
+        SELECT COUNT(*) FROM conversations c
+        JOIN LATERAL (
+            SELECT red_flags FROM conversation_scores cs2
+            WHERE cs2.conversation_id = c.id ORDER BY cs2.id DESC LIMIT 1
+        ) cs ON TRUE
+        WHERE LOWER(c.texter_name) = LOWER(ts.agent_name) AND c.audit_date = ts.audit_date
+          AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(cs.red_flags::jsonb) ft
+                      WHERE LOWER(ft) LIKE 'wrong label:%')
+    ), 0)
+WHERE ts.late_response_flags IS NULL OR ts.wrong_label_flags IS NULL;
+
 -- ── ML pre-filter telemetry (folded in from migration 001) ───────────────────
 -- These were ONLY ever in database/migrations/001_*.sql, which is applied by
 -- hand. schema.sql is what actually runs on every boot, so on any database
@@ -337,6 +369,56 @@ CREATE TABLE IF NOT EXISTS validation_log (
 
 CREATE INDEX IF NOT EXISTS idx_validation_agent ON validation_log(agent_id);
 CREATE INDEX IF NOT EXISTS idx_validation_conv  ON validation_log(conversation_id);
+
+-- ── Manual flag validation (opt-in gate) ────────────────────────────────────
+-- validation_log is now the authoritative "this flagged conversation counts"
+-- record. A flag reaches the Trend/Detailed dashboards ONLY when an auditor has
+-- explicitly clicked Valid, which writes a status='valid' row here. Nothing is
+-- ever deleted from conversation_scores.red_flags — validation is a
+-- non-destructive overlay, so it stays reversible.
+--
+-- The upsert key. migration 003 declared UNIQUE(agent_id, contact_name) but
+-- this file declares the table without it, and both use CREATE TABLE IF NOT
+-- EXISTS — so on any DB provisioned the documented way the constraint never
+-- existed (same shape-drift trap as prefilter_decisions). De-dup, then add it.
+DELETE FROM validation_log a USING validation_log b
+ WHERE a.id < b.id AND a.agent_id = b.agent_id
+   AND LOWER(a.contact_name) = LOWER(b.contact_name);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_validation_unique
+    ON validation_log(agent_id, LOWER(contact_name));
+
+-- One-time historical backfill. Before the cutover a flag was valid BY DEFAULT
+-- and dismissals physically deleted the flag from red_flags, so marking every
+-- still-flagged pre-cutover conversation 'valid' reproduces the old numbers
+-- exactly and leaves history untouched.
+--
+-- The hardcoded cutover date makes this permanently idempotent: schema.sql runs
+-- on every boot, and the bounded date range can never auto-validate new work.
+-- Anything audited on/after the cutover requires a manual Valid click.
+INSERT INTO validation_log (agent_id, agent_name, contact_name, conversation_id,
+                            status, validated_by, notes)
+SELECT DISTINCT ON (c.agent_id, LOWER(ct.name))
+       c.agent_id, COALESCE(a.name, ''), ct.name, c.id, 'valid', 'system-backfill',
+       'Pre-cutover audit, auto-validated to preserve historical counts'
+  FROM conversations c
+  JOIN accounts a  ON a.id  = c.agent_id
+  JOIN contacts ct ON ct.id = c.contact_id
+  JOIN LATERAL (
+      SELECT red_flags, label_correct, label_assigned, label_should_be
+        FROM conversation_scores cs2
+       WHERE cs2.conversation_id = c.id
+       ORDER BY cs2.id DESC LIMIT 1
+  ) cs ON TRUE
+ WHERE c.audit_date < DATE '2026-08-27'          -- CUTOVER DATE
+   AND (
+        jsonb_array_length(cs.red_flags::jsonb) > 0
+        OR (cs.label_correct = false
+            AND cs.label_assigned IS DISTINCT FROM cs.label_should_be)
+   )
+-- Newest conversation wins per agent+contact, matching how the rest of the app
+-- dedupes (_fetch_agent_conversations keeps the most recent convo per contact).
+ORDER BY c.agent_id, LOWER(ct.name), c.id DESC
+ON CONFLICT DO NOTHING;
 
 -- ── flagged_conversation_reviews (manager reviewed flagged convos) ───────────
 CREATE TABLE IF NOT EXISTS flagged_conversation_reviews (
@@ -522,6 +604,31 @@ LANGUAGE sql STABLE AS $fn$
      WHERE account_email = p_account_email
        AND period @> p_ts
      LIMIT 1;
+$fn$;
+
+-- Interval ownership resolver.
+-- texter_at() answers for a single instant (LIMIT 1). A flag that measures a
+-- WAIT (F17) has two ends, and if the account changed hands in between the
+-- delay belongs to both texters — so this returns every holder that overlaps
+-- the range, with their slice clipped to it. The caller converts each slice to
+-- shift minutes (ai/shift.py) rather than wall-clock ones.
+-- Left texter_at() alone: other call sites depend on it.
+CREATE OR REPLACE FUNCTION texters_in_range(p_account_email TEXT,
+                                            p_from TIMESTAMPTZ,
+                                            p_to   TIMESTAMPTZ)
+RETURNS TABLE(texter_name TEXT, started_at TIMESTAMPTZ, ended_at TIMESTAMPTZ)
+LANGUAGE sql STABLE AS $fn$
+    SELECT ap.texter_name,
+           GREATEST(ap.started_at, p_from),
+           CASE WHEN ap.ended_at IS NULL THEN p_to
+                ELSE LEAST(ap.ended_at, p_to) END
+      FROM assignment_periods ap
+     -- LEAST/GREATEST keep tstzrange() from raising on a NULL or inverted
+     -- range; the p_to > p_from test is what actually rejects one.
+     WHERE ap.account_email = p_account_email
+       AND p_to > p_from
+       AND ap.period && tstzrange(LEAST(p_from, p_to), GREATEST(p_from, p_to), '[)')
+     ORDER BY ap.started_at;
 $fn$;
 
 -- Message attribution — resolved once at ingest and stored, so an audit stays

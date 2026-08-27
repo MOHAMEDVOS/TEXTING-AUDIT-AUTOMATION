@@ -1,8 +1,8 @@
 """Response-time flag (F17 in the product's own numbering) — ai/response_time.py.
 
 Deep review F28: this was fed the FULL conversation history while the rest of the
-audit deliberately applies a 30-day window, so one slow reply from months ago was
-re-flagged (and re-penalised) on every single audit, forever.
+audit deliberately applies a rolling window (7 days), so one slow reply from
+months ago was re-flagged (and re-penalised) on every single audit, forever.
 
 Shift awareness: elapsed time is counted in staffed shift minutes only
 (10:00-19:00 ET, Mon-Fri — ai/shift.py), so overnight and weekend pauses can't
@@ -12,8 +12,27 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from ai.analyzer import filter_recent_messages
 from ai.response_time import check_response_time, _labels_match
-from ai.shift import is_on_shift, shift_minutes_between
+from ai.shift import (
+    is_on_shift,
+    shift_minutes_between,
+    shift_minutes_by_texter,
+    shift_minutes_with_periods,
+)
+
+
+def _dated_msg(sender: str, body: str, when: datetime, seq: int) -> dict:
+    """A message carrying BOTH fields real transcripts have: the display
+    'date' string filter_recent_messages windows on, and the 'sent_at'
+    timestamp check_response_time/_parse_msg_datetime reads directly."""
+    return {
+        "sender": sender,
+        "message": body,
+        "date": when.strftime("%A, %B %d, %Y"),
+        "sent_at": when,
+        "seq": seq,
+    }
 
 
 class TestLabelGating:
@@ -212,3 +231,171 @@ class TestF17Attribution:
         assert _resolve_texter(periods, _utc(11, 0), "Carol") == ("Bob", "exact")
         # No timestamp at all -> falls back to the conversation owner.
         assert _resolve_texter(periods, None, "Carol") == ("Carol", "inferred")
+
+
+# ── Per-texter hours ─────────────────────────────────────────────────────────
+# assignment_periods records WHO OWNS an account, not what hours someone works
+# (the server defaults a segment to 00:00 → end of day), so periods may only
+# NARROW the global shift, never widen it.
+
+def _period(name: str, start: datetime, end: datetime | None) -> dict:
+    return {"texter_name": name, "started_at": start, "ended_at": end}
+
+
+class TestPeriodsNarrowTheWindow:
+    def test_all_day_period_cannot_revive_an_overnight_gap(self):
+        """Regression guard for the bug the shift window fixed.
+
+        Alice owns the account Fri 00:00 → Sun 00:00 (an all-day period, the
+        server default). The lead writes Fri 10:26 PM, the reply lands Sat
+        10:03 AM. Measuring against the period alone would count that in full
+        again; the global shift still has to clip it to nothing.
+        """
+        periods = [_period("Alice", datetime(2026, 8, 21, 0, 0),
+                           datetime(2026, 8, 23, 0, 0))]
+        assert shift_minutes_with_periods(datetime(2026, 8, 21, 22, 26),
+                                          datetime(2026, 8, 22, 10, 3),
+                                          periods) == 0.0
+        assert check_response_time(
+            _thread(datetime(2026, 8, 21, 22, 26), datetime(2026, 8, 22, 10, 3)),
+            ["Lead"], periods=periods,
+        ) is None
+
+    def test_narrow_period_clips_an_evening_message(self):
+        """Alice worked 10a–2p Tuesday. A 5:30 PM lead message is not her wait."""
+        periods = [_period("Alice", datetime(2026, 8, 18, 10, 0),
+                           datetime(2026, 8, 18, 14, 0))]
+        assert shift_minutes_with_periods(datetime(2026, 8, 18, 17, 30),
+                                          datetime(2026, 8, 19, 10, 40),
+                                          periods) == 0.0
+        assert check_response_time(
+            _thread(datetime(2026, 8, 18, 17, 30), datetime(2026, 8, 19, 10, 40)),
+            ["Lead"], periods=periods,
+        ) is None
+
+    def test_uncovered_tail_counts_zero_but_the_covered_part_still_counts(self):
+        """Alice held it until 10:30 and nobody after; only her 30 min count."""
+        periods = [_period("Alice", datetime(2026, 8, 18, 9, 0),
+                           datetime(2026, 8, 18, 10, 30))]
+        assert shift_minutes_with_periods(datetime(2026, 8, 18, 10, 0),
+                                          datetime(2026, 8, 18, 10, 40),
+                                          periods) == pytest.approx(30, abs=0.1)
+        result = check_response_time(
+            _thread(datetime(2026, 8, 18, 10, 0), datetime(2026, 8, 18, 10, 40)),
+            ["Lead"], periods=periods,
+        )
+        assert result["minutes"] == 30
+        assert result["by_texter"] == {"Alice": pytest.approx(30, abs=0.1)}
+
+    def test_handover_splits_the_wait(self):
+        periods = [
+            _period("Alice", datetime(2026, 8, 18, 8, 0), datetime(2026, 8, 18, 10, 30)),
+            _period("Bob", datetime(2026, 8, 18, 10, 30), None),
+        ]
+        shares = shift_minutes_by_texter(datetime(2026, 8, 18, 10, 0),
+                                         datetime(2026, 8, 18, 10, 40), periods)
+        assert shares["Alice"] == pytest.approx(30, abs=0.1)
+        assert shares["Bob"] == pytest.approx(10, abs=0.1)
+        result = check_response_time(
+            _thread(datetime(2026, 8, 18, 10, 0), datetime(2026, 8, 18, 10, 40)),
+            ["Lead"], periods=periods,
+        )
+        assert result["minutes"] == 40
+        assert result["started_at"] == datetime(2026, 8, 18, 10, 0)
+        assert result["ended_at"] == datetime(2026, 8, 18, 10, 40)
+
+
+class TestNoPeriodsFallsBackToTheGlobalShift:
+    """The safety rail. Intersecting with an empty list yields zero minutes for
+    every conversation, which would switch F17 off for any account never run
+    through scripts/backfill_assignment_periods.py."""
+
+    @pytest.mark.parametrize("periods", [None, [], ()])
+    def test_empty_periods_still_flags(self, periods):
+        result = check_response_time(
+            _thread(datetime(2026, 8, 18, 10, 0), datetime(2026, 8, 18, 10, 40)),
+            ["Lead"], periods=periods,
+        )
+        assert result is not None
+        assert result["minutes"] == 40
+        assert result["threshold_tag"] == "critical"
+        assert result["by_texter"] == {}
+
+    def test_empty_periods_matches_the_global_window_exactly(self):
+        assert shift_minutes_with_periods(datetime(2026, 8, 18, 10, 0),
+                                          datetime(2026, 8, 18, 10, 40), []) == \
+               shift_minutes_between(datetime(2026, 8, 18, 10, 0),
+                                     datetime(2026, 8, 18, 10, 40))
+
+
+class TestStaleRescueDoesNotOpenAResponseClock:
+    """filter_recent_messages() rescues a contact's last reply from outside the
+    window so a stale-but-real thread isn't mislabeled Stopped Responding. But
+    that rescued message is a stitched-in historical artifact, not a fresh
+    reply waiting on the agent — pairing it with today's agent reply would
+    report a multi-month silence as one continuous unanswered wait. This class
+    reproduces that exact shape and confirms the fix (the _stale_rescue tag).
+    """
+
+    def test_stale_rescue_tag_alone_never_opens_a_burst(self):
+        """Unit-level: a message tagged _stale_rescue must not start a clock,
+        even in isolation, regardless of where filter_recent_messages ran."""
+        old = datetime(2025, 11, 10, 15, 46)
+        reply = datetime(2026, 8, 26, 15, 11)
+        messages = [
+            {**_dated_msg("Contact", "It's not my house", old, 0), "_stale_rescue": True},
+            _dated_msg("Jack", "Any updates?", reply, 1),
+        ]
+        assert check_response_time(messages, ["Lead"]) is None
+
+    def test_rescued_only_case_end_to_end(self):
+        """The reported bug shape: a contact message ~9.5 months old is the ONLY
+        contact-side activity in the whole thread. The 7-day window drops it,
+        rescues it back in (tagged), and check_response_time must not flag a
+        multi-month gap against the next agent message."""
+        old_contact = datetime(2025, 11, 10, 15, 46)
+        agent_attempts = [
+            datetime(2026, 8, 20, 15, 0),
+            datetime(2026, 8, 26, 15, 11),
+        ]
+        raw = [_dated_msg("Contact", "Hello?", old_contact, 0)] + [
+            _dated_msg("Jack", "Hi, checking back in", t, i + 1)
+            for i, t in enumerate(agent_attempts)
+        ]
+        windowed = filter_recent_messages(raw, window_days=7)
+        # Sanity: the rescue actually fired and the tag is present.
+        assert any(m.get("_stale_rescue") for m in windowed)
+        assert check_response_time(windowed, ["Lead"]) is None
+
+    def test_rescued_plus_fresh_reply_measures_only_the_fresh_gap(self):
+        """A stale rescue AND a genuine in-window reply both present. The gap
+        reported must come from the fresh pair, not the resurrected one."""
+        old_contact = datetime(2025, 11, 10, 15, 46)
+        fresh_contact = datetime(2026, 8, 26, 10, 0)
+        fresh_agent = datetime(2026, 8, 26, 10, 20)   # 20 shift-minutes later
+        raw = [
+            _dated_msg("Contact", "Hello?", old_contact, 0),
+            _dated_msg("Contact", "Are you still there?", fresh_contact, 1),
+            _dated_msg("Jack", "Yes, sorry for the delay!", fresh_agent, 2),
+        ]
+        windowed = filter_recent_messages(raw, window_days=7)
+        result = check_response_time(windowed, ["Lead"])
+        assert result is not None
+        assert result["minutes"] == 20
+        assert result["threshold_tag"] == "red"
+        # Evidence must be the fresh pair, never the ~9.5-month-old message.
+        assert result["evidence"][0]["message"] == "Are you still there?"
+
+    def test_without_the_fix_this_shape_would_explode(self):
+        """Documents what the bug looked like: feeding check_response_time an
+        UNTAGGED rescue (the old behavior) reproduces a six-figure-minute flag.
+        Guards against a future refactor silently dropping the tag."""
+        old = datetime(2025, 11, 10, 15, 46)
+        reply = datetime(2026, 8, 26, 15, 11)
+        untagged_rescue = [
+            _dated_msg("Contact", "It's not my house", old, 0),
+            _dated_msg("Jack", "Any updates?", reply, 1),
+        ]
+        result = check_response_time(untagged_rescue, ["Lead"])
+        assert result is not None
+        assert result["minutes"] > 100_000

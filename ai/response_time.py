@@ -4,7 +4,10 @@ Deterministic response-time audit (Flag F17).
 Measures how long the AGENT took to reply to the LEAD/owner *during the team's
 staffed shift* (10:00 AM – 7:00 PM ET, Mon–Fri — see ai/shift.py) and flags slow
 replies on live conversations. Off-shift time never counts, so an overnight or
-weekend pause can't read as unresponsiveness:
+weekend pause can't read as unresponsiveness. When the account's ownership
+timeline is supplied (`periods=`), the window narrows further to the hours that
+texter was actually on the account.
+
   - Yellow Alert (> 10 min): Medium severity, -8 pts Script Adherence penalty
   - Red Alert (> 15 min): High severity, -15 pts Script Adherence penalty
   - Critical Delay (> 25 min): High severity, -25 pts Script Adherence penalty
@@ -17,7 +20,7 @@ import os
 import re
 import logging
 
-from ai.shift import shift_minutes_between
+from ai.shift import shift_minutes_by_texter, shift_minutes_with_periods
 from database.db import _parse_msg_datetime, _is_outgoing
 
 logger = logging.getLogger(__name__)
@@ -43,7 +46,7 @@ SCRIPT_PENALTY_RED = _env_int("RESPONSE_TIME_PENALTY_RED", 15)
 SCRIPT_PENALTY_CRITICAL = _env_int("RESPONSE_TIME_PENALTY_CRITICAL", 25)
 
 # The shift window itself lives in config/settings.py (SHIFT_START_HOUR /
-# SHIFT_END_HOUR / SHIFT_DAYS) and is applied by ai.shift.shift_minutes_between.
+# SHIFT_END_HOUR / SHIFT_DAYS) and is applied by ai.shift.shift_minutes_with_periods.
 
 # Conversation labels that get response-time auditing.
 # Includes the bare funnel labels, the WL/AP/HL Drip follow-up tracks, and the
@@ -93,10 +96,18 @@ def _is_agent(sender: str | None) -> bool:
     return _is_outgoing(sender)
 
 
-def check_response_time(parsed_messages, assigned_labels) -> dict | None:
+def check_response_time(parsed_messages, assigned_labels, *,
+                        periods=None) -> dict | None:
     """
     Return a slow-response descriptor, or None when there's no violation or the
     conversation isn't in scope.
+
+    `periods` are the account's assignment_periods rows. When given, the gap is
+    measured only against the hours the texter who owned the account was
+    actually on it - still clipped to the global shift, never widened by it
+    (see ai.shift.shift_minutes_with_periods). Keyword-only and defaulted so
+    every existing positional call site is unaffected. Pass the rows in; this
+    module never opens a connection.
 
     On a hit:
         {
@@ -106,6 +117,9 @@ def check_response_time(parsed_messages, assigned_labels) -> dict | None:
           "minutes": int,
           "evidence": [lead_msg, agent_msg],
           "script_penalty": int,
+          "started_at": datetime,       # when the clock started (lead's msg)
+          "ended_at": datetime,         # when it stopped (agent's reply)
+          "by_texter": {name: minutes}, # empty without periods
         }
     """
     if not _labels_match(assigned_labels):
@@ -113,6 +127,7 @@ def check_response_time(parsed_messages, assigned_labels) -> dict | None:
 
     worst_minutes = -1.0
     worst_evidence = None
+    worst_span: tuple | None = None   # the winning gap's two instants
 
     pending_open = False   # is a lead burst awaiting a reply?
     pending_dt = None      # timestamp of the FIRST lead message in that burst
@@ -123,15 +138,22 @@ def check_response_time(parsed_messages, assigned_labels) -> dict | None:
 
         if _is_agent(msg.get("sender")):
             if pending_open and pending_dt is not None and dt is not None:
-                gap = shift_minutes_between(pending_dt, dt)
+                gap = shift_minutes_with_periods(pending_dt, dt, periods)
                 if gap > worst_minutes:
                     worst_minutes = gap
                     worst_evidence = [pending_msg, msg]
+                    worst_span = (pending_dt, dt)
             pending_open = False
             pending_dt = None
             pending_msg = None
         else:
-            if not pending_open:
+            # A message tagged _stale_rescue (ai.analyzer.filter_recent_messages)
+            # is a historical message stitched back in purely so the thread
+            # isn't mislabeled Stopped Responding — it's not a fresh reply
+            # waiting on the agent. Opening a clock on it pairs a months-old
+            # message with today's agent reply and reports the whole gap as
+            # one continuous wait.
+            if not pending_open and not msg.get("_stale_rescue"):
                 pending_open = True
                 pending_dt = dt
                 pending_msg = msg
@@ -156,6 +178,8 @@ def check_response_time(parsed_messages, assigned_labels) -> dict | None:
         threshold_tag = "yellow"
         threshold_min = YELLOW_MIN
 
+    started_at, ended_at = worst_span if worst_span else (None, None)
+
     return {
         "severity": severity,
         "threshold_tag": threshold_tag,
@@ -163,4 +187,9 @@ def check_response_time(parsed_messages, assigned_labels) -> dict | None:
         "minutes": minutes,
         "evidence": worst_evidence,
         "script_penalty": penalty,
+        # The interval itself, so the wait can be split across a handover
+        # instead of landing entirely on whoever started the clock.
+        "started_at": started_at,
+        "ended_at": ended_at,
+        "by_texter": shift_minutes_by_texter(started_at, ended_at, periods),
     }

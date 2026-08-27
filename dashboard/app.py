@@ -45,6 +45,7 @@ from config.settings import (
     normalize_label_filter as _normalize_label_shared,
 )
 from config.rate_limiter import get_rate_limiter, route_bucket
+from ai.response_time import FLAG_TEXT as LATE_RESPONSE_FLAG_TEXT
 
 # ── Route-level rate-limit config ─────────────────────────────────────────────
 # Each entry: (route_prefix, capacity, rate_per_second)
@@ -691,6 +692,15 @@ def _label_wrong_active(analysis: dict, invalidated: set[str]) -> bool:
 
 
 def _conv_issue_count(analysis: dict, invalidated: set[str]) -> int:
+    """Issues on a conversation as the audit found them.
+
+    Deliberately NOT gated on manual validation: this feeds the "flagged /
+    needs review" badges that tell the auditor where the work is, and hiding
+    unconfirmed conversations would leave them nothing to review.
+
+    The manual validation gate is applied where the agent's RECORD is written —
+    _save_trend_snapshot, _recompute_trend_counts, and /api/detailed-dashboard.
+    """
     inv_lower = {f.strip().lower() for f in invalidated}
     active_flags = [
         f for f in (analysis.get("red_flags") or [])
@@ -811,6 +821,7 @@ async def _compute_review_stats_bulk_uncached(conn) -> dict[int, tuple[int, int]
     reviewed_set = {
         (fr["agent_id"], (fr["contact_name"] or "").lower().strip()) for fr in fr_rows
     }
+
 
     # Latest score row per conversation — single batched query
     conv_ids = [c["id"] for c in unique_convos]
@@ -990,6 +1001,13 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
             logger.warning("flagged_conversation_reviews query failed: %s", exc)
             fr_rows = []
 
+        # Manually validated conversations — the opt-in gate that decides which
+        # flagged convos reach the dashboards and the agent's history.
+        vl_rows = await conn.fetch(
+            "SELECT contact_name FROM validation_log WHERE agent_id = $1 AND status = 'valid'",
+            agent_id,
+        )
+
     invalidated_map: dict[str, set] = {}
     for fb in fb_rows:
         key = (fb["contact_name"] or "").lower().strip()
@@ -998,6 +1016,10 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
     reviewed_set: set[str] = set()
     for fr in fr_rows:
         reviewed_set.add((fr["contact_name"] or "").lower().strip())
+
+    validated_set: set[str] = set()
+    for vl in vl_rows:
+        validated_set.add((vl["contact_name"] or "").lower().strip())
 
     merged = []
     conv_ids = [conv["id"] for conv in unique_convos]
@@ -1086,6 +1108,7 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
             "analysis":          analysis,
             "invalidated_flags": list(invalidated_map.get(contact_key, set())),
             "is_flag_reviewed":  contact_key in reviewed_set,
+            "validated":         contact_key in validated_set,
             "conversation_id":   conv_id,
         })
 
@@ -1259,6 +1282,15 @@ class FlagReviewRequest(BaseModel):
     conversation_id: int | None = None
 
 
+class FlagValidateRequest(BaseModel):
+    """Auditor confirming (or un-confirming) a whole flagged conversation."""
+    agent_id:        int
+    agent_name:      str
+    contact_name:    str
+    conversation_id: int | None = None
+    validated:       bool = True   # False = toggle the confirmation back off
+
+
 class AssignmentRequest(BaseModel):
     account_email: str
     agent_name:    str
@@ -1337,6 +1369,88 @@ async def _known_texters(conn) -> set[str]:
     return {r["name"] for r in rows}
 
 
+async def _recompute_trend_counts(conn, agent_name: str, audit_date=None) -> None:
+    """Recompute a trend snapshot's issue counters from live conversation_scores.
+
+    This is the mechanism that makes an agent's numbers climb as the auditor
+    works: a freshly-saved snapshot records 0 issues, and every Valid click
+    re-runs this to fold the newly-confirmed conversation in.
+
+    Every counter is gated on validation_log — a conversation contributes
+    nothing until an auditor explicitly confirmed it.
+
+    Pass `audit_date` to target the snapshot for that specific day. Without it
+    this falls back to the agent's newest snapshot, which is wrong whenever the
+    auditor is working through an older audit.
+    """
+    await conn.execute(
+        """UPDATE trend_snapshots ts
+           SET total_issues = (
+               SELECT COUNT(*)
+               FROM conversations c
+               JOIN LATERAL (
+                   SELECT red_flags FROM conversation_scores cs2
+                   WHERE cs2.conversation_id = c.id
+                   ORDER BY cs2.id DESC LIMIT 1
+               ) cs ON TRUE
+               WHERE LOWER(c.texter_name) = LOWER(ts.agent_name)
+                 AND c.audit_date = ts.audit_date
+                 AND jsonb_array_length(cs.red_flags::jsonb) > 0
+                 AND EXISTS (SELECT 1 FROM validation_log vl, contacts ct2
+                             WHERE ct2.id = c.contact_id
+                               AND vl.agent_id = c.agent_id
+                               AND LOWER(vl.contact_name) = LOWER(ct2.name)
+                               AND vl.status = 'valid')
+           ),
+           late_response_flags = (
+               SELECT COUNT(*)
+               FROM conversations c
+               JOIN LATERAL (
+                   SELECT red_flags FROM conversation_scores cs2
+                   WHERE cs2.conversation_id = c.id
+                   ORDER BY cs2.id DESC LIMIT 1
+               ) cs ON TRUE
+               WHERE LOWER(c.texter_name) = LOWER(ts.agent_name)
+                 AND c.audit_date = ts.audit_date
+                 AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(cs.red_flags::jsonb) ft
+                             WHERE LOWER(ft) = LOWER($2))
+                 AND EXISTS (SELECT 1 FROM validation_log vl, contacts ct2
+                             WHERE ct2.id = c.contact_id
+                               AND vl.agent_id = c.agent_id
+                               AND LOWER(vl.contact_name) = LOWER(ct2.name)
+                               AND vl.status = 'valid')
+           ),
+           wrong_label_flags = (
+               SELECT COUNT(*)
+               FROM conversations c
+               JOIN LATERAL (
+                   SELECT red_flags FROM conversation_scores cs2
+                   WHERE cs2.conversation_id = c.id
+                   ORDER BY cs2.id DESC LIMIT 1
+               ) cs ON TRUE
+               WHERE LOWER(c.texter_name) = LOWER(ts.agent_name)
+                 AND c.audit_date = ts.audit_date
+                 AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(cs.red_flags::jsonb) ft
+                             WHERE LOWER(ft) LIKE 'wrong label:%')
+                 AND EXISTS (SELECT 1 FROM validation_log vl, contacts ct2
+                             WHERE ct2.id = c.contact_id
+                               AND vl.agent_id = c.agent_id
+                               AND LOWER(vl.contact_name) = LOWER(ct2.name)
+                               AND vl.status = 'valid')
+           )
+           WHERE ts.id = (
+               SELECT id FROM trend_snapshots
+               WHERE LOWER(agent_name) = LOWER($1)
+                 AND ($3::date IS NULL OR audit_date = $3::date)
+               ORDER BY audit_date DESC, id DESC
+               LIMIT 1
+           )""",
+        agent_name,
+        LATE_RESPONSE_FLAG_TEXT,
+        audit_date,
+    )
+
+
 async def _save_trend_snapshot(agent_name: str) -> None:
     """
     Persist a trend snapshot for the given agent after their audit completes.
@@ -1379,25 +1493,41 @@ async def _save_trend_snapshot(agent_name: str) -> None:
                 # If a new run is started today, the key will be discarded there to allow retry.
                 return
 
-            # Count total issues from red_flags (JSONB list)
-            total_issues = 0
-            try:
-                flags_raw = score_row["red_flags"] or []
-                if isinstance(flags_raw, str):
-                    flags_raw = json.loads(flags_raw)
-                total_issues = len(flags_raw)
-            except Exception as _e:
-                logger.debug("swallowed: %r", _e)
+            # Manually validated conversations for this agent — the opt-in gate.
+            # A freshly-completed audit has none, so a new snapshot legitimately
+            # records 0 issues; the counts climb as the auditor clicks Valid,
+            # which re-runs the recompute in /api/redflag/valid.
+            vl_rows = await conn.fetch(
+                "SELECT contact_name FROM validation_log WHERE agent_id = $1 AND status = 'valid'",
+                agent_id,
+            )
+            validated_set = {(v["contact_name"] or "").lower().strip() for v in vl_rows}
 
+            def _is_validated(conv: dict) -> bool:
+                return (conv.get("contact") or "").lower().strip() in validated_set
+
+            total_issues = 0
             conversations_analyzed = 0
+            late_response_flags = 0
+            wrong_label_flags = 0
             try:
                 details = score_row["details"] or {}
                 if isinstance(details, str):
                     details = json.loads(details)
                 pc = details.get("per_conversation", [])
                 conversations_analyzed = len(pc)
-                if total_issues == 0:
-                    total_issues = sum(1 for c in pc if c.get("red_flags"))
+                # Every counter below is gated on manual validation: a flag only
+                # enters the agent's history once an auditor confirmed it.
+                validated_pc = [c for c in pc if _is_validated(c)]
+                total_issues = sum(1 for c in validated_pc if c.get("red_flags"))
+                late_response_flags = sum(
+                    1 for c in validated_pc
+                    if any(f.strip().lower() == LATE_RESPONSE_FLAG_TEXT.lower() for f in (c.get("red_flags") or []))
+                )
+                wrong_label_flags = sum(
+                    1 for c in validated_pc
+                    if any(_is_wrong_label_flag(f) for f in (c.get("red_flags") or []))
+                )
             except Exception as _e:
                 logger.debug("swallowed: %r", _e)
 
@@ -1417,9 +1547,10 @@ async def _save_trend_snapshot(agent_name: str) -> None:
                 """INSERT INTO trend_snapshots
                    (agent_name, audit_date, audit_timestamp, account_email,
                     total_issues, overall_score, compliance_score, sentiment_score,
-                    professionalism_score, script_adherence_score, conversations_analyzed)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-                   ON CONFLICT (agent_name, audit_date, account_email) 
+                    professionalism_score, script_adherence_score, conversations_analyzed,
+                    late_response_flags, wrong_label_flags)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                   ON CONFLICT (agent_name, audit_date, account_email)
                    DO UPDATE SET
                        audit_timestamp = EXCLUDED.audit_timestamp,
                        total_issues = EXCLUDED.total_issues,
@@ -1428,7 +1559,9 @@ async def _save_trend_snapshot(agent_name: str) -> None:
                        sentiment_score = EXCLUDED.sentiment_score,
                        professionalism_score = EXCLUDED.professionalism_score,
                        script_adherence_score = EXCLUDED.script_adherence_score,
-                       conversations_analyzed = EXCLUDED.conversations_analyzed""",
+                       conversations_analyzed = EXCLUDED.conversations_analyzed,
+                       late_response_flags = EXCLUDED.late_response_flags,
+                       wrong_label_flags = EXCLUDED.wrong_label_flags""",
                 snapshot_agent_name,
                 audit_date_val,
                 now_ts,
@@ -1440,6 +1573,8 @@ async def _save_trend_snapshot(agent_name: str) -> None:
                 score_row["professionalism_score"],
                 score_row["script_adherence_score"],
                 conversations_analyzed,
+                late_response_flags,
+                wrong_label_flags,
             )
             logger.info(f"Trend snapshot saved for '{snapshot_agent_name}' (account: {agent_name}) on {today}")
     except Exception as exc:
@@ -2273,7 +2408,16 @@ async def api_delete_agent(agent_id: int):
 
 @app.post("/api/redflag/invalid", dependencies=[Depends(require_admin)])
 async def api_redflag_invalid(body: RedFlagFeedbackRequest):
-    """Mark an AI red flag as invalid and retroactively remove it from stored scores."""
+    """DEPRECATED — superseded by POST /api/redflag/valid.
+
+    Flags are no longer valid-by-default, so there is nothing to "dismiss": a
+    flag simply never counts until an auditor confirms its conversation. The UI
+    no longer calls this route, and its destructive rewrite of red_flags is
+    actively wrong under the validation overlay. Kept only so any in-flight
+    client does not 404; delete once no callers remain.
+
+    Mark an AI red flag as invalid and retroactively remove it from stored scores.
+    """
     if not body.agent_id or not body.red_flag.strip():
         raise HTTPException(status_code=400, detail="agent_id and red_flag are required")
     flag_str = body.red_flag.strip()
@@ -2394,31 +2538,8 @@ async def api_redflag_invalid(body: RedFlagFeedbackRequest):
                     json.dumps(top_flags), json.dumps(details), as_row["id"],
                 )
 
-            # 4. Recompute total_issues from live conversation_scores for the latest snapshot.
-            # Count conversations that still have at least one red flag — single source of truth.
-            # texter_name in conversations matches agent_name in trend_snapshots directly.
-            await conn.execute(
-                """UPDATE trend_snapshots ts
-                   SET total_issues = (
-                       SELECT COUNT(*)
-                       FROM conversations c
-                       JOIN LATERAL (
-                           SELECT red_flags FROM conversation_scores cs2
-                           WHERE cs2.conversation_id = c.id
-                           ORDER BY cs2.id DESC LIMIT 1
-                       ) cs ON TRUE
-                       WHERE LOWER(c.texter_name) = LOWER(ts.agent_name)
-                         AND c.audit_date = ts.audit_date
-                         AND jsonb_array_length(cs.red_flags::jsonb) > 0
-                   )
-                   WHERE ts.id = (
-                       SELECT id FROM trend_snapshots
-                       WHERE LOWER(agent_name) = LOWER($1)
-                       ORDER BY audit_date DESC, id DESC
-                       LIMIT 1
-                   )""",
-                body.agent_name,
-            )
+            # 4. Recompute the snapshot counters from live conversation_scores.
+            await _recompute_trend_counts(conn, body.agent_name)
 
         logger.info(
             f"Flag marked invalid: agent={body.agent_name}, contact='{body.contact_name}', "
@@ -2427,6 +2548,89 @@ async def api_redflag_invalid(body: RedFlagFeedbackRequest):
         return {"status": "ok", "remaining_flags": remaining_flags}
     except Exception as exc:
         logger.exception("Error in /api/redflag/invalid")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/redflag/valid", dependencies=[Depends(require_admin)])
+async def api_redflag_valid(body: FlagValidateRequest):
+    """Confirm a flagged conversation so its flags count toward the agent's record.
+
+    This is the ONLY way a flag reaches the Trend Dashboard, the Detailed
+    Dashboard, or the agent's history. Everything else is unconfirmed and
+    contributes nothing, which is what keeps unreviewed audit output from being
+    recorded against an agent permanently.
+
+    Deliberately non-destructive: it writes a validation_log row and never
+    touches conversation_scores or audit_scores, so the raw audit output stays
+    intact and the auditor can toggle a confirmation back off.
+    """
+    if not body.agent_id or not body.contact_name.strip():
+        raise HTTPException(status_code=400, detail="agent_id and contact_name are required")
+
+    contact = body.contact_name.strip()
+    try:
+        async with app.state.pool.acquire() as conn:
+            # Resolve the conversation — the counters join validation_log on
+            # conversation_id, so a row without one would never count.
+            conv_id = body.conversation_id
+            if conv_id is None:
+                conv_row = await conn.fetchrow(
+                    """SELECT c.id FROM conversations c
+                       JOIN contacts ct ON ct.id = c.contact_id
+                       WHERE c.agent_id = $1 AND LOWER(ct.name) = LOWER($2)
+                       ORDER BY c.id DESC LIMIT 1""",
+                    body.agent_id, contact,
+                )
+                conv_id = conv_row["id"] if conv_row else None
+            if conv_id is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"No conversation found for agent {body.agent_id} / '{contact}'",
+                )
+
+            # The snapshot this conversation belongs to, so validating an older
+            # audit updates that day's row rather than the agent's newest one.
+            date_row = await conn.fetchrow(
+                "SELECT audit_date, texter_name FROM conversations WHERE id = $1", conv_id
+            )
+            audit_date  = date_row["audit_date"] if date_row else None
+            texter_name = (date_row["texter_name"] if date_row else None) or body.agent_name
+
+            if body.validated:
+                await conn.execute(
+                    """INSERT INTO validation_log
+                       (agent_id, agent_name, contact_name, conversation_id, status, validated_by)
+                       VALUES ($1, $2, $3, $4, 'valid', $5)
+                       ON CONFLICT (agent_id, LOWER(contact_name)) DO UPDATE SET
+                           status          = 'valid',
+                           conversation_id = EXCLUDED.conversation_id,
+                           validated_by    = EXCLUDED.validated_by,
+                           created_at      = NOW()""",
+                    body.agent_id, body.agent_name, contact, conv_id, "dashboard",
+                )
+                # Confirming a conversation means the auditor has been through it.
+                await _upsert_flag_review(conn, body.agent_id, contact, conv_id)
+            else:
+                await conn.execute(
+                    """DELETE FROM validation_log
+                       WHERE agent_id = $1 AND LOWER(contact_name) = LOWER($2)""",
+                    body.agent_id, contact,
+                )
+
+            # Fold the change into the agent's snapshot for that audit day.
+            await _recompute_trend_counts(conn, texter_name, audit_date)
+
+        invalidate_review_stats_cache()
+        logger.info(
+            "Conversation %s: agent=%s contact='%s' conv_id=%s",
+            "VALIDATED" if body.validated else "un-validated",
+            body.agent_name, contact, conv_id,
+        )
+        return {"status": "ok", "validated": body.validated, "conversation_id": conv_id}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Error in /api/redflag/valid")
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -2902,6 +3106,11 @@ async def _reattribute_day(conn, emails: list[str], day: "date",
     # ── per-flag owners inside conversation_scores.flag_details ───────────────
     # Only details carrying a culprit timestamp can be re-resolved; the rest
     # keep whatever they had, still labelled 'legacy' by the writer.
+    #
+    # Details carrying `culprit_until` are deliberately EXCLUDED here: they
+    # describe an interval, texter_at() is LIMIT 1, and overwriting them with a
+    # single name would silently destroy the blame split on the next save.
+    # _reattribute_intervals() below recomputes those.
     flags = await conn.execute(
         """WITH tgt AS (
                SELECT cs.id, cs.flag_details, a.email AS account_email
@@ -2919,6 +3128,7 @@ async def _reattribute_day(conn, emails: list[str], day: "date",
                       jsonb_agg(
                           CASE WHEN e.d ? 'culprit_at'
                                     AND e.d->>'culprit_at' IS NOT NULL
+                                    AND NOT (e.d ? 'culprit_until')
                                THEN e.d || jsonb_build_object(
                                         'texter_name', to_jsonb(r.texter),
                                         'attribution',
@@ -2943,6 +3153,8 @@ async def _reattribute_day(conn, emails: list[str], day: "date",
               AND cs.flag_details IS DISTINCT FROM rb.new_details""",
         lc, day,
     )
+
+    split_rows = await _reattribute_intervals(conn, lc, day)
 
     # ── conversation-level owner ──────────────────────────────────────────────
     # The thread lands on whoever owned the account at its last outgoing
@@ -2979,9 +3191,111 @@ async def _reattribute_day(conn, emails: list[str], day: "date",
     return {
         "messages_exact":      _n(exact),
         "messages_unassigned": _n(unassigned),
-        "scores_updated":      _n(flags),
+        "scores_updated":      _n(flags) + split_rows,
+        "splits_updated":      split_rows,
         "conversations":       _n(convos),
     }
+
+
+async def _reattribute_intervals(conn, lc: list[str], day: "date") -> int:
+    """
+    Replay the blame split on flags that measure an INTERVAL rather than an
+    instant — today that is F17 alone (a slow reply's wait).
+
+    The scalar rewrite above can't do this: texter_at() answers for one moment,
+    so it would collapse a two-texter wait onto whoever was on duty when the
+    clock started and drop `texter_split` for good. Here each holder's slice
+    comes from texters_in_range(), and the same ai.shift arithmetic the flag was
+    measured with turns those slices into minutes — so the replay and the writer
+    can never disagree.
+
+    Returns the number of conversation_scores rows rewritten.
+    """
+    from database.db import _resolve_texters_in_range
+
+    rows = await conn.fetch(
+        """SELECT cs.id, cs.flag_details, a.email AS account_email,
+                  c.texter_name AS fallback
+             FROM conversation_scores cs
+             JOIN conversations c ON c.id = cs.conversation_id
+             JOIN accounts a      ON a.id = c.agent_id
+            WHERE LOWER(a.email) = ANY($1::text[])
+              AND (CASE WHEN c.convo_date <> ''
+                        THEN TO_DATE(c.convo_date, 'MM/DD/YYYY')
+                        ELSE c.audit_date END) = $2
+              AND jsonb_typeof(cs.flag_details) = 'array'
+              AND EXISTS (SELECT 1
+                            FROM jsonb_array_elements(cs.flag_details) x
+                           WHERE x ? 'culprit_until')""",
+        lc, day,
+    )
+    if not rows:
+        return 0
+
+    updated = 0
+    for row in rows:
+        details = row["flag_details"] or []
+        if isinstance(details, str):
+            try:
+                details = json.loads(details)
+            except Exception:
+                continue
+        if not isinstance(details, list):
+            continue
+
+        changed = False
+        for detail in details:
+            if not isinstance(detail, dict):
+                continue
+            raw_from = detail.get("culprit_at")
+            raw_to = detail.get("culprit_until")
+            if not raw_from or not raw_to:
+                continue
+            try:
+                start = datetime.fromisoformat(str(raw_from).replace("Z", "+00:00"))
+                end = datetime.fromisoformat(str(raw_to).replace("Z", "+00:00"))
+            except ValueError:
+                continue
+
+            slices = [
+                dict(s) for s in await conn.fetch(
+                    "SELECT * FROM texters_in_range($1, $2, $3)",
+                    row["account_email"], start, end,
+                )
+            ]
+            split = _resolve_texters_in_range(slices, start, end, row["fallback"])
+
+            before = (detail.get("texter_name"), detail.get("attribution"),
+                      detail.get("texter_split"))
+            if split:
+                detail["texter_name"] = split[0]["texter_name"]
+                detail["attribution"] = split[0]["attribution"]
+                if len(split) > 1:
+                    detail["texter_split"] = split
+                else:
+                    detail.pop("texter_split", None)
+            else:
+                # Nobody was on shift for any of it (an overnight handover, say)
+                # — fall back to the clock-start owner, exactly as the writer does.
+                owner = await conn.fetchval(
+                    "SELECT texter_at($1, $2)", row["account_email"], start,
+                )
+                detail["texter_name"] = owner
+                detail["attribution"] = "unassigned" if owner is None else "exact"
+                detail.pop("texter_split", None)
+
+            if before != (detail.get("texter_name"), detail.get("attribution"),
+                          detail.get("texter_split")):
+                changed = True
+
+        if changed:
+            await conn.execute(
+                "UPDATE conversation_scores SET flag_details = $1::jsonb WHERE id = $2",
+                json.dumps(details), row["id"],
+            )
+            updated += 1
+
+    return updated
 
 
 async def _log_assignment(conn, *, account_email, action, from_texter, to_texter,
@@ -3912,18 +4226,6 @@ async def api_trends(start: str = "", end: str = "", agent: str = "all"):
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
 
-    _UNIQUE_CONVOS_SQL = """
-        SELECT COUNT(DISTINCT c.id)
-        FROM conversations c
-        JOIN LATERAL (
-            SELECT 1 FROM conversation_scores cs2
-            WHERE cs2.conversation_id = c.id
-            LIMIT 1
-        ) cs ON TRUE
-        WHERE c.audit_date BETWEEN $1 AND $2
-          {agent_clause}
-    """
-
     try:
         async with app.state.pool.acquire() as conn:
             if agent.lower() == "all":
@@ -3933,11 +4235,6 @@ async def api_trends(start: str = "", end: str = "", agent: str = "all"):
                        ORDER BY audit_date ASC, agent_name ASC""",
                     start_d, end_d,
                 )
-                unique_convos = await conn.fetchval(
-                    _UNIQUE_CONVOS_SQL.format(agent_clause=""),
-                    start_d,
-                    end_d,
-                )
             else:
                 rows = await conn.fetch(
                     """SELECT * FROM trend_snapshots
@@ -3945,18 +4242,14 @@ async def api_trends(start: str = "", end: str = "", agent: str = "all"):
                        ORDER BY audit_date ASC""",
                     start_d, end_d, agent,
                 )
-                unique_convos = await conn.fetchval(
-                    _UNIQUE_CONVOS_SQL.format(agent_clause="AND LOWER(c.texter_name) = LOWER($3)"),
-                    start_d,
-                    end_d,
-                    agent,
-                )
+        # Sum of each returned row's own conversations_analyzed — must equal
+        # what the frontend's "Convos Audited" column totals, or the summary
+        # stat and the table beneath it show contradictory numbers.
         snapshot_convos = sum((r["conversations_analyzed"] or 0) for r in rows)
         return {
             "success": True,
             "data": [dict(r) for r in rows],
             "summary": {
-                "unique_conversations": int(unique_convos or 0),
                 "snapshot_conversations_total": snapshot_convos,
             },
         }
@@ -4034,7 +4327,11 @@ async def api_detailed_dashboard(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
 
+    # Only auditor-confirmed conversations count as flagged. Without the
+    # vl.id check an unvalidated conversation would still surface here, which
+    # is exactly what the manual validation gate exists to prevent.
     flagged_clause = """
+                  AND vl.id IS NOT NULL
                   AND (
                     jsonb_array_length(cs.red_flags::jsonb) > 0
                     OR (cs.label_correct = false AND cs.label_assigned IS DISTINCT FROM cs.label_should_be)
@@ -4062,12 +4359,16 @@ async def api_detailed_dashboard(
                         cs.label_correct,
                         cs.label_assigned,
                         cs.label_should_be,
-                        (
+                        -- Manual validation gate: a conversation the auditor
+                        -- never confirmed reports zero issues, no matter how
+                        -- many flags the audit produced.
+                        CASE WHEN vl.id IS NULL THEN 0 ELSE (
                           jsonb_array_length(cs.red_flags::jsonb)
                           + CASE WHEN cs.label_correct = false
                                    AND cs.label_assigned IS DISTINCT FROM cs.label_should_be
                                  THEN 1 ELSE 0 END
-                        ) AS issue_count,
+                        ) END AS issue_count,
+                        (vl.id IS NOT NULL) AS validated,
                         (
                             SELECT m.body FROM messages m
                             WHERE m.conversation_id = c.id
@@ -4088,6 +4389,15 @@ async def api_detailed_dashboard(
                         ORDER BY cs2.id DESC
                         LIMIT 1
                     ) cs ON TRUE
+                    -- Manual validation gate. NULL vl.id = the auditor never
+                    -- clicked Valid, so this conversation contributes nothing.
+                    -- Joined on agent+contact (validation_log's unique key, and
+                    -- how validation is keyed everywhere else) so this can never
+                    -- fan out and duplicate rows.
+                    LEFT JOIN validation_log vl
+                           ON vl.agent_id = c.agent_id
+                          AND LOWER(vl.contact_name) = LOWER(ct.name)
+                          AND vl.status = 'valid'
                     -- Time-ranged ownership takes precedence over the day-grained row
                     {period_texter_lateral}
                     -- Resolve texter against conversation date, not scrape date
@@ -4234,10 +4544,14 @@ async def api_conversation_messages(conversation_id: int):
 
             # AI analysis
             score_row = await conn.fetchrow(
+                # flag_details was missing here, so the Detailed Dashboard
+                # drill-down silently dropped every per-flag owner badge that
+                # the sidebar route shows.
                 """SELECT compliance_score, sentiment_score, professionalism_score,
                           script_adherence_score, funnel_stage, pillars_gathered,
                           rebuttals_used, label_assigned, label_correct,
                           label_should_be, label_reason, red_flags, summary, model_used,
+                          flag_details,
                           COALESCE(source, 'groq') AS source
                    FROM conversation_scores
                    WHERE conversation_id = $1
@@ -4245,17 +4559,27 @@ async def api_conversation_messages(conversation_id: int):
                 conversation_id,
             )
 
-            # Invalidated flags for this contact + agent
+            # Invalidated flags for this contact + agent.
+            # LOWER() on both sides: validation and every other lookup key on a
+            # lowercased contact name, so an exact-case match here would miss.
             fb_rows = await conn.fetch(
                 """SELECT red_flag FROM flag_feedback
-                   WHERE agent_id = $1 AND contact_name = $2""",
+                   WHERE agent_id = $1 AND LOWER(contact_name) = LOWER($2)""",
+                agent_id, conv_row["contact_name"],
+            )
+
+            # Has the auditor confirmed this conversation counts?
+            vl_row = await conn.fetchrow(
+                """SELECT 1 FROM validation_log
+                   WHERE agent_id = $1 AND LOWER(contact_name) = LOWER($2)
+                     AND status = 'valid'""",
                 agent_id, conv_row["contact_name"],
             )
 
         analysis = {}
         if score_row:
             analysis = dict(score_row)
-            for field in ("pillars_gathered", "rebuttals_used", "red_flags"):
+            for field in ("pillars_gathered", "rebuttals_used", "red_flags", "flag_details"):
                 val = analysis.get(field) or []
                 if isinstance(val, str):
                     try:
@@ -4277,6 +4601,7 @@ async def api_conversation_messages(conversation_id: int):
                 "parsed_messages":   [dict(m) for m in msg_rows],
                 "analysis":          analysis,
                 "invalidated_flags": [r["red_flag"] for r in fb_rows],
+                "validated":         vl_row is not None,
             },
         }
     except HTTPException:

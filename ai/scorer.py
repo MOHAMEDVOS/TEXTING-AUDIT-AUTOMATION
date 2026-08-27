@@ -265,6 +265,11 @@ async def score_agent_conversations(
     # for this account in this run.
     funnel_tier: str | None = None
     guidelines: str | None = None
+    # Ownership timeline for the account, fetched ONCE for the whole run. Never
+    # per conversation: the audit pool is min_size=1/max_size=2 while
+    # _process_convo runs 15-wide, so a per-conversation fetch would serialise
+    # the entire scoring pass behind two connections.
+    account_periods: list[dict] = []
     try:
         import asyncpg
         _conn = await asyncpg.connect(DATABASE_URL)
@@ -276,6 +281,16 @@ async def score_agent_conversations(
             if _row:
                 funnel_tier = _row["funnel_tier"]
                 guidelines = _row["guidelines"]
+                try:
+                    from database.db import fetch_periods
+                    account_periods = await fetch_periods(_conn, _row["email"])
+                except Exception as _pe:
+                    # Falling back to an empty list means the global shift
+                    # window applies — today's behaviour, not a silent zero.
+                    logger.warning(
+                        f"[Scorer] {agent_name} — assignment periods unavailable: {_pe} "
+                        f"(measuring against the global shift window)"
+                    )
                 if funnel_tier or guidelines:
                     logger.info(
                         f"[Scorer] {agent_name} — account config loaded: "
@@ -287,6 +302,11 @@ async def score_agent_conversations(
                         f"[Scorer] {agent_name} — no per-account audit config "
                         f"(falling back to global prompt)"
                     )
+                logger.info(
+                    f"[Scorer] {agent_name} — {len(account_periods)} assignment "
+                    f"period(s) loaded"
+                    + ("" if account_periods else " (global shift window only)")
+                )
         finally:
             await _conn.close()
     except Exception as e:
@@ -347,7 +367,9 @@ async def score_agent_conversations(
             # unfiltered thread meant a single slow reply from months ago was
             # re-flagged (and re-deducted 25 points) on every audit, forever, on
             # data the rest of the audit deliberately excludes (deep review F28).
-            _rt = check_response_time(filter_recent_messages(parsed), labels)
+            _rt = check_response_time(
+                filter_recent_messages(parsed), labels, periods=account_periods
+            )
             if _rt:
                 rflags = list(result.get("red_flags") or [])
                 if RESPONSE_TIME_FLAG not in rflags:
@@ -365,11 +387,19 @@ async def score_agent_conversations(
                     # reply is an omission, so per the tier4 convention the
                     # deciding message is the LEAD's: that is when the clock
                     # started and when someone was on the hook to answer.
+                    # F17 is also the only flag with a real interval, so it
+                    # passes `until` (the reply that ended the wait) and the
+                    # blame is split when the account changed hands mid-wait.
+                    # `index` resolves to None in production — scraped messages
+                    # carry no `seq` key (scraper/api_bot.py) — which is fine:
+                    # by the ref convention the timestamp is authoritative and
+                    # `index` is informational only.
                     _ev = _rt.get("evidence") or []
                     if _ev:
                         culprits = dict(result.get("flag_culprits") or {})
                         culprits[canon_flag_text(RESPONSE_TIME_FLAG)] = _culprit_ref(
-                            _ev[0], _ev[0].get("seq"), "omission"
+                            _ev[0], _ev[0].get("seq"), "omission",
+                            until=_rt.get("ended_at"),
                         )
                         result["flag_culprits"] = culprits
 
@@ -489,12 +519,22 @@ async def score_agent_conversations(
         _rt = r.pop("_resp_time", None)
         if _rt:
             thr = _rt.get("threshold_min", 10)
+            # When the account's ownership timeline narrowed the window, say
+            # whose hours were counted — otherwise a manager sees a small
+            # number against a visibly long gap and reads it as a bug.
+            _window = shift_window_label()
+            _by = _rt.get("by_texter") or {}
+            if len(_by) == 1:
+                _who = next(iter(_by))
+                _window = f"{_who}'s assigned hours within {_window}"
+            elif len(_by) > 1:
+                _window = f"assigned hours within {_window}"
             for d in r["flag_details"]:
                 if d.get("flag_id") == "F17":
                     d["severity"] = _rt["severity"]
                     d["explanation"] = (
                         f"Agent took {_rt['minutes']} min of shift time "
-                        f"({shift_window_label()}) to reply to the lead "
+                        f"({_window}) to reply to the lead "
                         f"(over the {thr}-min threshold)."
                     )
                     ev = []
@@ -712,9 +752,13 @@ async def score_agent_conversations(
                     # the ownership timeline instead.
                     try:
                         from database.db import attribute_flag_details
+                        # Same account for the whole run, so hand over the
+                        # periods already fetched instead of re-querying the
+                        # identical rows once per conversation.
                         await attribute_flag_details(
                             conn, conv_id, r.get("flag_details") or [],
                             r.get("flag_culprits"),
+                            periods=account_periods,
                         )
                     except Exception as _e:
                         logger.warning(

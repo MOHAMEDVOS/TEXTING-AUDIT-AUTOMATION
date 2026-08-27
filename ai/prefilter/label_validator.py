@@ -62,7 +62,7 @@ _WRONG_NUMBER = [
     re.compile(r"\bwrong\s+(number|phone|person|#)\b", re.I),
     re.compile(r"\bwrong\s*#\b", re.I),
     re.compile(r"\bro+ng\s+(number|#)\b", re.I),  # "Rong number" typo
-    re.compile(r"\bnot\s+(me|mine|my\s+property|the\s+owner)\b", re.I),
+    re.compile(r"\bnot\s+(me|mine|my\s+(house|home|property)|the\s+owner)\b", re.I),
     re.compile(r"\byou\s+have\s+the\s+wrong\s+(person|number)\b", re.I),
     # NOTE: "way off base" removed (2026-08-05) — it's a PRICE idiom
     # ("you're way off base with that price"), not an identity mismatch.
@@ -771,15 +771,26 @@ def _label_key(label: str | None) -> str:
                       "decision maker, not interested", "not interested, decision maker",
                       "decision maker not interested"}:
         return "not interested"
-    # Compound labels — DNC component wins ("Do Not Call, Verified" → DNC)
+    # Compound labels — a texter routinely stacks a CRM list/campaign tag with
+    # the real status label ("Fishnet list, Wrong Number", "June List, DNC").
+    # Every _label_key()-based guard in _expected_label() does an EXACT string
+    # match against this return value, so any status word buried in a compound
+    # silently defeated every one of those guards until the status word was
+    # pulled out here — same fix already applied to "do not call" and
+    # "not interested" below, now extended to the sibling exact-match keys.
+    # DNC component wins ("Do Not Call, Verified" → DNC).
     parts = [p.strip() for p in re.split(r"[,;/|+]", normalized) if p.strip()]
     if "do not call" in parts or "dnc" in parts or "do not call (dnc)" in parts:
         return "do not call"
     if "not interested" in parts:
         return "not interested"
+    if "wrong number" in parts or "wrong #" in parts:
+        return "wrong number"
     # "Missed Call", "Undefined", "Stop Responding" are all "Stopped Responding"
     if normalized in {"missed call", "undefined", "stop responding",
                       "stopped responding", "fu3"}:
+        return "stopped responding"
+    if any(p in {"missed call", "undefined", "stop responding", "stopped responding", "fu3"} for p in parts):
         return "stopped responding"
     return normalized
 

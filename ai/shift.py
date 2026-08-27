@@ -25,7 +25,7 @@ from config.settings import (
     TIMEZONE,
 )
 
-# A response gap is only ever measured inside the audit window (30 days), but
+# A response gap is only ever measured inside the audit window (7 days), but
 # a stray timestamp shouldn't be able to spin the day loop for years.
 _MAX_SPAN_DAYS = 400
 
@@ -59,22 +59,21 @@ def is_on_shift(dt: datetime | None) -> bool:
     return start <= dt < end
 
 
-def shift_minutes_between(dt1: datetime | None, dt2: datetime | None) -> float:
+def _shift_slices(dt1: datetime | None,
+                  dt2: datetime | None) -> list[tuple[datetime, datetime]]:
     """
-    Minutes of staffed shift time between dt1 and dt2.
+    The staffed slices of [dt1, dt2), at most one per worked day.
 
-    Off-shift time - overnight, before open, after close, and whole non-worked
-    days - contributes nothing, so an overnight or weekend pause never reads as
-    unresponsiveness. A delay that genuinely sits inside the shift is measured
-    in full.
+    The single day-loop every shift calculation shares - keeping the window
+    math in one place is why this module exists.
     """
     if not dt1 or not dt2 or dt2 <= dt1:
-        return 0.0
+        return []
 
     dt1 = _to_shift_tz(dt1)
     dt2 = _to_shift_tz(dt2)
 
-    total_seconds = 0.0
+    slices: list[tuple[datetime, datetime]] = []
     curr_date = dt1.date()
     end_date = dt2.date()
     if (end_date - curr_date).days > _MAX_SPAN_DAYS:
@@ -90,11 +89,91 @@ def shift_minutes_between(dt1: datetime | None, dt2: datetime | None) -> float:
         t1 = min(dt2, b_end) if curr_date == end_date else b_end
 
         if t1 > t0:
-            total_seconds += (t1 - t0).total_seconds()
+            slices.append((t0, t1))
 
         curr_date += timedelta(days=1)
 
-    return total_seconds / 60.0
+    return slices
+
+
+def shift_minutes_between(dt1: datetime | None, dt2: datetime | None) -> float:
+    """
+    Minutes of staffed shift time between dt1 and dt2.
+
+    Off-shift time - overnight, before open, after close, and whole non-worked
+    days - contributes nothing, so an overnight or weekend pause never reads as
+    unresponsiveness. A delay that genuinely sits inside the shift is measured
+    in full.
+    """
+    return sum(
+        (t1 - t0).total_seconds() for t0, t1 in _shift_slices(dt1, dt2)
+    ) / 60.0
+
+
+def _period_bounds(period: dict) -> tuple[datetime, datetime | None] | None:
+    """(started_at, ended_at) of an ownership period in shift-local time.
+
+    An open period (ended_at NULL) has no upper bound. Rows without a start or
+    without a texter name can't attribute anything, so they're dropped.
+    """
+    if not isinstance(period, dict):
+        return None
+    start = period.get("started_at")
+    if not start:
+        return None
+    end = period.get("ended_at")
+    return _to_shift_tz(start), (_to_shift_tz(end) if end else None)
+
+
+def shift_minutes_by_texter(dt1: datetime | None, dt2: datetime | None,
+                            periods) -> dict[str, float]:
+    """
+    Each texter's share of the staffed minutes in [dt1, dt2).
+
+    `periods` are assignment_periods rows (texter_name / started_at / ended_at).
+    They record who OWNS an account, not what hours someone works: the server
+    defaults a segment to 00:00-end-of-day, so most periods are all-day. They
+    therefore only ever NARROW the global shift, never widen it - otherwise an
+    all-day period would make an overnight gap count in full again.
+
+    assignment_periods is a gap-free, non-overlapping partition per account
+    (the GiST EXCLUDE at database/schema.sql), so shares never double-count.
+    Time nobody was assigned to is simply absent from the result.
+    """
+    shares: dict[str, float] = {}
+    if not periods:
+        return shares
+
+    bounds = []
+    for p in periods:
+        name = (p.get("texter_name") if isinstance(p, dict) else None)
+        b = _period_bounds(p)
+        if not name or b is None:
+            continue
+        bounds.append((str(name), b[0], b[1]))
+
+    for s_start, s_end in _shift_slices(dt1, dt2):
+        for name, p_start, p_end in bounds:
+            t0 = max(s_start, p_start)
+            t1 = min(s_end, p_end) if p_end else s_end
+            if t1 > t0:
+                shares[name] = shares.get(name, 0.0) + (t1 - t0).total_seconds() / 60.0
+
+    return shares
+
+
+def shift_minutes_with_periods(dt1: datetime | None, dt2: datetime | None,
+                               periods) -> float:
+    """
+    Staffed minutes in [dt1, dt2) that someone was actually assigned for.
+
+    With no periods at all the account has never been through the assignment
+    timeline, and intersecting with an empty list would silently zero out every
+    elapsed-time rule - so fall back to the global shift window.
+    """
+    if not periods:
+        return shift_minutes_between(dt1, dt2)
+    return sum(shift_minutes_by_texter(dt1, dt2, periods).values())
 
 
 def shift_window_label() -> str:

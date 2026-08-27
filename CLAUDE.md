@@ -34,12 +34,12 @@ An advanced, high-performance automated auditing system for SMS/Texting conversa
 
 ## Folder Structure
 - `ai/`: Scorer and 3-Tier ML Pre-filter logic (`prefilter/`)
-- `config/`: Settings, API key pools, and agent roster configs
+- `config/`: Settings and rate-limiter config (`settings.py`, `rate_limiter.py`). No LLM key pool — that table is gone.
 - `dashboard/`: FastAPI app, HTML templates, and static assets
 - `database/`: Schema definitions and DB helper modules
 - `docs/`: Technical guides (audit workflow, scoring rulebook)
 - `scraper/`: GraphQL & REST API client scraper and queue manager
-- `scripts/`: ML training, evaluation, and system utilities
+- `scripts/`: operational utilities (account import, assignment backfill, post-audit reflection, reporting). ML training/eval scripts live under `ai/prefilter/` (`index_builder.py`, `train.py`, `shadow_harness.py`), not here.
 - `main.py`: Main CLI entry point for running audits
 
 ---
@@ -83,7 +83,7 @@ An advanced, high-performance automated auditing system for SMS/Texting conversa
 ## API Rules
 - **FastAPI Endpoints**: Use standard REST verbs (GET for data, POST for actions, DELETE for resets).
 - **Validation**: Use Pydantic models for request bodies.
-- **Response Format**: Consistent JSON returns: `{"success": true, "data": {...}}` or `{"success": false, "error": "msg"}`.
+- **Response Format**: New endpoints should return `{"success": true, "data": {...}}` or `{"success": false, "error": "msg"}`. In practice `dashboard/app.py` has a sizable minority of endpoints (control/admin/validation actions) that return `{"status": "ok", ...}`-shaped bodies instead — match the convention of the endpoint you're editing rather than assuming one format project-wide.
 - **Error Handling**: Use `HTTPException` with appropriate status codes (404, 400, 500).
 
 ---
@@ -135,21 +135,32 @@ review for the recommendation to either repair or remove them.
     removed this produces effectively **100% of the product's output** — see
     `ai/prefilter/tier4_flag_generator.py` and `tier1_phrases_v2.py`.
 
-**Caution:** T2/T3 committed artifacts were trained on scikit-learn 1.8.0 while
-`requirements.txt` pins 1.7.2, and the embedding text builder cannot distinguish
-agent from lead. Do not enable T2/T3 without rebuilding both.
+**Caution:** T2/T3 committed artifacts were trained on scikit-learn 1.8.0
+(`ai/prefilter/artifacts/manifest.json` stamps `sklearn_version: 1.8.0`) while
+`requirements.txt` pins 1.7.2 — `joblib.load()` throws `InconsistentVersionWarning`
+for every estimator under the installed version. Do not enable T2/T3 without
+retraining under 1.7.2. The embedding text builder's agent/lead blindness (deep
+review F10) was fixed in commit c901424 — `ai/prefilter/embedder.py` and
+`ai/prefilter/index_builder.py` now tag each message `AGENT:`/`CONTACT:` based on
+`sender`, not a broken heuristic that always resolved to `CONTACT`.
 
 **Operational Commands:**
--   **Run Evaluation**: `python scripts/eval_prefilter.py --limit 500`
--   **Promote Tiers**: `python scripts/promote_prefilter.py` (checks gates: FALSE-CLEAN ≤ 5%)
 -   **Rebuild kNN Index**: `python -m ai.prefilter.index_builder --rebuild`
 -   **Retrain Classifier**: `python -m ai.prefilter.train --test-split 0.2`
+-   **T4 vs Groq-history comparison**: `python -m ai.prefilter.shadow_harness --limit 50 [--csv path]`
+    (there is no live Groq to compare against anymore; this replays stored
+    `groq_scores` ground truth from `prefilter_decisions`/`conversation_scores`).
+    `scripts/eval_prefilter.py` and `scripts/promote_prefilter.py`, referenced by
+    older docs, no longer exist in `scripts/`.
 
 **Env Config (`.env`):**
 -   `PREFILTER_ENABLED=true`
--   `PREFILTER_SHADOW_MODE=true` (historically: run tiers without acting on them,
-    for validation against the then-available ground truth)
--   `PREFILTER_T1_LIVE=true`, `PREFILTER_T2_LIVE=false`, `PREFILTER_T3_LIVE=false`
+-   `PREFILTER_SHADOW_MODE=false` (default; when true, tiers run without acting on
+    them, for validation against stored ground truth)
+-   `PREFILTER_T1_LIVE=true`, `PREFILTER_T2_LIVE=false`, `PREFILTER_T3_LIVE=false`, `PREFILTER_T4_LIVE=true`
+-   `PREFILTER_REQUIRE_VALIDATION=false` — when true, Tier 2's kNN index only draws
+    from conversations with a `validation_log.status='valid'` row; stays false
+    until enough manager validations exist to not empty the index.
 
 ---
 
@@ -179,10 +190,36 @@ Scoring is fully deterministic:
 - `ai/prefilter/label_validator.py` — label correctness rules
 - `ai/prefilter/tier4_flag_generator.py` — terminal flag generation
 
-Because these rules produce all output and there are no tests over them, treat any
-change to them as a change to the product's results. Capture golden-transcript
-output before editing and diff after.
+Because these rules produce all output, treat any change to them as a change to
+the product's results. Test coverage is thin and partial — `tests/test_flag_split.py`
+and `tests/test_response_time.py` pin down `tier4_flag_generator.py`'s culprit
+splitting and `ai/response_time.py`/`ai/shift.py`, and `tests/test_scorer_filters.py`
+covers flag suppression in `ai/scorer.py`, but `tier1_phrases_v2.py` and
+`label_validator.py` (the bulk of the rule volume) have no dedicated tests.
+Capture golden-transcript output before editing and diff after.
 
 **Known review findings** are tracked in `docs/reviews/2026-08-25-deep-code-review.md`.
+
+---
+
+## Flag Validation Gate
+
+A flag reaches the Trend Dashboard, the Detailed Dashboard, or an agent's
+history **only** after an auditor clicks "Mark Valid" on that conversation.
+This is enforced by `validation_log` (`database/schema.sql`) and
+`POST /api/redflag/valid` (`dashboard/app.py`) — the endpoint writes a
+`status='valid'` row keyed on `(agent_id, LOWER(contact_name))` and then calls
+`_recompute_trend_counts` to fold the change into that day's `trend_snapshots`
+row. It never touches `conversation_scores`/`audit_scores`, so raw audit output
+stays intact and a validation can be toggled back off (row deleted, counts
+recomputed). This replaced the old model where a flag was valid by default and
+a dismissal permanently deleted it; a one-time backfill in `schema.sql`
+auto-validated everything audited before the 2026-08-27 cutover date so
+historical counts didn't shift, but anything audited on/after that date
+requires a manual click.
+
+`trend_snapshots` carries two flag-specific rollup columns —
+`late_response_flags` and `wrong_label_flags` — computed only from validated
+conversations, same as the other counts on that table.
 
 

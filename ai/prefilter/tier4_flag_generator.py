@@ -82,13 +82,20 @@ def _flag_key(text: str) -> str:
     return canon_flag_text(_remap_flag_to_whitelist(text) or text)
 
 
-def _culprit_ref(msg: dict | None, index: int | None, basis: str) -> dict:
+def _culprit_ref(msg: dict | None, index: int | None, basis: str,
+                 until=None) -> dict:
+    """`until` turns the ref into an INTERVAL rather than an instant.
+
+    Only F17 has one — a wait has two ends, and if the account changed hands
+    during it the blame is shared. Every other flag leaves it None, so their
+    refs keep exactly the shape they have today.
+    """
     at = (msg or {}).get("timestamp") or (msg or {}).get("sent_at")
     if hasattr(at, "isoformat"):
         at = at.isoformat()
     elif at is not None:
         at = str(at)
-    return {
+    ref = {
         "basis":  basis,
         "at":     at,
         # Kept so db.py can rebuild the instant when only the scraped
@@ -98,6 +105,9 @@ def _culprit_ref(msg: dict | None, index: int | None, basis: str) -> dict:
         "index":  index,
         "sender": ((msg or {}).get("sender") or "").strip() or None,
     }
+    if until is not None:
+        ref["until"] = until.isoformat() if hasattr(until, "isoformat") else str(until)
+    return ref
 
 
 # ── Additional patterns specific to T4 flag detection ────────────────────────

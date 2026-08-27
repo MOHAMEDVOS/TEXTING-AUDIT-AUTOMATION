@@ -82,9 +82,28 @@ def _is_outgoing(sender: str) -> bool:
     return (sender or "").strip().lower() not in ("contact", "lead", "unknown", "")
 
 
+async def fetch_periods(conn, account_email: str | None) -> list[dict]:
+    """All ownership periods for an account, oldest first.
+
+    One query, reused by every caller: the audit pool is min_size=1/max_size=2
+    while conversations score 15-wide, so re-running this per conversation
+    serialises the whole run.
+    """
+    return [
+        dict(r) for r in await conn.fetch(
+            """SELECT texter_name, started_at, ended_at
+                 FROM assignment_periods
+                WHERE LOWER(account_email) = LOWER($1)
+                ORDER BY started_at""",
+            account_email or "",
+        )
+    ]
+
+
 async def attribute_flag_details(conn, conversation_id: int,
                                  flag_details: list[dict],
-                                 culprits: dict | None) -> None:
+                                 culprits: dict | None,
+                                 periods: list[dict] | None = None) -> None:
     """
     Name the texter responsible for each flag.
 
@@ -92,6 +111,12 @@ async def attribute_flag_details(conn, conversation_id: int,
     belongs to whoever owned the account at the moment that decided it — the
     offending message for something the agent said, the lead's message for
     something the agent failed to say. Mutates `flag_details` in place.
+
+    A culprit ref carrying `until` describes an interval rather than an instant
+    (F17's wait), so it gets each holder's share instead of one name.
+
+    Pass `periods` when the caller already has the account's ownership timeline
+    (the scorer fetches it once per run); otherwise it is fetched here.
 
     Shared by every write path so a flag can never be attributed two ways.
     """
@@ -110,15 +135,8 @@ async def attribute_flag_details(conn, conversation_id: int,
         return
     fallback = row["texter_name"]
 
-    periods = [
-        dict(r) for r in await conn.fetch(
-            """SELECT texter_name, started_at, ended_at
-                 FROM assignment_periods
-                WHERE LOWER(account_email) = LOWER($1)
-                ORDER BY started_at""",
-            row["account_email"] or "",
-        )
-    ]
+    if periods is None:
+        periods = await fetch_periods(conn, row["account_email"])
 
     for detail in flag_details:
         if not isinstance(detail, dict):
@@ -141,12 +159,32 @@ async def attribute_flag_details(conn, conversation_id: int,
             "date": ref.get("date"),
             "time": ref.get("time"),
         })
-        texter, attribution = _resolve_texter(periods, when, fallback)
-        detail["texter_name"]       = texter
-        detail["attribution"]       = attribution
+        until = _parse_msg_datetime({"timestamp": ref.get("until")})
+
+        # An interval culprit (F17's wait) can straddle a handover, so charge
+        # each holder their share instead of billing the whole delay to
+        # whoever happened to be on duty when the clock started.
+        split = _resolve_texters_in_range(periods, when, until, fallback) if until else []
+        if split:
+            detail["texter_name"] = split[0]["texter_name"]
+            detail["attribution"] = split[0]["attribution"]
+            # Additive: readers that only know the scalar keep working, and the
+            # key is absent entirely when one texter held the whole wait.
+            if len(split) > 1:
+                detail["texter_split"] = split
+            else:
+                detail.pop("texter_split", None)
+        else:
+            texter, attribution = _resolve_texter(periods, when, fallback)
+            detail["texter_name"] = texter
+            detail["attribution"] = attribution
+            detail.pop("texter_split", None)
+
         detail["attribution_basis"] = ref.get("basis")
         if when is not None:
             detail["culprit_at"] = when.isoformat()
+        if until is not None:
+            detail["culprit_until"] = until.isoformat()
 
 
 def _resolve_texter(periods: list[dict], sent_at: datetime | None,
@@ -165,6 +203,43 @@ def _resolve_texter(periods: list[dict], sent_at: datetime | None,
         if p["started_at"] <= sent_at and (p["ended_at"] is None or sent_at < p["ended_at"]):
             return p["texter_name"], "exact"
     return None, "unassigned"
+
+
+def _resolve_texters_in_range(periods: list[dict], start: datetime | None,
+                              end: datetime | None,
+                              fallback: str | None) -> list[dict]:
+    """
+    Split an interval across the texters who owned the account during it.
+
+    Returns [{"texter_name", "minutes", "attribution"}] largest share first,
+    ties broken by the earlier holder. Minutes are *shift* minutes (the same
+    arithmetic the flag itself was measured with — ai.shift), so a handover
+    that happens overnight splits nothing.
+
+    Returns [] when the range is unusable or no period covers any of it; the
+    caller then falls back to the single-instant path.
+    """
+    if start is None:
+        # Mirrors _resolve_texter: no usable timestamp, so the conversation
+        # owner is the best we can say, and we say so.
+        return [{"texter_name": fallback, "minutes": 0.0, "attribution": "inferred"}]
+    if end is None or end <= start or not periods:
+        return []
+
+    from ai.shift import shift_minutes_by_texter
+
+    shares = shift_minutes_by_texter(start, end, periods)
+    if not shares:
+        return []
+
+    # Earliest-first ordering makes the tie-break deterministic: dicts preserve
+    # insertion order and shift_minutes_by_texter walks the periods in order.
+    order = {name: i for i, name in enumerate(shares)}
+    ranked = sorted(shares.items(), key=lambda kv: (-kv[1], order[kv[0]]))
+    return [
+        {"texter_name": name, "minutes": round(mins, 1), "attribution": "exact"}
+        for name, mins in ranked
+    ]
 
 
 class Database:
@@ -349,15 +424,7 @@ class Database:
             # Ownership timeline for this account — fetched once, then matched
             # in memory so a mid-day shuffle attributes each message to whoever
             # actually owned the account at the minute it was sent.
-            periods = [
-                dict(r) for r in await conn.fetch(
-                    """SELECT texter_name, started_at, ended_at
-                         FROM assignment_periods
-                        WHERE LOWER(account_email) = LOWER($1)
-                        ORDER BY started_at""",
-                    account_email or "",
-                )
-            ]
+            periods = await fetch_periods(conn, account_email)
 
         async with self.pool.acquire() as conn:
             async with conn.transaction():
