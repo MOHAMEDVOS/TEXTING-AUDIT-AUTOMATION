@@ -108,7 +108,7 @@ DEFAULT_COACHING: dict[str, str] = {
     "F14": "When a contact denies knowing the address after giving property details, ask a clarifying question (parcel number, correct address) instead of closing — and label Potential/Undefined, not Bluffer.",
     "F15": "On an above-market price, switch to the referral close rather than continuing to push.",
     "F16": "A pushed lead must be closed with a handoff message — coach the agent to always tell the lead the team will reach out.",
-    "F17": "Reply to engaged leads within 10 business-hour minutes; over 15 is a red alert and over 25 needs immediate attention.",
+    "F17": "Reply to engaged leads within 10 minutes of shift time (10a-7p ET, Mon-Fri); over 15 is a red alert and over 25 needs immediate attention. Off-shift and weekend gaps are not counted.",
     WRONG_LABEL_FLAG_ID: "Re-label the conversation per the audit; review the labelling rule that was missed.",
 }
 
@@ -129,7 +129,7 @@ EXPLAIN_TEMPLATE: dict[str, str] = {
     "F14": "The contact denied knowing the address after providing property details and the agent closed the conversation instead of asking a clarifying question.",
     "F15": "The lead's price was above market and the agent kept pushing instead of the referral close.",
     "F16": "The lead was pushed (hand raise) but the agent never sent a handoff message.",
-    "F17": "The agent took longer than the response-time threshold to reply to the lead.",
+    "F17": "The agent took longer than the response-time threshold to reply to the lead, counting only staffed shift hours.",
     WRONG_LABEL_FLAG_ID: "The audit found the assigned label does not match the conversation.",
 }
 

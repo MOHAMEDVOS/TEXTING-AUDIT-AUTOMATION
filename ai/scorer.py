@@ -7,18 +7,19 @@ aggregates the scores, and writes the result to the audit_scores table.
 import asyncio
 import json
 import logging
-import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 
 import psycopg2
 
-from config.settings import DATABASE_URL, get_now
+from config.settings import DATABASE_URL, TIMEZONE, get_now
 from ai.analyzer import analyze_conversation
 from ai.prefilter.label_validator import _label_key as _lk
 from ai.prefilter.label_validator import is_defensible_alternative
-from ai.prefilter._guards import build_flag_details, DEFENSIBLE_ALTERNATIVE_SUFFIX
+from ai.prefilter._guards import build_flag_details, DEFENSIBLE_ALTERNATIVE_SUFFIX, canon_flag_text
+from ai.prefilter.tier4_flag_generator import _culprit_ref
 from ai.analyzer import filter_recent_messages
 from ai.response_time import check_response_time, FLAG_TEXT as RESPONSE_TIME_FLAG
+from ai.shift import is_on_shift, shift_window_label
 from ai.prompts import PROMPT_VERSION
 
 logger = logging.getLogger(__name__)
@@ -169,23 +170,22 @@ def _filter_flags(flags: list[str], patterns: set[str]) -> list[str]:
     return clean
 
 
-# UTC-4 during EDT (summer), UTC-5 during EST (winter) — detected at runtime
-EASTERN = timezone(timedelta(hours=-4 if time.daylight and time.localtime().tm_isdst else -5))
-BUSINESS_START = 9   # 9 AM
-BUSINESS_END   = 17  # 5 PM
+# The staffed shift is defined once in config/settings.py and applied via
+# ai.shift — this module used to carry its own 9-17 window plus a UTC offset
+# frozen at import time (wrong for half the year).
 OVERDUE_MINUTES = 30
 
 
 def _check_overdue_unreads(unread_conversations: list[dict]) -> list[str]:
     """
     Return a red-flag string for every unread conversation whose last message
-    timestamp is older than OVERDUE_MINUTES during business hours (Eastern).
+    timestamp is older than OVERDUE_MINUTES, and only while the team is on shift.
     """
     flags: list[str] = []
-    now_et = datetime.now(EASTERN)
+    now_et = get_now()
 
-    # Only run during business hours Mon–Fri
-    if not (BUSINESS_START <= now_et.hour < BUSINESS_END and now_et.weekday() < 5):
+    # Only run inside the staffed shift (10a-7p ET, Mon-Fri by default)
+    if not is_on_shift(now_et):
         return flags
 
     for uc in unread_conversations:
@@ -199,7 +199,7 @@ def _check_overdue_unreads(unread_conversations: list[dict]) -> list[str]:
         try:
             # SmarterContact rows show  "MM/DD/YYYY"  and  "HH:MM AM/PM"
             msg_dt = datetime.strptime(f"{date_str} {time_str}", "%m/%d/%Y %I:%M %p")
-            msg_et = msg_dt.replace(tzinfo=EASTERN)
+            msg_et = TIMEZONE.localize(msg_dt)
             elapsed = (now_et - msg_et).total_seconds() / 60
 
             if elapsed > OVERDUE_MINUTES:
@@ -358,6 +358,21 @@ async def score_agent_conversations(
                         result["script_adherence_score"] = max(0.0, sa - _rt["script_penalty"])
                     result["_resp_time"] = _rt
 
+                    # F17 is injected here rather than by the flag generator, so
+                    # it has to record its own culprit or attribute_flag_details
+                    # falls back to the conversation owner ("legacy") — the wrong
+                    # texter whenever the account was shuffled mid-day. A slow
+                    # reply is an omission, so per the tier4 convention the
+                    # deciding message is the LEAD's: that is when the clock
+                    # started and when someone was on the hook to answer.
+                    _ev = _rt.get("evidence") or []
+                    if _ev:
+                        culprits = dict(result.get("flag_culprits") or {})
+                        culprits[canon_flag_text(RESPONSE_TIME_FLAG)] = _culprit_ref(
+                            _ev[0], _ev[0].get("seq"), "omission"
+                        )
+                        result["flag_culprits"] = culprits
+
             # Stash the parsed messages so the post-processing step can build
             # rule-assigned flag_details (evidence pinpointing) once all flag
             # mutations (wrong-label injection, second filter) are complete.
@@ -478,7 +493,8 @@ async def score_agent_conversations(
                 if d.get("flag_id") == "F17":
                     d["severity"] = _rt["severity"]
                     d["explanation"] = (
-                        f"Agent took {_rt['minutes']} min to reply to the lead "
+                        f"Agent took {_rt['minutes']} min of shift time "
+                        f"({shift_window_label()}) to reply to the lead "
                         f"(over the {thr}-min threshold)."
                     )
                     ev = []

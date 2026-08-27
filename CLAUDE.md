@@ -113,6 +113,13 @@ The system classifies every conversation into a **Funnel** type to apply relevan
 -   **WF Hand-Raise**: validates "Lead, Pushed to client" push label; missing handoff msg = **F16** flag. (F14 is the *address-denial* flag — don't confuse the two.)
 -   **Condescension + Price-Disagreement guards**: label checks prevent false positives when leads argue price.
 -   **Read-Ack**: "Done" status auto-clears when the account is opened in the dashboard.
+-   **Shift-aware timing**: the team is staffed **10:00 AM – 7:00 PM ET, Mon–Fri**
+    (`SHIFT_START_HOUR` / `SHIFT_END_HOUR` / `SHIFT_DAYS` in `config/settings.py`).
+    Every elapsed-time rule measures **shift minutes** via `ai/shift.py`, never
+    wall-clock minutes, so an overnight or weekend pause can never raise **F17**
+    (slow response). Thresholds (10/15/25 min) are unchanged — only the
+    denominator is. `ai/shift.py` is the single definition of the window; do not
+    reintroduce a local business-hours constant.
 
 ---
 

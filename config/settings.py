@@ -206,6 +206,20 @@ def get_now() -> datetime:
     return datetime.now(TIMEZONE)
 
 
+# ─── Work Shift ─────────────────────────────────────────────────────────────
+# The texting team's staffed hours, expressed in TIMEZONE above. Any audit rule
+# that measures elapsed time must count only the minutes that fall inside this
+# window, so an agent is never penalised for an overnight or weekend gap they
+# were not on duty for. See ai/shift.py for the shared arithmetic.
+SHIFT_START_HOUR = int(os.getenv("SHIFT_START_HOUR", "10"))   # 10:00 AM ET
+SHIFT_END_HOUR   = int(os.getenv("SHIFT_END_HOUR",   "19"))   #  7:00 PM ET
+
+# Weekdays worked, Mon=0 … Sun=6. Set "0,1,2,3,4,5,6" to go seven days.
+SHIFT_DAYS = frozenset(
+    int(d) for d in os.getenv("SHIFT_DAYS", "0,1,2,3,4").split(",") if d.strip()
+)
+
+
 # ─── Google OAuth ─────────────────────────────────────────────────────────────
 GOOGLE_CLIENT_ID     = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")

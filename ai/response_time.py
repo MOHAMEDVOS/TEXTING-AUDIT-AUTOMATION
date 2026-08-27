@@ -1,8 +1,10 @@
 """
 Deterministic response-time audit (Flag F17).
 
-Measures how long the AGENT took to reply to the LEAD/owner during business hours
-(8:00 AM – 8:00 PM EST) and flags slow replies on live conversations:
+Measures how long the AGENT took to reply to the LEAD/owner *during the team's
+staffed shift* (10:00 AM – 7:00 PM ET, Mon–Fri — see ai/shift.py) and flags slow
+replies on live conversations. Off-shift time never counts, so an overnight or
+weekend pause can't read as unresponsiveness:
   - Yellow Alert (> 10 min): Medium severity, -8 pts Script Adherence penalty
   - Red Alert (> 15 min): High severity, -15 pts Script Adherence penalty
   - Critical Delay (> 25 min): High severity, -25 pts Script Adherence penalty
@@ -14,10 +16,8 @@ from __future__ import annotations
 import os
 import re
 import logging
-from datetime import datetime, timedelta
-import pytz
 
-from config.settings import TIMEZONE
+from ai.shift import shift_minutes_between
 from database.db import _parse_msg_datetime, _is_outgoing
 
 logger = logging.getLogger(__name__)
@@ -42,9 +42,8 @@ SCRIPT_PENALTY_YELLOW = _env_int("RESPONSE_TIME_PENALTY_YELLOW", 8)
 SCRIPT_PENALTY_RED = _env_int("RESPONSE_TIME_PENALTY_RED", 15)
 SCRIPT_PENALTY_CRITICAL = _env_int("RESPONSE_TIME_PENALTY_CRITICAL", 25)
 
-# Business hours limits (EST)
-BUSINESS_START_HOUR = _env_int("BUSINESS_START_HOUR", 8)   # 8:00 AM
-BUSINESS_END_HOUR = _env_int("BUSINESS_END_HOUR", 20)     # 8:00 PM
+# The shift window itself lives in config/settings.py (SHIFT_START_HOUR /
+# SHIFT_END_HOUR / SHIFT_DAYS) and is applied by ai.shift.shift_minutes_between.
 
 # Conversation labels that get response-time auditing.
 # Includes the bare funnel labels, the WL/AP/HL Drip follow-up tracks, and the
@@ -94,47 +93,6 @@ def _is_agent(sender: str | None) -> bool:
     return _is_outgoing(sender)
 
 
-def _business_minutes_between(dt1: datetime, dt2: datetime) -> float:
-    """
-    Calculate active business minutes between dt1 and dt2 during 8:00 AM - 8:00 PM EST.
-    Overnight hours (8 PM to 8 AM next day) are excluded so overnight pauses don't skew stats,
-    while long daytime delays (> 25 min) are strictly measured.
-    """
-    if not dt1 or not dt2 or dt2 <= dt1:
-        return 0.0
-
-    # Shared business timezone rather than a third independent hardcoding of
-    # US/Eastern (deep review F37).
-    est = TIMEZONE
-    if dt1.tzinfo is None:
-        dt1 = est.localize(dt1)
-    else:
-        dt1 = dt1.astimezone(est)
-
-    if dt2.tzinfo is None:
-        dt2 = est.localize(dt2)
-    else:
-        dt2 = dt2.astimezone(est)
-
-    total_seconds = 0.0
-    curr_date = dt1.date()
-    end_date = dt2.date()
-
-    while curr_date <= end_date:
-        b_start = est.localize(datetime(curr_date.year, curr_date.month, curr_date.day, BUSINESS_START_HOUR, 0, 0))
-        b_end = est.localize(datetime(curr_date.year, curr_date.month, curr_date.day, BUSINESS_END_HOUR, 0, 0))
-
-        t0 = max(dt1, b_start) if curr_date == dt1.date() else b_start
-        t1 = min(dt2, b_end) if curr_date == end_date else b_end
-
-        if t1 > t0:
-            total_seconds += (t1 - t0).total_seconds()
-
-        curr_date += timedelta(days=1)
-
-    return total_seconds / 60.0
-
-
 def check_response_time(parsed_messages, assigned_labels) -> dict | None:
     """
     Return a slow-response descriptor, or None when there's no violation or the
@@ -165,7 +123,7 @@ def check_response_time(parsed_messages, assigned_labels) -> dict | None:
 
         if _is_agent(msg.get("sender")):
             if pending_open and pending_dt is not None and dt is not None:
-                gap = _business_minutes_between(pending_dt, dt)
+                gap = shift_minutes_between(pending_dt, dt)
                 if gap > worst_minutes:
                     worst_minutes = gap
                     worst_evidence = [pending_msg, msg]
