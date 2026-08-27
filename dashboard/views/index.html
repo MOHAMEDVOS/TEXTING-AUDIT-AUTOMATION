@@ -7215,6 +7215,126 @@ function _flagCountColor(n) {
   return "var(--text-secondary)";
 }
 
+/**
+ * Group Snapshot Records rows by (agent_name, audit_date). A texter who ran
+ * audits on several accounts the same day used to print as N separate rows
+ * with the name repeated N times — this collapses those into one summary row
+ * (counts summed, score weighted by conversations audited), expandable to
+ * reveal each account's own row underneath. A texter with only one account
+ * that day renders exactly as a normal single row, no group overhead.
+ */
+function _groupSnapshotRows(rows) {
+  const groups = [];
+  const byKey = new Map();
+  rows.forEach((r, i) => {
+    const key = `${(r.agent_name || "").toLowerCase()}|${r.audit_date}`;
+    let g = byKey.get(key);
+    if (!g) {
+      g = { agentName: r.agent_name, auditDate: r.audit_date, items: [] };
+      byKey.set(key, g);
+      groups.push(g);
+    }
+    g.items.push({ r, i });
+  });
+  return groups;
+}
+
+function _renderSnapshotGroups(rows) {
+  const groups = _groupSnapshotRows(rows);
+  window._trSnapshotGroups = groups;
+  const sc = v => v != null ? v.toFixed(1) : "—";
+  const cl = v => `class="${_scoreClass(v)}"`;
+
+  return groups.map((g, gi) => {
+    if (g.items.length === 1) {
+      return _snapshotRowHtml(g.items[0].r, g.items[0].i, sc, cl);
+    }
+
+    const sum = key => g.items.reduce((a, { r }) => a + (r[key] || 0), 0);
+    const convos = sum("conversations_analyzed");
+    const issues = sum("total_issues");
+    const late   = sum("late_response_flags");
+    const wrong  = sum("wrong_label_flags");
+
+    // Weighted by conversations audited so a 300-convo account isn't diluted
+    // by a 20-convo one; falls back to a plain average if none have a count.
+    const scored = g.items.filter(({ r }) => r.overall_score != null);
+    const totalWeight = scored.reduce((a, { r }) => a + (r.conversations_analyzed || 0), 0);
+    const avgScore = scored.length
+      ? (totalWeight > 0
+          ? scored.reduce((a, { r }) => a + r.overall_score * (r.conversations_analyzed || 0), 0) / totalWeight
+          : scored.reduce((a, { r }) => a + r.overall_score, 0) / scored.length)
+      : null;
+
+    const rowBg = _issueRowBg(issues);
+    const summary = `<tr class="tr-group-summary" data-group="${gi}" onclick="_trToggleGroup(${gi})"
+        style="cursor:pointer;border-bottom:1px solid var(--surface-border);${rowBg ? ` background:${rowBg};` : ""}">
+      <td style="padding:9px 14px;white-space:nowrap;color:var(--text-secondary);">${esc(g.auditDate)}</td>
+      <td style="padding:9px 14px;white-space:nowrap;color:var(--text-primary);font-weight:600;">
+        <span id="tr-chevron-${gi}" style="display:inline-block;width:11px;transition:transform .15s;">›</span>
+        ${esc(g.agentName)}
+      </td>
+      <td style="padding:9px 14px;white-space:nowrap;color:var(--text-secondary);font-size:.75rem;">${g.items.length} accounts</td>
+      <td style="padding:9px 14px;text-align:center;color:var(--text-secondary);">${convos}</td>
+      <td style="padding:9px 14px;text-align:center;color:${issues>0?'#dc2626':'#059669'};font-weight:600;">${issues}</td>
+      <td style="padding:9px 14px;text-align:center;color:${_flagCountColor(late)};font-weight:600;">${late}</td>
+      <td style="padding:9px 14px;text-align:center;color:${_flagCountColor(wrong)};font-weight:600;">${wrong}</td>
+      <td style="padding:9px 14px;text-align:center;" ${cl(avgScore)}>${sc(avgScore)}</td>
+      <td style="padding:9px 14px;text-align:center;">
+        <button onclick="event.stopPropagation();_trOpenDetailedForGroup(${gi})"
+          title="Open the Detailed Dashboard for ${esc(g.agentName)} on ${esc(g.auditDate)}, across every account"
+          style="font-size:.68rem;font-weight:600;padding:4px 11px;border-radius:99px;border:1px solid var(--brand-border);color:var(--brand);background:var(--brand-bg);cursor:pointer;white-space:nowrap;transition:.15s;"
+          onmouseover="this.style.background='var(--brand)';this.style.color='#fff'"
+          onmouseout="this.style.background='var(--brand-bg)';this.style.color='var(--brand)'">
+          View →
+        </button>
+      </td>
+    </tr>`;
+
+    const children = g.items.map(({ r, i }) => _snapshotRowHtml(r, i, sc, cl, gi)).join("");
+    return summary + children;
+  }).join("");
+}
+
+function _snapshotRowHtml(r, i, sc, cl, groupIdx) {
+  const rowBg = _issueRowBg(r.total_issues || 0);
+  const isChild = groupIdx != null;
+  const trAttrs = isChild ? ` data-group="${groupIdx}" style="display:none;border-bottom:1px solid var(--surface-border);${rowBg ? `background:${rowBg};` : ""}"`
+                          : ` style="border-bottom:1px solid var(--surface-border);${rowBg ? ` background:${rowBg};` : ""}"`;
+  return `<tr${trAttrs}>
+    <td style="padding:9px 14px;white-space:nowrap;color:var(--text-secondary);">${isChild ? "" : esc(r.audit_date)}</td>
+    <td style="padding:9px 14px${isChild ? " 9px 30px" : ""};white-space:nowrap;color:${isChild ? "var(--text-secondary)" : "var(--text-primary)"};font-weight:${isChild ? "400" : "500"};${isChild ? "font-size:.78rem;" : ""}">${isChild ? "" : esc(r.agent_name)}</td>
+    <td style="padding:9px 14px;white-space:nowrap;color:var(--text-secondary);font-size:.75rem;">${esc(r.account_email || "—")}</td>
+    <td style="padding:9px 14px;text-align:center;color:var(--text-secondary);">${r.conversations_analyzed||0}</td>
+    <td style="padding:9px 14px;text-align:center;color:${(r.total_issues||0)>0?'#dc2626':'#059669'};font-weight:600;">${r.total_issues||0}</td>
+    <td style="padding:9px 14px;text-align:center;color:${_flagCountColor(r.late_response_flags||0)};font-weight:600;">${r.late_response_flags||0}</td>
+    <td style="padding:9px 14px;text-align:center;color:${_flagCountColor(r.wrong_label_flags||0)};font-weight:600;">${r.wrong_label_flags||0}</td>
+    <td style="padding:9px 14px;text-align:center;" ${cl(r.overall_score)}>${sc(r.overall_score)}</td>
+    <td style="padding:9px 14px;text-align:center;">
+      <button onclick="_trOpenDetailedForRow(${i})"
+        title="Open the Detailed Dashboard for ${esc(r.agent_name)} on ${esc(r.audit_date)}"
+        style="font-size:.68rem;font-weight:600;padding:4px 11px;border-radius:99px;border:1px solid var(--brand-border);color:var(--brand);background:var(--brand-bg);cursor:pointer;white-space:nowrap;transition:.15s;"
+        onmouseover="this.style.background='var(--brand)';this.style.color='#fff'"
+        onmouseout="this.style.background='var(--brand-bg)';this.style.color='var(--brand)'">
+        View →
+      </button>
+    </td>
+  </tr>`;
+}
+
+function _trToggleGroup(gi) {
+  const groupRows = document.querySelectorAll(`tr[data-group="${gi}"]`);
+  const chevron = document.getElementById(`tr-chevron-${gi}`);
+  let expanded = false;
+  groupRows.forEach(row => {
+    if (row.classList.contains("tr-group-summary")) return;
+    const show = row.style.display === "none";
+    row.style.display = show ? "table-row" : "none";
+    expanded = show;
+  });
+  if (chevron) chevron.style.transform = expanded ? "rotate(90deg)" : "rotate(0deg)";
+}
+
 function getTrDateRange() {
   const filter = document.getElementById("tr-date-filter")?.value || "this_month";
   if (filter === "custom") {
@@ -7291,30 +7411,7 @@ async function loadTrends() {
     // Indexed (not keyed on agent/email in the onclick attribute) so names
     // and addresses containing quotes never break the inline handler.
     window._trSnapshotRows = rows;
-    tbodyEl.innerHTML = rows.map((r, i) => {
-      const sc = v => v != null ? v.toFixed(1) : "—";
-      const cl = v => `class="${_scoreClass(v)}"`;
-      const rowBg = _issueRowBg(r.total_issues || 0);
-      return `<tr style="border-bottom:1px solid var(--surface-border);${rowBg ? ` background:${rowBg};` : ""}">
-        <td style="padding:9px 14px;white-space:nowrap;color:var(--text-secondary);">${esc(r.audit_date)}</td>
-        <td style="padding:9px 14px;white-space:nowrap;color:var(--text-primary);font-weight:500;">${esc(r.agent_name)}</td>
-        <td style="padding:9px 14px;white-space:nowrap;color:var(--text-secondary);font-size:.75rem;">${esc(r.account_email || "—")}</td>
-        <td style="padding:9px 14px;text-align:center;color:var(--text-secondary);">${r.conversations_analyzed||0}</td>
-        <td style="padding:9px 14px;text-align:center;color:${(r.total_issues||0)>0?'#dc2626':'#059669'};font-weight:600;">${r.total_issues||0}</td>
-        <td style="padding:9px 14px;text-align:center;color:${_flagCountColor(r.late_response_flags||0)};font-weight:600;">${r.late_response_flags||0}</td>
-        <td style="padding:9px 14px;text-align:center;color:${_flagCountColor(r.wrong_label_flags||0)};font-weight:600;">${r.wrong_label_flags||0}</td>
-        <td style="padding:9px 14px;text-align:center;" ${cl(r.overall_score)}>${sc(r.overall_score)}</td>
-        <td style="padding:9px 14px;text-align:center;">
-          <button onclick="_trOpenDetailedForRow(${i})"
-            title="Open the Detailed Dashboard for ${esc(r.agent_name)} on ${esc(r.audit_date)}"
-            style="font-size:.68rem;font-weight:600;padding:4px 11px;border-radius:99px;border:1px solid var(--brand-border);color:var(--brand);background:var(--brand-bg);cursor:pointer;white-space:nowrap;transition:.15s;"
-            onmouseover="this.style.background='var(--brand)';this.style.color='#fff'"
-            onmouseout="this.style.background='var(--brand-bg)';this.style.color='var(--brand)'">
-            View →
-          </button>
-        </td>
-      </tr>`;
-    }).join("");
+    tbodyEl.innerHTML = _renderSnapshotGroups(rows);
     tableWrapEl.style.display = "block";
 
   } catch (err) {
@@ -7324,39 +7421,49 @@ async function loadTrends() {
 }
 
 /**
- * Jump from a Trends snapshot row to the Detailed Dashboard scoped to that
- * exact agent, account, and day — so the row's Issues/Late Response/Wrong
- * Label counts can be traced back to the actual flagged conversations.
- * Mirrors _ahOpenDetailed(), the equivalent shortcut from Assignments History.
+ * Jump from the Trends table to the Detailed Dashboard scoped to one agent
+ * and day — so a row's Issues/Late Response/Wrong Label counts can be traced
+ * back to the actual flagged conversations. `accountEmail` narrows to one
+ * account; pass "" to show every account that texter touched that day (used
+ * by the group-summary "View" button). Mirrors _ahOpenDetailed(), the
+ * equivalent shortcut from Assignments History.
  */
-function _trOpenDetailedForRow(i) {
-  const r = (window._trSnapshotRows || [])[i];
-  if (!r) return;
-
+function _trOpenDetailed(agentName, auditDate, accountEmail) {
   const sel = document.getElementById("dd-agent");
-  if (sel) sel.value = r.agent_name;
+  if (sel) sel.value = agentName;
 
-  // This shortcut exists to trace the row's issue counts back to their source
-  // conversations, so land on flagged-only rather than the whole day's traffic.
+  // This shortcut exists to trace counts back to their source conversations,
+  // so land on flagged-only rather than the whole day's traffic.
   const flaggedCheckbox = document.getElementById("dd-flagged-only");
   if (flaggedCheckbox) flaggedCheckbox.checked = true;
 
-  _ddSetAccountScope(r.account_email || "", r.account_email || "");
+  _ddSetAccountScope(accountEmail || "", accountEmail || "");
 
-  // Pin the range to this row's single audit day, using the same custom-range
+  // Pin the range to this single audit day, using the same custom-range
   // state the date picker writes.
-  const date = r.audit_date;
   const filterSel = document.getElementById("dd-date-filter");
   if (filterSel) filterSel.value = "custom";
-  window._ddDrpDateStart = date;
-  window._ddDrpDateEnd   = date;
+  window._ddDrpDateStart = auditDate;
+  window._ddDrpDateEnd   = auditDate;
   const labelEl = document.getElementById("dd-drp-label");
-  if (labelEl) labelEl.textContent = _fmtAssignDate(date);
+  if (labelEl) labelEl.textContent = _fmtAssignDate(auditDate);
   document.querySelectorAll("#dd-drp-popover .dd-drp-preset")
     .forEach(b => b.classList.remove("active"));
 
   showTrendsSection("detailed");
   loadDetailedDashboard();
+}
+
+function _trOpenDetailedForRow(i) {
+  const r = (window._trSnapshotRows || [])[i];
+  if (!r) return;
+  _trOpenDetailed(r.agent_name, r.audit_date, r.account_email || "");
+}
+
+function _trOpenDetailedForGroup(gi) {
+  const g = (window._trSnapshotGroups || [])[gi];
+  if (!g) return;
+  _trOpenDetailed(g.agentName, g.auditDate, "");
 }
 
 // ── Trend Data Reset ──────────────────────────────────────────────────────────
