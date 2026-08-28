@@ -852,6 +852,27 @@ async def score_agent_conversations(
             snapshot_texter = assign_row["texter_name"] if assign_row else agent_name
             snapshot_email  = assign_row["account_email"] if assign_row else agent_email
             total_flag_count = sum(len(r.get("red_flags") or []) for r in per_convo)
+
+            # The department audits a day behind (today's run covers
+            # yesterday's conversations), so the Trends dashboard has to key
+            # snapshots by when the conversations actually happened, not the
+            # day this script ran — same convention as the Detailed Dashboard
+            # (dashboard/app.py's convo_date-preferring CASE). Derived from
+            # `conversations` (this account's rows for today's run) rather
+            # than trusting a single record, since a run can straggle in a
+            # few conversations from an adjacent day.
+            effective_date_row = await conn.fetchrow(
+                """SELECT (CASE WHEN convo_date <> '' THEN TO_DATE(convo_date, 'MM/DD/YYYY')
+                                ELSE audit_date END) AS effective_date
+                   FROM conversations
+                   WHERE agent_id = $1 AND audit_date = $2
+                   GROUP BY 1
+                   ORDER BY COUNT(*) DESC, effective_date DESC
+                   LIMIT 1""",
+                agent_id, audit_date,
+            )
+            snapshot_date = effective_date_row["effective_date"] if effective_date_row else audit_date
+
             await conn.execute(
                 """INSERT INTO trend_snapshots
                    (agent_name, audit_date, audit_timestamp, account_email,
@@ -869,7 +890,7 @@ async def score_agent_conversations(
                          audit_timestamp         = EXCLUDED.audit_timestamp
 """,
                 snapshot_texter,
-                audit_date,
+                snapshot_date,
                 # Timezone-AWARE. A naive datetime.now() bound to a TIMESTAMPTZ
                 # column is interpreted by asyncpg as UTC, so local wall-clock time
                 # was stored 4-5 hours off — and disagreed with the dashboard's
@@ -884,7 +905,10 @@ async def score_agent_conversations(
                 script,
                 len(per_convo),
             )
-            logger.info(f"[Scorer] Trend snapshot saved for '{snapshot_texter}' on {audit_date}")
+            logger.info(
+                f"[Scorer] Trend snapshot saved for '{snapshot_texter}' — "
+                f"conversation date {snapshot_date} (audit ran {audit_date})"
+            )
 
     wrong_label_count = details["wrong_label_count"]
     label_accuracy    = details["label_accuracy"]

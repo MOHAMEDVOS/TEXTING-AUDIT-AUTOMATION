@@ -35,15 +35,26 @@ Usage:
 import argparse
 import asyncio
 import logging
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+# Captured BEFORE importing config.settings, which calls
+# load_dotenv(..., override=True) and will otherwise silently clobber a
+# DATABASE_URL passed on the command line (e.g. a production URL) with
+# whatever this machine's local .env has. A caller-provided value always
+# wins; only fall back to config.settings' value (the local .env) if the
+# caller didn't set one.
+_env_database_url = os.environ.get("DATABASE_URL")
+
 import asyncpg  # noqa: E402
 
-from config.settings import DATABASE_URL  # noqa: E402
+from config.settings import DATABASE_URL as _DOTENV_DATABASE_URL  # noqa: E402
 from ai.response_time import FLAG_TEXT as LATE_RESPONSE_FLAG_TEXT  # noqa: E402
+
+DATABASE_URL = _env_database_url or _DOTENV_DATABASE_URL
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logger = logging.getLogger("backfill_trend_counts")
@@ -120,8 +131,28 @@ recomputed AS (
 
 
 async def main(dry_run: bool) -> None:
-    conn = await asyncpg.connect(DATABASE_URL)
+    host = DATABASE_URL.split("@")[-1].split("/")[0] if "@" in DATABASE_URL else DATABASE_URL
+    logger.info(f"Connecting to {host} (from {'$DATABASE_URL' if _env_database_url else '.env'})")
+
+    conn = await asyncpg.connect(DATABASE_URL, statement_cache_size=0)
     try:
+        # Sanity check before trusting anything: this table can be small (a
+        # local dev DB, or between backfills) or large (production). If the
+        # correlated computation below ever disagrees with a plain COUNT(*),
+        # something is wrong with the query, not the data -- refuse to trust
+        # a partial result rather than report a misleadingly small diff.
+        total_ts = await conn.fetchval("SELECT COUNT(*) FROM trend_snapshots")
+        total_recomputed = await conn.fetchval(
+            _COUNT_CTE + "SELECT COUNT(*) FROM recomputed", LATE_RESPONSE_FLAG_TEXT
+        )
+        if total_recomputed != total_ts:
+            logger.error(
+                f"Aborting: recomputed {total_recomputed} row(s) but trend_snapshots "
+                f"has {total_ts}. Not trusting a partial result -- re-run."
+            )
+            return
+        logger.info(f"Sanity check passed: {total_ts} trend_snapshots rows accounted for.")
+
         rows = await conn.fetch(
             _COUNT_CTE + """
             SELECT * FROM recomputed

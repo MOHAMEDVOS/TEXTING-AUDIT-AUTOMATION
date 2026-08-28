@@ -1382,6 +1382,15 @@ async def _recompute_trend_counts(conn, agent_name: str, audit_date=None) -> Non
     Pass `audit_date` to target the snapshot for that specific day. Without it
     this recomputes every snapshot the agent has (all dates).
 
+    `trend_snapshots.audit_date` means the conversation's real date (SmarterContact's
+    own `convo_date`, MM/DD/YYYY, falling back to the scrape day when blank) —
+    NOT the day the audit script happened to run. The department audits a day
+    behind (today's run covers yesterday's conversations), so every subquery's
+    date match uses the same CASE expression the Detailed Dashboard filters by,
+    never a bare `c.audit_date = ts.audit_date`. Matching on the scrape day
+    would silently zero out every row once trend_snapshots rows are keyed by
+    conversation day instead of scrape day.
+
     A texter can be assigned a different SmarterContact account each day (and
     in rare cases more than one on the same day), which produces multiple
     trend_snapshots rows for the same (agent_name, audit_date) — one per
@@ -1418,7 +1427,8 @@ async def _recompute_trend_counts(conn, agent_name: str, audit_date=None) -> Non
                        ORDER BY cs2.id DESC LIMIT 1
                    ) cs ON TRUE
                    WHERE LOWER(c.texter_name) = LOWER(ts.agent_name)
-                     AND c.audit_date = ts.audit_date
+                     AND (CASE WHEN c.convo_date <> '' THEN TO_DATE(c.convo_date, 'MM/DD/YYYY')
+                               ELSE c.audit_date END) = ts.audit_date
                      AND LOWER(a.email) = LOWER(ts.account_email)
                    ORDER BY c.contact_id, c.id DESC
                ) lc
@@ -1441,7 +1451,8 @@ async def _recompute_trend_counts(conn, agent_name: str, audit_date=None) -> Non
                        ORDER BY cs2.id DESC LIMIT 1
                    ) cs ON TRUE
                    WHERE LOWER(c.texter_name) = LOWER(ts.agent_name)
-                     AND c.audit_date = ts.audit_date
+                     AND (CASE WHEN c.convo_date <> '' THEN TO_DATE(c.convo_date, 'MM/DD/YYYY')
+                               ELSE c.audit_date END) = ts.audit_date
                      AND LOWER(a.email) = LOWER(ts.account_email)
                    ORDER BY c.contact_id, c.id DESC
                ) lc
@@ -1465,7 +1476,8 @@ async def _recompute_trend_counts(conn, agent_name: str, audit_date=None) -> Non
                        ORDER BY cs2.id DESC LIMIT 1
                    ) cs ON TRUE
                    WHERE LOWER(c.texter_name) = LOWER(ts.agent_name)
-                     AND c.audit_date = ts.audit_date
+                     AND (CASE WHEN c.convo_date <> '' THEN TO_DATE(c.convo_date, 'MM/DD/YYYY')
+                               ELSE c.audit_date END) = ts.audit_date
                      AND LOWER(a.email) = LOWER(ts.account_email)
                    ORDER BY c.contact_id, c.id DESC
                ) lc
@@ -1575,7 +1587,23 @@ async def _save_trend_snapshot(agent_name: str) -> None:
             snapshot_agent_name = assign_row["texter_name"] if assign_row else agent_name
             snapshot_account_email = assign_row["account_email"] if assign_row else agent_email
 
-            audit_date_val = score_row["audit_date"] if score_row["audit_date"] else today
+            # Same convo-date convention as ai/scorer.py's own snapshot write
+            # and _recompute_trend_counts: the department audits a day behind,
+            # so key the row by when the conversations happened, not the day
+            # this ran. Falls back to score_row's own audit_date (the scrape
+            # day) if no conversations table rows are found for some reason.
+            run_date = score_row["audit_date"] or today
+            effective_date_row = await conn.fetchrow(
+                """SELECT (CASE WHEN convo_date <> '' THEN TO_DATE(convo_date, 'MM/DD/YYYY')
+                                ELSE audit_date END) AS effective_date
+                   FROM conversations
+                   WHERE agent_id = $1 AND audit_date = $2
+                   GROUP BY 1
+                   ORDER BY COUNT(*) DESC, effective_date DESC
+                   LIMIT 1""",
+                agent_id, run_date,
+            )
+            audit_date_val = effective_date_row["effective_date"] if effective_date_row else run_date
             now_ts = get_now()   # asyncpg needs a datetime object, not a string
             await conn.execute(
                 """INSERT INTO trend_snapshots
