@@ -2679,8 +2679,18 @@ async def api_redflag_valid(body: FlagValidateRequest):
 
             # The snapshot this conversation belongs to, so validating an older
             # audit updates that day's row rather than the agent's newest one.
+            # Must resolve the SAME convo_date-preferring "effective date" that
+            # trend_snapshots is keyed by (see _recompute_trend_counts) — the
+            # department audits a day behind, so conversations.audit_date (the
+            # scrape day) is routinely one day later than the row this needs to
+            # match. Passing the raw scrape day here made every validation done
+            # on that normal schedule silently update zero rows.
             date_row = await conn.fetchrow(
-                "SELECT audit_date, texter_name FROM conversations WHERE id = $1", conv_id
+                """SELECT (CASE WHEN convo_date <> '' THEN TO_DATE(convo_date, 'MM/DD/YYYY')
+                                ELSE audit_date END) AS audit_date,
+                          texter_name
+                   FROM conversations WHERE id = $1""",
+                conv_id,
             )
             audit_date  = date_row["audit_date"] if date_row else None
             texter_name = (date_row["texter_name"] if date_row else None) or body.agent_name
