@@ -1216,6 +1216,25 @@
     .btn-validate:disabled { opacity: .55; cursor: default; }
     .rf-invalidated .rf-text { text-decoration: line-through; opacity: .4; }
 
+    /* Per-flag Valid button — one per red-flag/wrong-label card, not one per
+       conversation. Same green language as .btn-validate, sized for an inline row. */
+    .btn-validate-flag {
+      font-size: 10px; padding: 2px 9px; flex-shrink: 0;
+      border-radius: 99px; border: 1px solid #059669;
+      color: #fff; background: #059669; cursor: pointer;
+      transition: background .18s, color .18s, border-color .18s;
+      line-height: 1.5; white-space: nowrap; font-weight: 700;
+    }
+    .btn-validate-flag:hover:not(:disabled) { background: #047857; border-color: #047857; }
+    .btn-validate-flag.is-valid {
+      background: transparent; border-color: rgba(5,150,105,.55);
+      color: #059669; font-weight: 600;
+    }
+    .btn-validate-flag.is-valid:hover:not(:disabled) {
+      background: rgba(5,150,105,.1); border-color: #059669;
+    }
+    .btn-validate-flag:disabled { opacity: .55; cursor: default; }
+
     /* Label-only issue (no red-flag box) */
     .label-issue-card {
       display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
@@ -3945,11 +3964,6 @@ function issueCountForConvo(c) {
   return issueCount(c?.analysis || {}, c?.invalidated_flags || []);
 }
 
-/** Has the auditor confirmed this conversation counts against the agent? */
-function isConvoValidated(c) {
-  return !!(c && c.validated);
-}
-
 /** Persist reviewed flagged convos locally + in DB (survives list reloads). */
 const FLAG_REVIEW_CACHE_KEY = "vos_flag_reviews";
 
@@ -4099,7 +4113,7 @@ function mlLabelStatusHtml(a, compact = false, invalidatedFlags) {
 }
 
 /** Wrong-label panel in chat view — always includes Not Valid when actionable. */
-function labelIssueBlockHtml(a, invalidatedFlags, withButton = false) {
+function labelIssueBlockHtml(a, invalidatedFlags, validatedFlags = [], withButton = false) {
   if (!labelWrongActive(a, invalidatedFlags)) return "";
   const wlDismissed = isLabelWrongDismissed(a, invalidatedFlags);
   if (wlDismissed) return "";
@@ -4113,9 +4127,11 @@ function labelIssueBlockHtml(a, invalidatedFlags, withButton = false) {
     : "";
   const text = `✗ ${esc(wrong || "Label")} → should be <strong>${esc(should)}</strong>${reason}`;
 
-  // No per-flag button any more — a single conversation-level Valid button in
-  // the analysis header confirms every issue on the conversation at once.
-  return `<div class="label-issue-card"><div class="label-issue-text">${text}</div></div>`;
+  // This is the same flag_text stored in red_flags/flag_details (ai/scorer.py
+  // injects it there too) — it just gets its own card instead of a plain Red
+  // Flags row, so it confirms through the identical per-flag mechanism.
+  const btn = withButton ? flagValidBtnHtml(wlFlag, validatedFlags) : "";
+  return `<div class="label-issue-card"><div class="label-issue-text">${text}${btn}</div></div>`;
 }
 
 
@@ -4341,7 +4357,7 @@ function selectConversation(index) {
     : "";
 
   renderChatMessages(msgs, convo);
-  renderAiAnalysis(a, convo.invalidated_flags || [], isConvoValidated(convo));
+  renderAiAnalysis(a, convo.invalidated_flags || [], convo.validated_flags || []);
 
   if (issueCountForConvo(convo) > 0) {
     markFlagReviewed(convo);
@@ -4462,7 +4478,30 @@ function sevBadge(sev) {
   return `<span title="Severity" style="display:inline-flex;align-items:center;padding:1px 7px;border-radius:99px;background:${bg};border:1px solid ${col}44;color:${col};font-size:.56rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;flex-shrink:0;">${lbl}</span>`;
 }
 
-function renderAiAnalysis(a, invalidatedFlags, isValidated = false) {
+/** Is this one specific flag confirmed? "*" in validatedFlags is the legacy
+ *  sentinel (a pre-per-flag validation_log row) — it covers every flag here. */
+function isFlagValidated(flagText, validatedFlags) {
+  if (!Array.isArray(validatedFlags) || !validatedFlags.length) return false;
+  const key = String(flagText || "").trim().toLowerCase();
+  return validatedFlags.some(f => {
+    const v = String(f || "").trim().toLowerCase();
+    return v === "*" || v === key;
+  });
+}
+
+/** Inline Valid button for one flag card — NOT one button per conversation. */
+function flagValidBtnHtml(flagText, validatedFlags) {
+  const valid = isFlagValidated(flagText, validatedFlags);
+  return `<button type="button" class="btn-validate-flag${valid ? " is-valid" : ""}"
+      data-flag="${esc(flagText)}"
+      onclick="event.stopPropagation(); submitFlagValid(this)"
+      title="${valid
+        ? "Counted in the Trend + Detailed dashboards. Click to remove it."
+        : "Confirm this flag so it counts toward this agent's record."}"
+      >${valid ? "✓ Valid" : "Mark Valid"}</button>`;
+}
+
+function renderAiAnalysis(a, invalidatedFlags, validatedFlags = []) {
   const el = document.getElementById("ch-ai");
   const invalidatedSet = new Set((invalidatedFlags || []).map(f => f.trim()));
 
@@ -4498,7 +4537,7 @@ function renderAiAnalysis(a, invalidatedFlags, isValidated = false) {
       <div class="metric-tip">${scoreDescriptions[lbl] || ''}</div>
     </div>`).join("");
 
-  let labelBadge = labelIssueBlockHtml(a, invalidatedFlags, true);
+  let labelBadge = labelIssueBlockHtml(a, invalidatedFlags, validatedFlags, true);
   if (!labelBadge) {
     labelBadge = mlLabelStatusHtml(a, false, invalidatedFlags);
     if (!labelBadge && (a.label_correct === true || !labelWrongActive(a, invalidatedFlags))) {
@@ -4530,18 +4569,6 @@ function renderAiAnalysis(a, invalidatedFlags, isValidated = false) {
   });
   const _showFlagOwners = _owners.size > 1;
 
-  // One Valid button per conversation. Nothing here reaches the Trend or
-  // Detailed dashboards until it is clicked; clicking again takes it back out.
-  const hasIssues = issueCount(a, invalidatedFlags) > 0;
-  const validBtn = hasIssues ? `
-        <button id="btn-validate-convo"
-          class="btn-validate${isValidated ? " is-valid" : ""}"
-          onclick="submitValid(${isValidated ? "false" : "true"})"
-          title="${isValidated
-            ? "Counted in the Trend + Detailed dashboards. Click to remove it."
-            : "Confirm these flags so they count toward this agent's record."}"
-          >${isValidated ? "✓ Validated" : "Mark Valid"}</button>` : "";
-
   el.innerHTML = `
     <div style="padding:.6rem 1.1rem;background:var(--surface-subtle);border-bottom:1px solid var(--surface-border);display:flex;align-items:center;gap:8px;flex-wrap:wrap;row-gap:7px;min-width:0;">
       <div style="width:5px;height:5px;border-radius:50%;background:var(--brand);flex-shrink:0;"></div>
@@ -4556,15 +4583,12 @@ function renderAiAnalysis(a, invalidatedFlags, isValidated = false) {
           ${scoreGrid}
         </div>` : ""}
 
-      ${(a.funnel_stage_reached || validBtn) ? `
+      ${a.funnel_stage_reached ? `
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;flex-wrap:wrap;row-gap:7px;min-width:0;">
-          ${a.funnel_stage_reached ? `
-            <div style="display:flex;align-items:center;gap:6px;padding:5px 9px;background:rgba(37,99,235,.06);border-radius:7px;border:1px solid rgba(37,99,235,.15);">
-              <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-secondary);">Funnel</span>
-              <span style="font-size:.73rem;font-weight:600;color:var(--brand);">${esc(a.funnel_stage_reached)}</span>
-            </div>` : ""}
-          <div style="flex:1 1 0;min-width:0;"></div>
-          ${validBtn}
+          <div style="display:flex;align-items:center;gap:6px;padding:5px 9px;background:rgba(37,99,235,.06);border-radius:7px;border:1px solid rgba(37,99,235,.15);">
+            <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-secondary);">Funnel</span>
+            <span style="font-size:.73rem;font-weight:600;color:var(--brand);">${esc(a.funnel_stage_reached)}</span>
+          </div>
         </div>` : ""}
 
       ${pillars.length ? `
@@ -4587,10 +4611,14 @@ function renderAiAnalysis(a, invalidatedFlags, isValidated = false) {
             // during the thread — on a single-owner conversation it would just
             // repeat the texter already named at the top of the card.
             const owner = _showFlagOwners ? ddFlagOwner(d) : "";
+            // Each flag confirms independently — a dismissed (invalidated)
+            // flag has nothing to confirm, so it gets no button.
+            const validBtn = isInvalid ? "" : flagValidBtnHtml(f, validatedFlags);
             return `<div class="rf-row${isInvalid ? " rf-invalidated" : ""}" style="display:block;margin-top:7px;padding-top:6px;border-top:1px solid rgba(239,68,68,.12);">
               <div style="display:flex;align-items:flex-start;gap:6px;">
                 <span class="rf-text" style="font-size:.72rem;color:var(--danger);opacity:.85;line-height:1.45;flex:1;">· ${esc(f)}${owner}</span>
                 ${sev}
+                ${validBtn}
               </div>
               ${expl}
             </div>`;
@@ -5144,6 +5172,7 @@ async function openDetailedConversation(conversationId) {
       assigned_labels:   d.assigned_labels || [],
       parsed_messages:   d.parsed_messages || [],
       invalidated_flags: d.invalidated_flags || [],
+      validated_flags:   d.validated_flags || [],
       texter_name:       d.texter_name || "",
       analysis: {
         compliance:        a.compliance_score,
@@ -6164,30 +6193,32 @@ function refreshOpenChatAnalysis() {
   );
   if (!convo) return;
   const a = convo.analysis || {};
-  renderAiAnalysis(a, convo.invalidated_flags || [], isConvoValidated(convo));
+  renderAiAnalysis(a, convo.invalidated_flags || [], convo.validated_flags || []);
 }
 
 /**
- * Confirm (or un-confirm) the open conversation's flags.
+ * Confirm (or un-confirm) ONE flag on the open conversation.
  *
  * This is the ONLY way a flag reaches the Trend Dashboard, the Detailed
  * Dashboard, or the agent's history. Unconfirmed flags stay visible here for
- * review but are never recorded against the agent.
+ * review but are never recorded against the agent. Validation is per flag —
+ * confirming "Slow response" doesn't also confirm "Wrong label" on the same
+ * conversation.
  */
-async function submitValid(validated = true) {
-  const btn = document.getElementById("btn-validate-convo");
+async function submitFlagValid(btn) {
+  const flagText = btn.dataset.flag;
+  const validated = !btn.classList.contains("is-valid");
   const body = {
     agent_id:        selectedAgent?.id || 0,
     agent_name:      selectedAgent?.name || "",
     contact_name:    currentContactName,
     conversation_id: currentConversationId,
+    flag_text:       flagText,
     validated:       validated,
   };
 
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = validated ? "Saving…" : "Removing…";
-  }
+  btn.disabled = true;
+  btn.textContent = validated ? "Saving…" : "Removing…";
 
   try {
     const res = await fetch("/api/redflag/valid", {
@@ -6205,10 +6236,8 @@ async function submitValid(validated = true) {
     toast(validated ? "Marked valid — now counted in the dashboards"
                     : "Validation removed — no longer counted", 3000);
   } catch (err) {
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = validated ? "Mark Valid" : "✓ Validated";
-    }
+    btn.disabled = false;
+    btn.textContent = validated ? "Mark Valid" : "✓ Valid";
     alert("Error saving: " + err.message);
   }
 }

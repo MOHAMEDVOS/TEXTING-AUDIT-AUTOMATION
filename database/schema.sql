@@ -373,10 +373,16 @@ CREATE TABLE IF NOT EXISTS validation_log (
 CREATE INDEX IF NOT EXISTS idx_validation_agent ON validation_log(agent_id);
 CREATE INDEX IF NOT EXISTS idx_validation_conv  ON validation_log(conversation_id);
 
+-- Migration 008 (folded in): validate per FLAG, not per conversation. NULL
+-- means a legacy row from before this column existed — it covers every flag
+-- on the conversation, so historical counts don't shift. Self-heals existing
+-- deployments where the table predates this column.
+ALTER TABLE validation_log ADD COLUMN IF NOT EXISTS flag_text TEXT;
+
 -- ── Manual flag validation (opt-in gate) ────────────────────────────────────
--- validation_log is now the authoritative "this flagged conversation counts"
--- record. A flag reaches the Trend/Detailed dashboards ONLY when an auditor has
--- explicitly clicked Valid, which writes a status='valid' row here. Nothing is
+-- validation_log is now the authoritative "this flag counts" record. A flag
+-- reaches the Trend/Detailed dashboards ONLY when an auditor has explicitly
+-- clicked Valid on it, which writes a status='valid' row here. Nothing is
 -- ever deleted from conversation_scores.red_flags — validation is a
 -- non-destructive overlay, so it stays reversible.
 --
@@ -384,11 +390,16 @@ CREATE INDEX IF NOT EXISTS idx_validation_conv  ON validation_log(conversation_i
 -- this file declares the table without it, and both use CREATE TABLE IF NOT
 -- EXISTS — so on any DB provisioned the documented way the constraint never
 -- existed (same shape-drift trap as prefilter_decisions). De-dup, then add it.
+-- COALESCE(flag_text, '') because Postgres treats NULL as distinct from NULL
+-- in a unique index — without it, every legacy (pre-flag_text) row could
+-- collide-free duplicate instead of being the one blanket slot per conversation.
 DELETE FROM validation_log a USING validation_log b
  WHERE a.id < b.id AND a.agent_id = b.agent_id
-   AND LOWER(a.contact_name) = LOWER(b.contact_name);
+   AND LOWER(a.contact_name) = LOWER(b.contact_name)
+   AND COALESCE(LOWER(a.flag_text), '') = COALESCE(LOWER(b.flag_text), '');
+DROP INDEX IF EXISTS idx_validation_unique;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_validation_unique
-    ON validation_log(agent_id, LOWER(contact_name));
+    ON validation_log(agent_id, LOWER(contact_name), COALESCE(LOWER(flag_text), ''));
 
 -- One-time historical backfill. Before the cutover a flag was valid BY DEFAULT
 -- and dismissals physically deleted the flag from red_flags, so marking every

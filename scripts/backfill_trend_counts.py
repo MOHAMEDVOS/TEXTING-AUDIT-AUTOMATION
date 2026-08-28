@@ -84,18 +84,25 @@ recomputed AS (
         ts.total_issues            AS old_total_issues,
         ts.late_response_flags     AS old_late_response_flags,
         ts.wrong_label_flags       AS old_wrong_label_flags,
-        (SELECT COALESCE(SUM(jsonb_array_length(lc.red_flags::jsonb)), 0)
+        -- Per-flag now (matches dashboard/app.py::_recompute_trend_counts):
+        -- count only the individual red_flags entries with their own matching
+        -- validation_log row, or covered by a legacy pre-flag_text blanket row.
+        (SELECT COALESCE(SUM(matched.cnt), 0)
          FROM latest_convo lc
          JOIN accounts a ON a.id = lc.agent_id
+         CROSS JOIN LATERAL (
+             SELECT COUNT(*) AS cnt
+             FROM jsonb_array_elements_text(lc.red_flags::jsonb) ft
+             WHERE EXISTS (SELECT 1 FROM validation_log vl, contacts ct2
+                           WHERE ct2.id = lc.contact_id
+                             AND vl.agent_id = lc.agent_id
+                             AND LOWER(vl.contact_name) = LOWER(ct2.name)
+                             AND vl.status = 'valid'
+                             AND (vl.flag_text IS NULL OR LOWER(vl.flag_text) = LOWER(ft)))
+         ) matched
          WHERE LOWER(lc.texter_name) = LOWER(ts.agent_name)
            AND lc.audit_date = ts.audit_date
            AND LOWER(a.email) = LOWER(ts.account_email)
-           AND jsonb_array_length(lc.red_flags::jsonb) > 0
-           AND EXISTS (SELECT 1 FROM validation_log vl, contacts ct2
-                       WHERE ct2.id = lc.contact_id
-                         AND vl.agent_id = lc.agent_id
-                         AND LOWER(vl.contact_name) = LOWER(ct2.name)
-                         AND vl.status = 'valid')
         ) AS new_total_issues,
         (SELECT COUNT(*)
          FROM latest_convo lc
@@ -109,7 +116,8 @@ recomputed AS (
                        WHERE ct2.id = lc.contact_id
                          AND vl.agent_id = lc.agent_id
                          AND LOWER(vl.contact_name) = LOWER(ct2.name)
-                         AND vl.status = 'valid')
+                         AND vl.status = 'valid'
+                         AND (vl.flag_text IS NULL OR LOWER(vl.flag_text) = LOWER($1)))
         ) AS new_late_response_flags,
         (SELECT COUNT(*)
          FROM latest_convo lc
@@ -117,13 +125,16 @@ recomputed AS (
          WHERE LOWER(lc.texter_name) = LOWER(ts.agent_name)
            AND lc.audit_date = ts.audit_date
            AND LOWER(a.email) = LOWER(ts.account_email)
-           AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(lc.red_flags::jsonb) ft
-                       WHERE LOWER(ft) LIKE 'wrong label:%')
-           AND EXISTS (SELECT 1 FROM validation_log vl, contacts ct2
-                       WHERE ct2.id = lc.contact_id
-                         AND vl.agent_id = lc.agent_id
-                         AND LOWER(vl.contact_name) = LOWER(ct2.name)
-                         AND vl.status = 'valid')
+           AND EXISTS (
+               SELECT 1 FROM jsonb_array_elements_text(lc.red_flags::jsonb) ft
+               WHERE LOWER(ft) LIKE 'wrong label:%'
+                 AND EXISTS (SELECT 1 FROM validation_log vl, contacts ct2
+                             WHERE ct2.id = lc.contact_id
+                               AND vl.agent_id = lc.agent_id
+                               AND LOWER(vl.contact_name) = LOWER(ct2.name)
+                               AND vl.status = 'valid'
+                               AND (vl.flag_text IS NULL OR LOWER(vl.flag_text) = LOWER(ft)))
+           )
         ) AS new_wrong_label_flags
     FROM trend_snapshots ts
 )

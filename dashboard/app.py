@@ -1001,10 +1001,11 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
             logger.warning("flagged_conversation_reviews query failed: %s", exc)
             fr_rows = []
 
-        # Manually validated conversations — the opt-in gate that decides which
-        # flagged convos reach the dashboards and the agent's history.
+        # Manually validated FLAGS — the opt-in gate that decides which flags
+        # reach the dashboards and the agent's history. flag_text IS NULL is a
+        # legacy pre-per-flag row that covers every flag on the conversation.
         vl_rows = await conn.fetch(
-            "SELECT contact_name FROM validation_log WHERE agent_id = $1 AND status = 'valid'",
+            "SELECT contact_name, flag_text FROM validation_log WHERE agent_id = $1 AND status = 'valid'",
             agent_id,
         )
 
@@ -1017,9 +1018,12 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
     for fr in fr_rows:
         reviewed_set.add((fr["contact_name"] or "").lower().strip())
 
-    validated_set: set[str] = set()
+    # "*" is the legacy-blanket sentinel: any flag on that conversation counts
+    # as validated (see validation_log.flag_text IS NULL).
+    validated_map: dict[str, set] = {}
     for vl in vl_rows:
-        validated_set.add((vl["contact_name"] or "").lower().strip())
+        key = (vl["contact_name"] or "").lower().strip()
+        validated_map.setdefault(key, set()).add(vl["flag_text"] or "*")
 
     merged = []
     conv_ids = [conv["id"] for conv in unique_convos]
@@ -1108,7 +1112,7 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
             "analysis":          analysis,
             "invalidated_flags": list(invalidated_map.get(contact_key, set())),
             "is_flag_reviewed":  contact_key in reviewed_set,
-            "validated":         contact_key in validated_set,
+            "validated_flags":   list(validated_map.get(contact_key, set())),
             "conversation_id":   conv_id,
         })
 
@@ -1283,12 +1287,13 @@ class FlagReviewRequest(BaseModel):
 
 
 class FlagValidateRequest(BaseModel):
-    """Auditor confirming (or un-confirming) a whole flagged conversation."""
+    """Auditor confirming (or un-confirming) ONE specific flag on a conversation."""
     agent_id:        int
     agent_name:      str
     contact_name:    str
     conversation_id: int | None = None
-    validated:       bool = True   # False = toggle the confirmation back off
+    flag_text:       str            # the exact red_flags/flag_details entry being confirmed
+    validated:       bool = True    # False = toggle the confirmation back off
 
 
 class AssignmentRequest(BaseModel):
@@ -1416,7 +1421,11 @@ async def _recompute_trend_counts(conn, agent_name: str, audit_date=None) -> Non
     await conn.execute(
         """UPDATE trend_snapshots ts
            SET total_issues = (
-               SELECT COALESCE(SUM(jsonb_array_length(lc.red_flags::jsonb)), 0)
+               -- Per-flag now: count how many of THIS conversation's individual
+               -- red_flags entries have their own matching validation_log row
+               -- (or are covered by a legacy pre-flag_text blanket row), rather
+               -- than gating the whole array's length on any validation existing.
+               SELECT COALESCE(SUM(matched.cnt), 0)
                FROM (
                    SELECT DISTINCT ON (c.contact_id) c.contact_id, c.agent_id, cs.red_flags
                    FROM conversations c
@@ -1432,12 +1441,16 @@ async def _recompute_trend_counts(conn, agent_name: str, audit_date=None) -> Non
                      AND LOWER(a.email) = LOWER(ts.account_email)
                    ORDER BY c.contact_id, c.id DESC
                ) lc
-               WHERE jsonb_array_length(lc.red_flags::jsonb) > 0
-                 AND EXISTS (SELECT 1 FROM validation_log vl, contacts ct2
-                             WHERE ct2.id = lc.contact_id
-                               AND vl.agent_id = lc.agent_id
-                               AND LOWER(vl.contact_name) = LOWER(ct2.name)
-                               AND vl.status = 'valid')
+               CROSS JOIN LATERAL (
+                   SELECT COUNT(*) AS cnt
+                   FROM jsonb_array_elements_text(lc.red_flags::jsonb) ft
+                   WHERE EXISTS (SELECT 1 FROM validation_log vl, contacts ct2
+                                 WHERE ct2.id = lc.contact_id
+                                   AND vl.agent_id = lc.agent_id
+                                   AND LOWER(vl.contact_name) = LOWER(ct2.name)
+                                   AND vl.status = 'valid'
+                                   AND (vl.flag_text IS NULL OR LOWER(vl.flag_text) = LOWER(ft)))
+               ) matched
            ),
            late_response_flags = (
                SELECT COUNT(*)
@@ -1458,11 +1471,14 @@ async def _recompute_trend_counts(conn, agent_name: str, audit_date=None) -> Non
                ) lc
                WHERE EXISTS (SELECT 1 FROM jsonb_array_elements_text(lc.red_flags::jsonb) ft
                              WHERE LOWER(ft) = LOWER($2))
+                 -- This specific flag must itself be validated, not just any
+                 -- flag on the conversation (or covered by a legacy blanket row).
                  AND EXISTS (SELECT 1 FROM validation_log vl, contacts ct2
                              WHERE ct2.id = lc.contact_id
                                AND vl.agent_id = lc.agent_id
                                AND LOWER(vl.contact_name) = LOWER(ct2.name)
-                               AND vl.status = 'valid')
+                               AND vl.status = 'valid'
+                               AND (vl.flag_text IS NULL OR LOWER(vl.flag_text) = LOWER($2)))
            ),
            wrong_label_flags = (
                SELECT COUNT(*)
@@ -1481,13 +1497,19 @@ async def _recompute_trend_counts(conn, agent_name: str, audit_date=None) -> Non
                      AND LOWER(a.email) = LOWER(ts.account_email)
                    ORDER BY c.contact_id, c.id DESC
                ) lc
-               WHERE EXISTS (SELECT 1 FROM jsonb_array_elements_text(lc.red_flags::jsonb) ft
-                             WHERE LOWER(ft) LIKE 'wrong label:%')
-                 AND EXISTS (SELECT 1 FROM validation_log vl, contacts ct2
-                             WHERE ct2.id = lc.contact_id
-                               AND vl.agent_id = lc.agent_id
-                               AND LOWER(vl.contact_name) = LOWER(ct2.name)
-                               AND vl.status = 'valid')
+               -- The wrong-label text is dynamic per conversation ("assigned 'X'
+               -- but should be 'Y'"), so the validated check has to be nested
+               -- against the SAME element, not a separate whole-conversation gate.
+               WHERE EXISTS (
+                   SELECT 1 FROM jsonb_array_elements_text(lc.red_flags::jsonb) ft
+                   WHERE LOWER(ft) LIKE 'wrong label:%'
+                     AND EXISTS (SELECT 1 FROM validation_log vl, contacts ct2
+                                 WHERE ct2.id = lc.contact_id
+                                   AND vl.agent_id = lc.agent_id
+                                   AND LOWER(vl.contact_name) = LOWER(ct2.name)
+                                   AND vl.status = 'valid'
+                                   AND (vl.flag_text IS NULL OR LOWER(vl.flag_text) = LOWER(ft)))
+               )
            )
            WHERE LOWER(ts.agent_name) = LOWER($1)
              AND ($3::date IS NULL OR ts.audit_date = $3::date)""",
@@ -2615,12 +2637,14 @@ async def api_redflag_invalid(body: RedFlagFeedbackRequest):
 
 @app.post("/api/redflag/valid", dependencies=[Depends(require_admin)])
 async def api_redflag_valid(body: FlagValidateRequest):
-    """Confirm a flagged conversation so its flags count toward the agent's record.
+    """Confirm ONE flag on a conversation so it counts toward the agent's record.
 
     This is the ONLY way a flag reaches the Trend Dashboard, the Detailed
     Dashboard, or the agent's history. Everything else is unconfirmed and
     contributes nothing, which is what keeps unreviewed audit output from being
-    recorded against an agent permanently.
+    recorded against an agent permanently. Validation is per FLAG
+    (agent_id, contact_name, flag_text) — a conversation with two unrelated
+    flags needs each confirmed independently.
 
     Deliberately non-destructive: it writes a validation_log row and never
     touches conversation_scores or audit_scores, so the raw audit output stays
@@ -2628,6 +2652,9 @@ async def api_redflag_valid(body: FlagValidateRequest):
     """
     if not body.agent_id or not body.contact_name.strip():
         raise HTTPException(status_code=400, detail="agent_id and contact_name are required")
+    flag_text = body.flag_text.strip()
+    if not flag_text:
+        raise HTTPException(status_code=400, detail="flag_text is required")
 
     contact = body.contact_name.strip()
     try:
@@ -2661,22 +2688,29 @@ async def api_redflag_valid(body: FlagValidateRequest):
             if body.validated:
                 await conn.execute(
                     """INSERT INTO validation_log
-                       (agent_id, agent_name, contact_name, conversation_id, status, validated_by)
-                       VALUES ($1, $2, $3, $4, 'valid', $5)
-                       ON CONFLICT (agent_id, LOWER(contact_name)) DO UPDATE SET
+                       (agent_id, agent_name, contact_name, conversation_id, flag_text, status, validated_by)
+                       VALUES ($1, $2, $3, $4, $5, 'valid', $6)
+                       ON CONFLICT (agent_id, LOWER(contact_name), COALESCE(LOWER(flag_text), '')) DO UPDATE SET
                            status          = 'valid',
                            conversation_id = EXCLUDED.conversation_id,
                            validated_by    = EXCLUDED.validated_by,
                            created_at      = NOW()""",
-                    body.agent_id, body.agent_name, contact, conv_id, "dashboard",
+                    body.agent_id, body.agent_name, contact, conv_id, flag_text, "dashboard",
                 )
-                # Confirming a conversation means the auditor has been through it.
+                # Confirming a flag means the auditor has been through this conversation.
                 await _upsert_flag_review(conn, body.agent_id, contact, conv_id)
             else:
+                # A legacy pre-migration row (flag_text IS NULL) covers every
+                # flag on the conversation — un-validating any one of them
+                # removes that whole blanket row rather than leaving it
+                # silently still covering the others. Known, narrow, and
+                # self-resolving: only affects conversations validated before
+                # per-flag validation shipped.
                 await conn.execute(
                     """DELETE FROM validation_log
-                       WHERE agent_id = $1 AND LOWER(contact_name) = LOWER($2)""",
-                    body.agent_id, contact,
+                       WHERE agent_id = $1 AND LOWER(contact_name) = LOWER($2)
+                         AND (flag_text IS NULL OR LOWER(flag_text) = LOWER($3))""",
+                    body.agent_id, contact, flag_text,
                 )
 
             # Fold the change into the agent's snapshot for that audit day.
@@ -2684,11 +2718,11 @@ async def api_redflag_valid(body: FlagValidateRequest):
 
         invalidate_review_stats_cache()
         logger.info(
-            "Conversation %s: agent=%s contact='%s' conv_id=%s",
+            "Flag %s: agent=%s contact='%s' conv_id=%s flag=%r",
             "VALIDATED" if body.validated else "un-validated",
-            body.agent_name, contact, conv_id,
+            body.agent_name, contact, conv_id, flag_text,
         )
-        return {"status": "ok", "validated": body.validated, "conversation_id": conv_id}
+        return {"status": "ok", "validated": body.validated, "conversation_id": conv_id, "flag_text": flag_text}
     except HTTPException:
         raise
     except Exception as exc:
@@ -4390,10 +4424,10 @@ async def api_detailed_dashboard(
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
 
     # Only auditor-confirmed conversations count as flagged. Without the
-    # vl.id check an unvalidated conversation would still surface here, which
-    # is exactly what the manual validation gate exists to prevent.
+    # validated_flags check an unvalidated conversation would still surface
+    # here, which is exactly what the manual validation gate exists to prevent.
     flagged_clause = """
-                  AND vl.id IS NOT NULL
+                  AND vl.validated_flags IS NOT NULL
                   AND (
                     jsonb_array_length(cs.red_flags::jsonb) > 0
                     OR (cs.label_correct = false AND cs.label_assigned IS DISTINCT FROM cs.label_should_be)
@@ -4421,16 +4455,37 @@ async def api_detailed_dashboard(
                         cs.label_correct,
                         cs.label_assigned,
                         cs.label_should_be,
-                        -- Manual validation gate: a conversation the auditor
-                        -- never confirmed reports zero issues, no matter how
-                        -- many flags the audit produced.
-                        CASE WHEN vl.id IS NULL THEN 0 ELSE (
-                          jsonb_array_length(cs.red_flags::jsonb)
+                        -- Manual validation gate, now per FLAG: only count a
+                        -- red_flags entry (or the wrong-label bit) when ITS
+                        -- own flag_text has been validated — or the
+                        -- conversation only has a legacy pre-per-flag row
+                        -- ('*' in validated_flags), which covers everything.
+                        CASE WHEN vl.validated_flags IS NULL THEN 0 ELSE (
+                          -- Wrong-label text is deliberately excluded here: when
+                          -- label_correct=false, ai/scorer.py injects that exact
+                          -- string into red_flags too, so counting it from BOTH
+                          -- this array-membership term AND the dedicated +1 term
+                          -- below double-counted it (it's the same issue twice).
+                          -- The +1 term below is the single source of truth for
+                          -- the wrong-label bit — it also covers the case where
+                          -- the injected flag text was since stripped from
+                          -- red_flags (conversation-scoped rejection in
+                          -- ai/scorer.py) but label_correct=false still holds and
+                          -- the reconstructed flag_text was validated anyway.
+                          (SELECT COUNT(*) FROM jsonb_array_elements_text(cs.red_flags::jsonb) ft
+                            WHERE LOWER(ft) NOT LIKE 'wrong label:%'
+                              AND ('*' = ANY(vl.validated_flags) OR LOWER(ft) = ANY(vl.validated_flags)))
                           + CASE WHEN cs.label_correct = false
                                    AND cs.label_assigned IS DISTINCT FROM cs.label_should_be
+                                   AND (
+                                     '*' = ANY(vl.validated_flags)
+                                     OR LOWER('Wrong label: assigned ''' || cs.label_assigned
+                                              || ''' but should be ''' || cs.label_should_be || '''')
+                                        = ANY(vl.validated_flags)
+                                   )
                                  THEN 1 ELSE 0 END
                         ) END AS issue_count,
-                        (vl.id IS NOT NULL) AS validated,
+                        vl.validated_flags,
                         (
                             SELECT m.body FROM messages m
                             WHERE m.conversation_id = c.id
@@ -4451,15 +4506,22 @@ async def api_detailed_dashboard(
                         ORDER BY cs2.id DESC
                         LIMIT 1
                     ) cs ON TRUE
-                    -- Manual validation gate. NULL vl.id = the auditor never
-                    -- clicked Valid, so this conversation contributes nothing.
-                    -- Joined on agent+contact (validation_log's unique key, and
-                    -- how validation is keyed everywhere else) so this can never
-                    -- fan out and duplicate rows.
-                    LEFT JOIN validation_log vl
-                           ON vl.agent_id = c.agent_id
-                          AND LOWER(vl.contact_name) = LOWER(ct.name)
-                          AND vl.status = 'valid'
+                    -- Manual validation gate. NULL validated_flags = the
+                    -- auditor never clicked Valid on anything here, so this
+                    -- conversation contributes nothing. validation_log now
+                    -- holds one row per validated FLAG (not one per
+                    -- conversation), so this has to be a LATERAL aggregate
+                    -- rather than a plain join — a plain join would fan out
+                    -- one row per validated flag and duplicate the
+                    -- conversation. '*' stands in for a legacy pre-per-flag
+                    -- row (flag_text IS NULL), which covers every flag here.
+                    LEFT JOIN LATERAL (
+                        SELECT ARRAY_AGG(LOWER(COALESCE(flag_text, '*'))) AS validated_flags
+                          FROM validation_log
+                         WHERE agent_id = c.agent_id
+                           AND LOWER(contact_name) = LOWER(ct.name)
+                           AND status = 'valid'
+                    ) vl ON TRUE
                     -- Time-ranged ownership takes precedence over the day-grained row
                     {period_texter_lateral}
                     -- Resolve texter against conversation date, not scrape date
@@ -4540,6 +4602,7 @@ async def api_detailed_dashboard(
                     rf = []
             r["red_flags"] = rf
             r["assigned_labels"] = list(r.get("assigned_labels") or [])
+            r["validated_flags"] = list(r.get("validated_flags") or [])
             result.append(r)
 
         logger.info(
@@ -4630,9 +4693,10 @@ async def api_conversation_messages(conversation_id: int):
                 agent_id, conv_row["contact_name"],
             )
 
-            # Has the auditor confirmed this conversation counts?
-            vl_row = await conn.fetchrow(
-                """SELECT 1 FROM validation_log
+            # Which flags has the auditor confirmed count? "*" (flag_text IS
+            # NULL) is a legacy pre-per-flag row covering every flag here.
+            vl_rows = await conn.fetch(
+                """SELECT flag_text FROM validation_log
                    WHERE agent_id = $1 AND LOWER(contact_name) = LOWER($2)
                      AND status = 'valid'""",
                 agent_id, conv_row["contact_name"],
@@ -4663,7 +4727,7 @@ async def api_conversation_messages(conversation_id: int):
                 "parsed_messages":   [dict(m) for m in msg_rows],
                 "analysis":          analysis,
                 "invalidated_flags": [r["red_flag"] for r in fb_rows],
-                "validated":         vl_row is not None,
+                "validated_flags":   [r["flag_text"] or "*" for r in vl_rows],
             },
         }
     except HTTPException:

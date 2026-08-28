@@ -69,7 +69,10 @@ DATABASE_URL = _env_database_url or _DOTENV_DATABASE_URL
 _RECOMPUTE_SQL = """
     UPDATE trend_snapshots ts
     SET total_issues = (
-        SELECT COALESCE(SUM(jsonb_array_length(lc.red_flags::jsonb)), 0)
+        -- Per-flag now (matches dashboard/app.py::_recompute_trend_counts):
+        -- count only the individual red_flags entries with their own matching
+        -- validation_log row, or covered by a legacy pre-flag_text blanket row.
+        SELECT COALESCE(SUM(matched.cnt), 0)
         FROM (
             SELECT DISTINCT ON (c.contact_id) c.contact_id, c.agent_id, cs.red_flags
             FROM conversations c
@@ -85,12 +88,16 @@ _RECOMPUTE_SQL = """
               AND LOWER(a.email) = LOWER(ts.account_email)
             ORDER BY c.contact_id, c.id DESC
         ) lc
-        WHERE jsonb_array_length(lc.red_flags::jsonb) > 0
-          AND EXISTS (SELECT 1 FROM validation_log vl, contacts ct2
-                      WHERE ct2.id = lc.contact_id
-                        AND vl.agent_id = lc.agent_id
-                        AND LOWER(vl.contact_name) = LOWER(ct2.name)
-                        AND vl.status = 'valid')
+        CROSS JOIN LATERAL (
+            SELECT COUNT(*) AS cnt
+            FROM jsonb_array_elements_text(lc.red_flags::jsonb) ft
+            WHERE EXISTS (SELECT 1 FROM validation_log vl, contacts ct2
+                          WHERE ct2.id = lc.contact_id
+                            AND vl.agent_id = lc.agent_id
+                            AND LOWER(vl.contact_name) = LOWER(ct2.name)
+                            AND vl.status = 'valid'
+                            AND (vl.flag_text IS NULL OR LOWER(vl.flag_text) = LOWER(ft)))
+        ) matched
     ),
     late_response_flags = (
         SELECT COUNT(*)
@@ -115,7 +122,8 @@ _RECOMPUTE_SQL = """
                       WHERE ct2.id = lc.contact_id
                         AND vl.agent_id = lc.agent_id
                         AND LOWER(vl.contact_name) = LOWER(ct2.name)
-                        AND vl.status = 'valid')
+                        AND vl.status = 'valid'
+                        AND (vl.flag_text IS NULL OR LOWER(vl.flag_text) = LOWER($2)))
     ),
     wrong_label_flags = (
         SELECT COUNT(*)
@@ -134,13 +142,16 @@ _RECOMPUTE_SQL = """
               AND LOWER(a.email) = LOWER(ts.account_email)
             ORDER BY c.contact_id, c.id DESC
         ) lc
-        WHERE EXISTS (SELECT 1 FROM jsonb_array_elements_text(lc.red_flags::jsonb) ft
-                      WHERE LOWER(ft) LIKE 'wrong label:%')
-          AND EXISTS (SELECT 1 FROM validation_log vl, contacts ct2
-                      WHERE ct2.id = lc.contact_id
-                        AND vl.agent_id = lc.agent_id
-                        AND LOWER(vl.contact_name) = LOWER(ct2.name)
-                        AND vl.status = 'valid')
+        WHERE EXISTS (
+            SELECT 1 FROM jsonb_array_elements_text(lc.red_flags::jsonb) ft
+            WHERE LOWER(ft) LIKE 'wrong label:%'
+              AND EXISTS (SELECT 1 FROM validation_log vl, contacts ct2
+                          WHERE ct2.id = lc.contact_id
+                            AND vl.agent_id = lc.agent_id
+                            AND LOWER(vl.contact_name) = LOWER(ct2.name)
+                            AND vl.status = 'valid'
+                            AND (vl.flag_text IS NULL OR LOWER(vl.flag_text) = LOWER(ft)))
+        )
     )
     WHERE LOWER(ts.agent_name) = LOWER($1)
       AND ($3::date IS NULL OR ts.audit_date = $3::date)
