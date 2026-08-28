@@ -2858,6 +2858,7 @@
             <option value="yesterday">Yesterday</option>
             <option value="this_week">This Week</option>
             <option value="this_month" selected>This Month</option>
+            <option value="all_time">All Time</option>
             <option value="custom">Custom</option>
           </select>
           <div class="drp-popover" id="dd-drp-popover">
@@ -2866,6 +2867,7 @@
               <button class="drp-preset dd-drp-preset" data-preset="yesterday" onclick="applyDdDatePreset('yesterday')">Yesterday</button>
               <button class="drp-preset dd-drp-preset" data-preset="this_week" onclick="applyDdDatePreset('this_week')">This Week</button>
               <button class="drp-preset dd-drp-preset active" data-preset="this_month" onclick="applyDdDatePreset('this_month')">This Month</button>
+              <button class="drp-preset dd-drp-preset drp-clear" onclick="applyDdDatePreset('all_time')">Clear (All Time)</button>
             </div>
             <div class="drp-calendar">
               <div class="drp-cal-header">
@@ -7943,6 +7945,7 @@ const DRP_PANEL_PRESET_LABELS = {
   yesterday: "Yesterday",
   this_week: "This Week",
   this_month: "This Month",
+  all_time: "All Time",
 };
 
 function applyDdDatePreset(preset) {
