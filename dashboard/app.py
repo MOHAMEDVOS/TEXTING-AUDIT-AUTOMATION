@@ -1380,14 +1380,25 @@ async def _recompute_trend_counts(conn, agent_name: str, audit_date=None) -> Non
     nothing until an auditor explicitly confirmed it.
 
     Pass `audit_date` to target the snapshot for that specific day. Without it
-    this falls back to the agent's newest snapshot, which is wrong whenever the
-    auditor is working through an older audit.
+    this recomputes every snapshot the agent has (all dates).
+
+    A texter can be assigned a different SmarterContact account each day (and
+    in rare cases more than one on the same day), which produces multiple
+    trend_snapshots rows for the same (agent_name, audit_date) — one per
+    account_email. Every subquery below joins back to `accounts` and matches
+    `ts.account_email`, so each row's counters reflect only ITS OWN account's
+    conversations. Do not drop that join: without it, conversations from
+    every account the texter ever touched that day get merged into each row,
+    and — combined with an UPDATE that targets all such rows — every account
+    row for that day ends up showing the same inflated, combined-across-
+    accounts numbers instead of its own.
     """
     await conn.execute(
         """UPDATE trend_snapshots ts
            SET total_issues = (
                SELECT COALESCE(SUM(jsonb_array_length(cs.red_flags::jsonb)), 0)
                FROM conversations c
+               JOIN accounts a ON a.id = c.agent_id
                JOIN LATERAL (
                    SELECT red_flags FROM conversation_scores cs2
                    WHERE cs2.conversation_id = c.id
@@ -1395,6 +1406,7 @@ async def _recompute_trend_counts(conn, agent_name: str, audit_date=None) -> Non
                ) cs ON TRUE
                WHERE LOWER(c.texter_name) = LOWER(ts.agent_name)
                  AND c.audit_date = ts.audit_date
+                 AND LOWER(a.email) = LOWER(ts.account_email)
                  AND jsonb_array_length(cs.red_flags::jsonb) > 0
                  AND EXISTS (SELECT 1 FROM validation_log vl, contacts ct2
                              WHERE ct2.id = c.contact_id
@@ -1405,6 +1417,7 @@ async def _recompute_trend_counts(conn, agent_name: str, audit_date=None) -> Non
            late_response_flags = (
                SELECT COUNT(*)
                FROM conversations c
+               JOIN accounts a ON a.id = c.agent_id
                JOIN LATERAL (
                    SELECT red_flags FROM conversation_scores cs2
                    WHERE cs2.conversation_id = c.id
@@ -1412,6 +1425,7 @@ async def _recompute_trend_counts(conn, agent_name: str, audit_date=None) -> Non
                ) cs ON TRUE
                WHERE LOWER(c.texter_name) = LOWER(ts.agent_name)
                  AND c.audit_date = ts.audit_date
+                 AND LOWER(a.email) = LOWER(ts.account_email)
                  AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(cs.red_flags::jsonb) ft
                              WHERE LOWER(ft) = LOWER($2))
                  AND EXISTS (SELECT 1 FROM validation_log vl, contacts ct2
@@ -1423,6 +1437,7 @@ async def _recompute_trend_counts(conn, agent_name: str, audit_date=None) -> Non
            wrong_label_flags = (
                SELECT COUNT(*)
                FROM conversations c
+               JOIN accounts a ON a.id = c.agent_id
                JOIN LATERAL (
                    SELECT red_flags FROM conversation_scores cs2
                    WHERE cs2.conversation_id = c.id
@@ -1430,6 +1445,7 @@ async def _recompute_trend_counts(conn, agent_name: str, audit_date=None) -> Non
                ) cs ON TRUE
                WHERE LOWER(c.texter_name) = LOWER(ts.agent_name)
                  AND c.audit_date = ts.audit_date
+                 AND LOWER(a.email) = LOWER(ts.account_email)
                  AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(cs.red_flags::jsonb) ft
                              WHERE LOWER(ft) LIKE 'wrong label:%')
                  AND EXISTS (SELECT 1 FROM validation_log vl, contacts ct2
@@ -1438,13 +1454,8 @@ async def _recompute_trend_counts(conn, agent_name: str, audit_date=None) -> Non
                                AND LOWER(vl.contact_name) = LOWER(ct2.name)
                                AND vl.status = 'valid')
            )
-           WHERE ts.id = (
-               SELECT id FROM trend_snapshots
-               WHERE LOWER(agent_name) = LOWER($1)
-                 AND ($3::date IS NULL OR audit_date = $3::date)
-               ORDER BY audit_date DESC, id DESC
-               LIMIT 1
-           )""",
+           WHERE LOWER(ts.agent_name) = LOWER($1)
+             AND ($3::date IS NULL OR ts.audit_date = $3::date)""",
         agent_name,
         LATE_RESPONSE_FLAG_TEXT,
         audit_date,
