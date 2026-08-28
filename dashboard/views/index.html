@@ -4307,6 +4307,54 @@ function renderConvoList() {
 }
 
 
+/**
+ * The texter name(s) for the chat header pill, plus the tooltip explaining
+ * which question they answer.
+ *
+ * A flag's owner is resolved at the moment that earned it
+ * (conversation_scores.flag_details, written by attribute_flag_details), while
+ * `conversations.texter_name` is resolved at the thread's LAST outgoing message.
+ * On an account that changed hands those are different people, and showing the
+ * latter above the former's flags reads as an accusation against the wrong
+ * texter. So: name whoever earned the flags, and fall back to the thread owner
+ * only when there are no attributed flags to go on.
+ *
+ * Returns { names: string[], tip: string }. A wait split across a handover
+ * (`texter_split`) contributes every holder, biggest share first.
+ */
+function chatHeaderTexters(a, convo, accountName) {
+  const names = [];
+  const push = n => {
+    const v = String(n || "").trim();
+    if (v && !names.some(x => x.toLowerCase() === v.toLowerCase())) names.push(v);
+  };
+
+  ((a && a.flag_details) || []).forEach(d => {
+    // 'legacy' predates attribution and just echoes the thread owner, so it
+    // can't tell us anything the fallback wouldn't. 'unassigned' has no name.
+    if (!d || !d.attribution || d.attribution === "legacy") return;
+    const split = (Array.isArray(d.texter_split) ? d.texter_split : []);
+    if (split.length) split.forEach(sp => sp && push(sp.texter_name));
+    else push(d.texter_name);
+  });
+
+  if (names.length) {
+    return {
+      names,
+      tip: names.length > 1
+        ? "Earned the red flags below — the account changed hands during this conversation"
+        : "Earned the red flags below (owned the account at the moment each one happened)",
+    };
+  }
+
+  // No attributed flags: the thread owner is the best we can say.
+  const owner = convo && convo.texter_name;
+  return {
+    names: owner && owner !== accountName ? [owner] : [],
+    tip: "Owned the account at this conversation's last outgoing message",
+  };
+}
+
 // ── Chat view ─────────────────────────────────────────────────────────────────
 let currentContactName = "";
 let currentConversationId = null;
@@ -4334,7 +4382,11 @@ function selectConversation(index) {
   const chLabel = document.getElementById("ch-label");
   if (chLabel) {
     const accountName  = selectedAgent?.name || "";
-    const texterName   = convo.texter_name && convo.texter_name !== accountName ? convo.texter_name : "";
+    // Who to name here. `convo.texter_name` is only whoever owned the account at
+    // the thread's LAST outgoing message, so on an account that changed hands it
+    // puts the wrong person above a flag somebody else earned. When the flags
+    // below name their own owners, those are the people to show.
+    const named = chatHeaderTexters(a, convo, accountName);
     const accountPill  = accountName
       ? `<span style="display:inline-flex;align-items:center;padding:2px 9px;border-radius:980px;
                       background:var(--surface-subtle);border:1px solid var(--surface-border);
@@ -4342,15 +4394,15 @@ function selectConversation(index) {
            ${esc(accountName)}
          </span>`
       : "";
-    const texterPill = texterName
-      ? `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:980px;
-                      background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.25);
-                      font-size:.7rem;font-weight:600;color:#7c3aed;white-space:nowrap;letter-spacing:-.01em;">
-           <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
-           ${esc(texterName)}
-         </span>`
-      : "";
-    chLabel.innerHTML = accountPill + texterPill;
+    const texterPills = named.names.map(n =>
+      `<span title="${esc(named.tip)}"
+             style="display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:980px;
+                    background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.25);
+                    font-size:.7rem;font-weight:600;color:#7c3aed;white-space:nowrap;letter-spacing:-.01em;">
+         <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+         ${esc(n)}
+       </span>`).join("");
+    chLabel.innerHTML = accountPill + texterPills;
   }
   document.getElementById("ch-score").innerHTML   = score != null
     ? `<span class="pill ${pillClass(score)}">${fmtScore(score)}</span>`
