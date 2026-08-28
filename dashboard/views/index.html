@@ -2749,15 +2749,15 @@
           <div style="overflow-x:auto; border:1px solid var(--surface-border); border-radius:10px;">
             <table style="width:100%; border-collapse:collapse; font-size:.8rem;">
               <thead>
-                <tr style="background:var(--surface-elevated); border-bottom:1px solid var(--surface-border);">
-                  <th style="padding:10px 14px; text-align:left; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Date</th>
-                  <th style="padding:10px 14px; text-align:left; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Agent</th>
-                  <th style="padding:10px 14px; text-align:left; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Account Used</th>
-                  <th style="padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Convos Audited</th>
-                  <th style="padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Issues</th>
-                  <th style="padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Late Response</th>
-                  <th style="padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Wrong Label</th>
-                  <th style="padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Score</th>
+                <tr id="trends-thead-row" style="background:var(--surface-elevated); border-bottom:1px solid var(--surface-border);">
+                  <th data-sort-key="audit_date" onclick="_trSortBy('audit_date')" style="cursor:pointer; user-select:none; padding:10px 14px; text-align:left; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Date<span class="tr-sort-arrow"></span></th>
+                  <th data-sort-key="agent_name" onclick="_trSortBy('agent_name')" style="cursor:pointer; user-select:none; padding:10px 14px; text-align:left; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Agent<span class="tr-sort-arrow"></span></th>
+                  <th data-sort-key="account_email" onclick="_trSortBy('account_email')" style="cursor:pointer; user-select:none; padding:10px 14px; text-align:left; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Account Used<span class="tr-sort-arrow"></span></th>
+                  <th data-sort-key="conversations_analyzed" onclick="_trSortBy('conversations_analyzed')" style="cursor:pointer; user-select:none; padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Convos Audited<span class="tr-sort-arrow"></span></th>
+                  <th data-sort-key="total_issues" onclick="_trSortBy('total_issues')" style="cursor:pointer; user-select:none; padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Issues<span class="tr-sort-arrow"></span></th>
+                  <th data-sort-key="late_response_flags" onclick="_trSortBy('late_response_flags')" style="cursor:pointer; user-select:none; padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Late Response<span class="tr-sort-arrow"></span></th>
+                  <th data-sort-key="wrong_label_flags" onclick="_trSortBy('wrong_label_flags')" style="cursor:pointer; user-select:none; padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Wrong Label<span class="tr-sort-arrow"></span></th>
+                  <th data-sort-key="overall_score" onclick="_trSortBy('overall_score')" style="cursor:pointer; user-select:none; padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Score<span class="tr-sort-arrow"></span></th>
                   <th style="padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;"></th>
                 </tr>
               </thead>
@@ -7349,6 +7349,56 @@ function getTrDateRange() {
   return { start: "2000-01-01", end: today };
 }
 
+// Snapshot Records column-sort state: click a header to sort by it,
+// click again to flip direction. Sorts the raw rows before grouping, so
+// group order (by agent+date) follows the sorted column too.
+window._trSortState = { key: null, dir: 1 };
+
+function _trSortBy(key) {
+  const state = window._trSortState;
+  state.dir = (state.key === key) ? -state.dir : 1;
+  state.key = key;
+  _trApplySort();
+}
+
+// Sorts window._trSnapshotRows in place per the current sort state and
+// re-renders the table. Safe to call with no active sort (no-op on order).
+function _trApplySort() {
+  const state = window._trSortState;
+  const rows = window._trSnapshotRows || [];
+  if (state.key) {
+    const key = state.key, dir = state.dir;
+    rows.sort((a, b) => {
+      let av = a[key], bv = b[key];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;   // nulls always sort last, regardless of direction
+      if (bv == null) return -1;
+      if (typeof av === "string") av = av.toLowerCase();
+      if (typeof bv === "string") bv = bv.toLowerCase();
+      if (av < bv) return -1 * dir;
+      if (av > bv) return 1 * dir;
+      return 0;
+    });
+  }
+  document.getElementById("trends-tbody").innerHTML = _renderSnapshotGroups(rows);
+  _trUpdateSortArrows();
+}
+
+function _trUpdateSortArrows() {
+  const state = window._trSortState;
+  document.querySelectorAll("#trends-thead-row th[data-sort-key]").forEach(th => {
+    const arrow = th.querySelector(".tr-sort-arrow");
+    if (!arrow) return;
+    if (th.dataset.sortKey === state.key) {
+      arrow.textContent = state.dir === 1 ? " ▲" : " ▼";
+      th.style.color = "var(--text-primary)";
+    } else {
+      arrow.textContent = "";
+      th.style.color = "var(--text-secondary)";
+    }
+  });
+}
+
 async function loadTrends() {
   const range = getTrDateRange();
   if (!range) {
@@ -7362,7 +7412,6 @@ async function loadTrends() {
   const emptyEl      = document.getElementById("trends-empty");
   const statsEl      = document.getElementById("trends-stats");
   const tableWrapEl  = document.getElementById("trends-table-wrap");
-  const tbodyEl      = document.getElementById("trends-tbody");
 
   // Show loading state
   emptyEl.style.display     = "flex";
@@ -7411,8 +7460,10 @@ async function loadTrends() {
     // Indexed (not keyed on agent/email in the onclick attribute) so names
     // and addresses containing quotes never break the inline handler.
     window._trSnapshotRows = rows;
-    tbodyEl.innerHTML = _renderSnapshotGroups(rows);
     tableWrapEl.style.display = "block";
+    // Re-apply whatever column sort was active before this reload, so
+    // switching the date range / agent filter doesn't silently drop it.
+    _trApplySort();
 
   } catch (err) {
     emptyEl.querySelector("div:nth-child(2)").textContent = "Error loading trends";
