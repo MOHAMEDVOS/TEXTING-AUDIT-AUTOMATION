@@ -1392,65 +1392,88 @@ async def _recompute_trend_counts(conn, agent_name: str, audit_date=None) -> Non
     and — combined with an UPDATE that targets all such rows — every account
     row for that day ends up showing the same inflated, combined-across-
     accounts numbers instead of its own.
+
+    Every subquery also collapses to one row per `contact_id` (the highest
+    `conversations.id`, i.e. the most recently scraped copy) before counting.
+    Before the dedup cache fix (deep review F7, ai/scorer.py), re-running an
+    audit for the same agent+account+day re-inserted a full new `conversations`
+    row per contact instead of reusing the existing one, so older dates can
+    have several rows for the same contact — e.g. one account's 44 real
+    conversations sitting alongside 600 raw rows in the table. Counting raw
+    rows on such a day inflates every counter (a wrong-label flag on a
+    duplicated contact gets counted once per duplicate); collapsing to the
+    latest row per contact first restores the true, one-flag-per-contact count.
     """
     await conn.execute(
         """UPDATE trend_snapshots ts
            SET total_issues = (
-               SELECT COALESCE(SUM(jsonb_array_length(cs.red_flags::jsonb)), 0)
-               FROM conversations c
-               JOIN accounts a ON a.id = c.agent_id
-               JOIN LATERAL (
-                   SELECT red_flags FROM conversation_scores cs2
-                   WHERE cs2.conversation_id = c.id
-                   ORDER BY cs2.id DESC LIMIT 1
-               ) cs ON TRUE
-               WHERE LOWER(c.texter_name) = LOWER(ts.agent_name)
-                 AND c.audit_date = ts.audit_date
-                 AND LOWER(a.email) = LOWER(ts.account_email)
-                 AND jsonb_array_length(cs.red_flags::jsonb) > 0
+               SELECT COALESCE(SUM(jsonb_array_length(lc.red_flags::jsonb)), 0)
+               FROM (
+                   SELECT DISTINCT ON (c.contact_id) c.contact_id, c.agent_id, cs.red_flags
+                   FROM conversations c
+                   JOIN accounts a ON a.id = c.agent_id
+                   JOIN LATERAL (
+                       SELECT red_flags FROM conversation_scores cs2
+                       WHERE cs2.conversation_id = c.id
+                       ORDER BY cs2.id DESC LIMIT 1
+                   ) cs ON TRUE
+                   WHERE LOWER(c.texter_name) = LOWER(ts.agent_name)
+                     AND c.audit_date = ts.audit_date
+                     AND LOWER(a.email) = LOWER(ts.account_email)
+                   ORDER BY c.contact_id, c.id DESC
+               ) lc
+               WHERE jsonb_array_length(lc.red_flags::jsonb) > 0
                  AND EXISTS (SELECT 1 FROM validation_log vl, contacts ct2
-                             WHERE ct2.id = c.contact_id
-                               AND vl.agent_id = c.agent_id
+                             WHERE ct2.id = lc.contact_id
+                               AND vl.agent_id = lc.agent_id
                                AND LOWER(vl.contact_name) = LOWER(ct2.name)
                                AND vl.status = 'valid')
            ),
            late_response_flags = (
                SELECT COUNT(*)
-               FROM conversations c
-               JOIN accounts a ON a.id = c.agent_id
-               JOIN LATERAL (
-                   SELECT red_flags FROM conversation_scores cs2
-                   WHERE cs2.conversation_id = c.id
-                   ORDER BY cs2.id DESC LIMIT 1
-               ) cs ON TRUE
-               WHERE LOWER(c.texter_name) = LOWER(ts.agent_name)
-                 AND c.audit_date = ts.audit_date
-                 AND LOWER(a.email) = LOWER(ts.account_email)
-                 AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(cs.red_flags::jsonb) ft
+               FROM (
+                   SELECT DISTINCT ON (c.contact_id) c.contact_id, c.agent_id, cs.red_flags
+                   FROM conversations c
+                   JOIN accounts a ON a.id = c.agent_id
+                   JOIN LATERAL (
+                       SELECT red_flags FROM conversation_scores cs2
+                       WHERE cs2.conversation_id = c.id
+                       ORDER BY cs2.id DESC LIMIT 1
+                   ) cs ON TRUE
+                   WHERE LOWER(c.texter_name) = LOWER(ts.agent_name)
+                     AND c.audit_date = ts.audit_date
+                     AND LOWER(a.email) = LOWER(ts.account_email)
+                   ORDER BY c.contact_id, c.id DESC
+               ) lc
+               WHERE EXISTS (SELECT 1 FROM jsonb_array_elements_text(lc.red_flags::jsonb) ft
                              WHERE LOWER(ft) = LOWER($2))
                  AND EXISTS (SELECT 1 FROM validation_log vl, contacts ct2
-                             WHERE ct2.id = c.contact_id
-                               AND vl.agent_id = c.agent_id
+                             WHERE ct2.id = lc.contact_id
+                               AND vl.agent_id = lc.agent_id
                                AND LOWER(vl.contact_name) = LOWER(ct2.name)
                                AND vl.status = 'valid')
            ),
            wrong_label_flags = (
                SELECT COUNT(*)
-               FROM conversations c
-               JOIN accounts a ON a.id = c.agent_id
-               JOIN LATERAL (
-                   SELECT red_flags FROM conversation_scores cs2
-                   WHERE cs2.conversation_id = c.id
-                   ORDER BY cs2.id DESC LIMIT 1
-               ) cs ON TRUE
-               WHERE LOWER(c.texter_name) = LOWER(ts.agent_name)
-                 AND c.audit_date = ts.audit_date
-                 AND LOWER(a.email) = LOWER(ts.account_email)
-                 AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(cs.red_flags::jsonb) ft
+               FROM (
+                   SELECT DISTINCT ON (c.contact_id) c.contact_id, c.agent_id, cs.red_flags
+                   FROM conversations c
+                   JOIN accounts a ON a.id = c.agent_id
+                   JOIN LATERAL (
+                       SELECT red_flags FROM conversation_scores cs2
+                       WHERE cs2.conversation_id = c.id
+                       ORDER BY cs2.id DESC LIMIT 1
+                   ) cs ON TRUE
+                   WHERE LOWER(c.texter_name) = LOWER(ts.agent_name)
+                     AND c.audit_date = ts.audit_date
+                     AND LOWER(a.email) = LOWER(ts.account_email)
+                   ORDER BY c.contact_id, c.id DESC
+               ) lc
+               WHERE EXISTS (SELECT 1 FROM jsonb_array_elements_text(lc.red_flags::jsonb) ft
                              WHERE LOWER(ft) LIKE 'wrong label:%')
                  AND EXISTS (SELECT 1 FROM validation_log vl, contacts ct2
-                             WHERE ct2.id = c.contact_id
-                               AND vl.agent_id = c.agent_id
+                             WHERE ct2.id = lc.contact_id
+                               AND vl.agent_id = lc.agent_id
                                AND LOWER(vl.contact_name) = LOWER(ct2.name)
                                AND vl.status = 'valid')
            )
