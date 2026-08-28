@@ -221,9 +221,12 @@ CREATE INDEX IF NOT EXISTS idx_trends_date  ON trend_snapshots(audit_date);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_trends_unique ON trend_snapshots(agent_name, audit_date, account_email);
 
 -- ── Per-flag-type breakdown of total_issues (additive) ────────────────────────
--- total_issues counts flagged CONVERSATIONS, not raw flag instances (see the
--- "single source of truth" recompute below). These two columns break that same
--- count down by flag type so the Trends table can show what's driving it.
+-- total_issues sums raw flag instances across a day's conversations (see the
+-- "single source of truth" recompute below), so a conversation flagged both
+-- Late Response and Wrong Label adds 2. These two columns break that same
+-- total down by flag type so the Trends table can show what's driving it —
+-- note they can therefore sum to less than total_issues (other flag types
+-- exist) or overlap with it (a convo counted in both).
 -- No DEFAULT: existing rows land NULL so the backfill below can tell "never
 -- computed" apart from "computed to be zero", and only has to run once.
 ALTER TABLE trend_snapshots ADD COLUMN IF NOT EXISTS late_response_flags INTEGER;

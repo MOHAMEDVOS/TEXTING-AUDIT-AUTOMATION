@@ -1386,7 +1386,7 @@ async def _recompute_trend_counts(conn, agent_name: str, audit_date=None) -> Non
     await conn.execute(
         """UPDATE trend_snapshots ts
            SET total_issues = (
-               SELECT COUNT(*)
+               SELECT COALESCE(SUM(jsonb_array_length(cs.red_flags::jsonb)), 0)
                FROM conversations c
                JOIN LATERAL (
                    SELECT red_flags FROM conversation_scores cs2
@@ -1519,7 +1519,7 @@ async def _save_trend_snapshot(agent_name: str) -> None:
                 # Every counter below is gated on manual validation: a flag only
                 # enters the agent's history once an auditor confirmed it.
                 validated_pc = [c for c in pc if _is_validated(c)]
-                total_issues = sum(1 for c in validated_pc if c.get("red_flags"))
+                total_issues = sum(len(c.get("red_flags") or []) for c in validated_pc)
                 late_response_flags = sum(
                     1 for c in validated_pc
                     if any(f.strip().lower() == LATE_RESPONSE_FLAG_TEXT.lower() for f in (c.get("red_flags") or []))
