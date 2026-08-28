@@ -2754,7 +2754,6 @@
                   <th data-sort-key="agent_name" onclick="_trSortBy('agent_name')" style="cursor:pointer; user-select:none; padding:10px 14px; text-align:left; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Agent<span class="tr-sort-arrow"></span></th>
                   <th data-sort-key="account_email" onclick="_trSortBy('account_email')" style="cursor:pointer; user-select:none; padding:10px 14px; text-align:left; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Account Used<span class="tr-sort-arrow"></span></th>
                   <th data-sort-key="conversations_analyzed" onclick="_trSortBy('conversations_analyzed')" style="cursor:pointer; user-select:none; padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Convos Audited<span class="tr-sort-arrow"></span></th>
-                  <th data-sort-key="total_issues" onclick="_trSortBy('total_issues')" style="cursor:pointer; user-select:none; padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Issues<span class="tr-sort-arrow"></span></th>
                   <th data-sort-key="late_response_flags" onclick="_trSortBy('late_response_flags')" style="cursor:pointer; user-select:none; padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Late Response<span class="tr-sort-arrow"></span></th>
                   <th data-sort-key="wrong_label_flags" onclick="_trSortBy('wrong_label_flags')" style="cursor:pointer; user-select:none; padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Wrong Label<span class="tr-sort-arrow"></span></th>
                   <th data-sort-key="overall_score" onclick="_trSortBy('overall_score')" style="cursor:pointer; user-select:none; padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Score<span class="tr-sort-arrow"></span></th>
@@ -7278,7 +7277,6 @@ function _renderSnapshotGroups(rows) {
       </td>
       <td style="padding:9px 14px;white-space:nowrap;color:var(--text-secondary);font-size:.75rem;">${g.items.length} accounts</td>
       <td style="padding:9px 14px;text-align:center;color:var(--text-secondary);">${convos}</td>
-      <td style="padding:9px 14px;text-align:center;color:${issues>0?'#dc2626':'#059669'};font-weight:600;">${issues}</td>
       <td style="padding:9px 14px;text-align:center;color:${_flagCountColor(late)};font-weight:600;">${late}</td>
       <td style="padding:9px 14px;text-align:center;color:${_flagCountColor(wrong)};font-weight:600;">${wrong}</td>
       <td style="padding:9px 14px;text-align:center;" ${cl(avgScore)}>${sc(avgScore)}</td>
@@ -7308,7 +7306,6 @@ function _snapshotRowHtml(r, i, sc, cl, groupIdx) {
     <td style="padding:9px 14px${isChild ? " 9px 30px" : ""};white-space:nowrap;color:${isChild ? "var(--text-secondary)" : "var(--text-primary)"};font-weight:${isChild ? "400" : "500"};${isChild ? "font-size:.78rem;" : ""}">${isChild ? "" : esc(r.agent_name)}</td>
     <td style="padding:9px 14px;white-space:nowrap;color:var(--text-secondary);font-size:.75rem;">${esc(r.account_email || "—")}</td>
     <td style="padding:9px 14px;text-align:center;color:var(--text-secondary);">${r.conversations_analyzed||0}</td>
-    <td style="padding:9px 14px;text-align:center;color:${(r.total_issues||0)>0?'#dc2626':'#059669'};font-weight:600;">${r.total_issues||0}</td>
     <td style="padding:9px 14px;text-align:center;color:${_flagCountColor(r.late_response_flags||0)};font-weight:600;">${r.late_response_flags||0}</td>
     <td style="padding:9px 14px;text-align:center;color:${_flagCountColor(r.wrong_label_flags||0)};font-weight:600;">${r.wrong_label_flags||0}</td>
     <td style="padding:9px 14px;text-align:center;" ${cl(r.overall_score)}>${sc(r.overall_score)}</td>
