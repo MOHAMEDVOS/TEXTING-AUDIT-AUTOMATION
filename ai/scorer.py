@@ -285,11 +285,11 @@ async def score_agent_conversations(
                     from database.db import fetch_periods
                     account_periods = await fetch_periods(_conn, _row["email"])
                 except Exception as _pe:
-                    # Falling back to an empty list means the global shift
-                    # window applies — today's behaviour, not a silent zero.
+                    # An empty list means F17 cannot fire this run: with no
+                    # confirmed assignment window, no elapsed time counts.
                     logger.warning(
                         f"[Scorer] {agent_name} — assignment periods unavailable: {_pe} "
-                        f"(measuring against the global shift window)"
+                        f"(F17 slow-response disabled this run — no confirmed assignment window)"
                     )
                 if funnel_tier or guidelines:
                     logger.info(
@@ -305,7 +305,10 @@ async def score_agent_conversations(
                 logger.info(
                     f"[Scorer] {agent_name} — {len(account_periods)} assignment "
                     f"period(s) loaded"
-                    + ("" if account_periods else " (global shift window only)")
+                    + ("" if account_periods else
+                       " (no assignment history — F17 slow-response can't fire "
+                       "for this account until scripts/backfill_assignment_periods.py "
+                       "or a dashboard assignment gives it coverage)")
                 )
         finally:
             await _conn.close()

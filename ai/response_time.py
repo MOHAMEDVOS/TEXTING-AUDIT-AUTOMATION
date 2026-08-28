@@ -4,9 +4,15 @@ Deterministic response-time audit (Flag F17).
 Measures how long the AGENT took to reply to the LEAD/owner *during the team's
 staffed shift* (10:00 AM – 7:00 PM ET, Mon–Fri — see ai/shift.py) and flags slow
 replies on live conversations. Off-shift time never counts, so an overnight or
-weekend pause can't read as unresponsiveness. When the account's ownership
-timeline is supplied (`periods=`), the window narrows further to the hours that
-texter was actually on the account.
+weekend pause can't read as unresponsiveness.
+
+The account's ownership timeline (`periods=`, its assignment_periods rows) is
+required to confirm anyone was actually on the account during the gap: a wait
+is only measured for the hours a texter is confirmed assigned. A gap with no
+period coverage at all - no periods recorded for the account, or a stretch
+outside every period that exists - counts as zero confirmed minutes and can't
+raise this flag. We won't hold anyone accountable for time nobody can be shown
+to have owned.
 
   - Yellow Alert (> 10 min): Medium severity, -8 pts Script Adherence penalty
   - Red Alert (> 15 min): High severity, -15 pts Script Adherence penalty
@@ -102,12 +108,14 @@ def check_response_time(parsed_messages, assigned_labels, *,
     Return a slow-response descriptor, or None when there's no violation or the
     conversation isn't in scope.
 
-    `periods` are the account's assignment_periods rows. When given, the gap is
-    measured only against the hours the texter who owned the account was
-    actually on it - still clipped to the global shift, never widened by it
-    (see ai.shift.shift_minutes_with_periods). Keyword-only and defaulted so
-    every existing positional call site is unaffected. Pass the rows in; this
-    module never opens a connection.
+    `periods` are the account's assignment_periods rows. The gap is measured
+    only against the hours a texter is CONFIRMED to have owned the account -
+    clipped to the global shift, never widened by it (see
+    ai.shift.shift_minutes_with_periods). Without any periods covering the
+    gap - including when the account has no periods at all - zero minutes are
+    confirmed and the flag cannot fire, even if the raw elapsed time is huge.
+    Keyword-only and defaulted so every existing positional call site is
+    unaffected. Pass the rows in; this module never opens a connection.
 
     On a hit:
         {

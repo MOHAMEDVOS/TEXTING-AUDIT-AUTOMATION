@@ -165,14 +165,15 @@ def shift_minutes_by_texter(dt1: datetime | None, dt2: datetime | None,
 def shift_minutes_with_periods(dt1: datetime | None, dt2: datetime | None,
                                periods) -> float:
     """
-    Staffed minutes in [dt1, dt2) that someone was actually assigned for.
+    Staffed minutes in [dt1, dt2) that someone was actually CONFIRMED assigned
+    for.
 
-    With no periods at all the account has never been through the assignment
-    timeline, and intersecting with an empty list would silently zero out every
-    elapsed-time rule - so fall back to the global shift window.
+    No coverage - no periods recorded for the account at all, or a stretch
+    that falls outside every period that does exist - counts as zero. We
+    can't confirm anyone was on the account then, so an elapsed-time rule
+    built on this can't hold anyone accountable for it either; the caller
+    (check_response_time) simply won't flag a gap with zero confirmed minutes.
     """
-    if not periods:
-        return shift_minutes_between(dt1, dt2)
     return sum(shift_minutes_by_texter(dt1, dt2, periods).values())
 
 

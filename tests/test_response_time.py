@@ -125,6 +125,15 @@ def _thread(lead_at: datetime, agent_at: datetime) -> list[dict]:
     ]
 
 
+# A period covering every date this file's fixtures touch (oldest is the
+# stale-rescue tests' ~2025-11 message). Used so tests of the threshold,
+# label, and stale-rescue logic exercise a CONFIRMED assignment window rather
+# than the removed no-periods-falls-back-to-global-shift path — that path no
+# longer exists, so without this, every one of these tests would just assert
+# "no flag" for the wrong reason (see TestNoPeriodsSuppressesTheFlag below).
+_CONFIRMED = [{"texter_name": "Jack", "started_at": datetime(2020, 1, 1), "ended_at": None}]
+
+
 class TestCheckResponseTime:
     """End-to-end through check_response_time, which no test previously covered."""
 
@@ -137,7 +146,7 @@ class TestCheckResponseTime:
         """
         result = check_response_time(
             _thread(datetime(2026, 8, 21, 22, 26), datetime(2026, 8, 22, 10, 3)),
-            ["Undefined"],
+            ["Undefined"], periods=_CONFIRMED,
         )
         assert result is None
 
@@ -145,13 +154,13 @@ class TestCheckResponseTime:
         """Mon 10:26 PM -> Tue 10:03 AM is 3 shift minutes, under the 10-min bar."""
         assert check_response_time(
             _thread(datetime(2026, 8, 17, 22, 26), datetime(2026, 8, 18, 10, 3)),
-            ["Lead"],
+            ["Lead"], periods=_CONFIRMED,
         ) is None
 
     def test_yellow_threshold(self):
         result = check_response_time(
             _thread(datetime(2026, 8, 18, 10, 0), datetime(2026, 8, 18, 10, 12)),
-            ["Lead"],
+            ["Lead"], periods=_CONFIRMED,
         )
         assert result is not None
         assert result["threshold_tag"] == "yellow"
@@ -161,7 +170,7 @@ class TestCheckResponseTime:
     def test_red_threshold(self):
         result = check_response_time(
             _thread(datetime(2026, 8, 18, 10, 0), datetime(2026, 8, 18, 10, 20)),
-            ["Lead"],
+            ["Lead"], periods=_CONFIRMED,
         )
         assert result["threshold_tag"] == "red"
         assert result["severity"] == "high"
@@ -169,7 +178,7 @@ class TestCheckResponseTime:
     def test_critical_threshold(self):
         result = check_response_time(
             _thread(datetime(2026, 8, 18, 10, 0), datetime(2026, 8, 18, 10, 40)),
-            ["Lead"],
+            ["Lead"], periods=_CONFIRMED,
         )
         assert result["threshold_tag"] == "critical"
         assert result["minutes"] == 40
@@ -178,7 +187,7 @@ class TestCheckResponseTime:
     def test_terminal_label_still_wins_over_a_slow_reply(self):
         assert check_response_time(
             _thread(datetime(2026, 8, 18, 10, 0), datetime(2026, 8, 18, 10, 40)),
-            ["FUI, WL Drip, Not Interested"],
+            ["FUI, WL Drip, Not Interested"], periods=_CONFIRMED,
         ) is None
 
 
@@ -195,7 +204,7 @@ class TestF17Attribution:
         """The culprit ref is built from evidence[0], so that must be the lead."""
         result = check_response_time(
             _thread(datetime(2026, 8, 18, 10, 0), datetime(2026, 8, 18, 10, 40)),
-            ["Lead"],
+            ["Lead"], periods=_CONFIRMED,
         )
         lead_msg, agent_msg = result["evidence"]
         assert lead_msg["sender"] == "Contact"
@@ -207,7 +216,7 @@ class TestF17Attribution:
 
         result = check_response_time(
             _thread(datetime(2026, 8, 18, 10, 0), datetime(2026, 8, 18, 10, 40)),
-            ["Lead"],
+            ["Lead"], periods=_CONFIRMED,
         )
         ref = _culprit_ref(result["evidence"][0], result["evidence"][0].get("seq"), "omission")
         assert ref["basis"] == "omission"
@@ -305,27 +314,25 @@ class TestPeriodsNarrowTheWindow:
         assert result["ended_at"] == datetime(2026, 8, 18, 10, 40)
 
 
-class TestNoPeriodsFallsBackToTheGlobalShift:
-    """The safety rail. Intersecting with an empty list yields zero minutes for
-    every conversation, which would switch F17 off for any account never run
-    through scripts/backfill_assignment_periods.py."""
+class TestNoPeriodsSuppressesTheFlag:
+    """Without any assignment_periods for the account, we can't confirm anyone
+    was on duty during the gap, so F17 can't hold anyone accountable for it —
+    it must not fire. An account in this state needs
+    scripts/backfill_assignment_periods.py run (or a fresh dashboard
+    assignment) before F17 can catch a slow reply on it."""
 
     @pytest.mark.parametrize("periods", [None, [], ()])
-    def test_empty_periods_still_flags(self, periods):
+    def test_empty_periods_never_flags(self, periods):
         result = check_response_time(
             _thread(datetime(2026, 8, 18, 10, 0), datetime(2026, 8, 18, 10, 40)),
             ["Lead"], periods=periods,
         )
-        assert result is not None
-        assert result["minutes"] == 40
-        assert result["threshold_tag"] == "critical"
-        assert result["by_texter"] == {}
+        assert result is None
 
-    def test_empty_periods_matches_the_global_window_exactly(self):
+    @pytest.mark.parametrize("periods", [None, [], ()])
+    def test_empty_periods_yield_zero_confirmed_minutes(self, periods):
         assert shift_minutes_with_periods(datetime(2026, 8, 18, 10, 0),
-                                          datetime(2026, 8, 18, 10, 40), []) == \
-               shift_minutes_between(datetime(2026, 8, 18, 10, 0),
-                                     datetime(2026, 8, 18, 10, 40))
+                                          datetime(2026, 8, 18, 10, 40), periods) == 0.0
 
 
 class TestStaleRescueDoesNotOpenAResponseClock:
@@ -346,7 +353,7 @@ class TestStaleRescueDoesNotOpenAResponseClock:
             {**_dated_msg("Contact", "It's not my house", old, 0), "_stale_rescue": True},
             _dated_msg("Jack", "Any updates?", reply, 1),
         ]
-        assert check_response_time(messages, ["Lead"]) is None
+        assert check_response_time(messages, ["Lead"], periods=_CONFIRMED) is None
 
     def test_rescued_only_case_end_to_end(self):
         """The reported bug shape: a contact message ~9.5 months old is the ONLY
@@ -365,7 +372,7 @@ class TestStaleRescueDoesNotOpenAResponseClock:
         windowed = filter_recent_messages(raw, window_days=7)
         # Sanity: the rescue actually fired and the tag is present.
         assert any(m.get("_stale_rescue") for m in windowed)
-        assert check_response_time(windowed, ["Lead"]) is None
+        assert check_response_time(windowed, ["Lead"], periods=_CONFIRMED) is None
 
     def test_rescued_plus_fresh_reply_measures_only_the_fresh_gap(self):
         """A stale rescue AND a genuine in-window reply both present. The gap
@@ -379,7 +386,7 @@ class TestStaleRescueDoesNotOpenAResponseClock:
             _dated_msg("Jack", "Yes, sorry for the delay!", fresh_agent, 2),
         ]
         windowed = filter_recent_messages(raw, window_days=7)
-        result = check_response_time(windowed, ["Lead"])
+        result = check_response_time(windowed, ["Lead"], periods=_CONFIRMED)
         assert result is not None
         assert result["minutes"] == 20
         assert result["threshold_tag"] == "red"
@@ -396,6 +403,6 @@ class TestStaleRescueDoesNotOpenAResponseClock:
             _dated_msg("Contact", "It's not my house", old, 0),
             _dated_msg("Jack", "Any updates?", reply, 1),
         ]
-        result = check_response_time(untagged_rescue, ["Lead"])
+        result = check_response_time(untagged_rescue, ["Lead"], periods=_CONFIRMED)
         assert result is not None
         assert result["minutes"] > 100_000
