@@ -386,33 +386,53 @@ ALTER TABLE validation_log ADD COLUMN IF NOT EXISTS flag_text TEXT;
 -- ever deleted from conversation_scores.red_flags — validation is a
 -- non-destructive overlay, so it stays reversible.
 --
--- The upsert key. migration 003 declared UNIQUE(agent_id, contact_name) but
--- this file declares the table without it, and both use CREATE TABLE IF NOT
--- EXISTS — so on any DB provisioned the documented way the constraint never
--- existed (same shape-drift trap as prefilter_decisions). De-dup, then add it.
+-- Migration 009 (folded in): key validation on the CONVERSATION, not the
+-- contact's name. The old key was (agent_id, LOWER(contact_name), flag_text)
+-- and every reader matched the same way, so a row confirmed on one
+-- conversation silently marked EVERY other conversation the same account had
+-- with the same contact name as validated too — a second conversation with a
+-- returning contact on a later day, or a duplicate row left behind by
+-- re-running an audit for the same day (uq_conversations_agent_contact_day is
+-- absent on databases provisioned from this file, so re-runs append copies).
+-- Auditors saw conversations marked valid that they had never clicked, on
+-- texters they had never reviewed, because account ownership moves between
+-- texters while contact names do not.
+--
+-- Partial index: rows whose conversation was deleted (FK is ON DELETE SET
+-- NULL) keep NULL here. They match no conversation under the new readers, so
+-- they are inert — excluded from the key rather than deleted, because
+-- validation history is never destroyed by this file.
 -- COALESCE(flag_text, '') because Postgres treats NULL as distinct from NULL
 -- in a unique index — without it, every legacy (pre-flag_text) row could
 -- collide-free duplicate instead of being the one blanket slot per conversation.
 DELETE FROM validation_log a USING validation_log b
  WHERE a.id < b.id AND a.agent_id = b.agent_id
-   AND LOWER(a.contact_name) = LOWER(b.contact_name)
+   AND a.conversation_id IS NOT NULL
+   AND a.conversation_id = b.conversation_id
    AND COALESCE(LOWER(a.flag_text), '') = COALESCE(LOWER(b.flag_text), '');
 DROP INDEX IF EXISTS idx_validation_unique;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_validation_unique
-    ON validation_log(agent_id, LOWER(contact_name), COALESCE(LOWER(flag_text), ''));
+CREATE UNIQUE INDEX IF NOT EXISTS idx_validation_unique_conv
+    ON validation_log(agent_id, conversation_id, COALESCE(LOWER(flag_text), ''))
+ WHERE conversation_id IS NOT NULL;
 
 -- One-time historical backfill. Before the cutover a flag was valid BY DEFAULT
 -- and dismissals physically deleted the flag from red_flags, so marking every
 -- still-flagged pre-cutover conversation 'valid' reproduces the old numbers
 -- exactly and leaves history untouched.
 --
--- The hardcoded cutover date makes this permanently idempotent: schema.sql runs
--- on every boot, and the bounded date range can never auto-validate new work.
--- Anything audited on/after the cutover requires a manual Valid click.
+-- The hardcoded cutover date makes this permanently idempotent, and the bounded
+-- date range can never auto-validate new work. Anything audited on/after the
+-- cutover requires a manual Valid click.
+--
+-- NOTE: this file does NOT run on every boot. database/db.py only executes it
+-- when the tables are absent (`if not tables_exist`), so on an existing
+-- deployment every statement here is skipped — which is why migration 007's
+-- uq_conversations_agent_contact_day is still missing in production. Treat
+-- schema.sql as the fresh-install path and ship changes to live databases as a
+-- numbered migration under database/migrations/.
 INSERT INTO validation_log (agent_id, agent_name, contact_name, conversation_id,
                             status, validated_by, notes)
-SELECT DISTINCT ON (c.agent_id, LOWER(ct.name))
-       c.agent_id, COALESCE(a.name, ''), ct.name, c.id, 'valid', 'system-backfill',
+SELECT c.agent_id, COALESCE(a.name, ''), ct.name, c.id, 'valid', 'system-backfill',
        'Pre-cutover audit, auto-validated to preserve historical counts'
   FROM conversations c
   JOIN accounts a  ON a.id  = c.agent_id
@@ -429,9 +449,10 @@ SELECT DISTINCT ON (c.agent_id, LOWER(ct.name))
         OR (cs.label_correct = false
             AND cs.label_assigned IS DISTINCT FROM cs.label_should_be)
    )
--- Newest conversation wins per agent+contact, matching how the rest of the app
--- dedupes (_fetch_agent_conversations keeps the most recent convo per contact).
-ORDER BY c.agent_id, LOWER(ct.name), c.id DESC
+-- One row per pre-cutover CONVERSATION, not one per agent+contact. Validation
+-- is keyed on conversation_id now, so collapsing to the newest conversation per
+-- contact here would leave every older pre-cutover conversation unvalidated and
+-- drop it out of the historical counts this backfill exists to preserve.
 ON CONFLICT DO NOTHING;
 
 -- ── flagged_conversation_reviews (manager reviewed flagged convos) ───────────

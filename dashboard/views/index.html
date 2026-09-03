@@ -1235,6 +1235,26 @@
     }
     .btn-validate-flag:disabled { opacity: .55; cursor: default; }
 
+    /* Confirmed state = a static chip plus a separate reversal button, so the
+       auditor can see the flag counts AND that undoing it is a deliberate act. */
+    .flag-valid-group { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; }
+    .flag-valid-chip {
+      font-size: 10px; padding: 2px 9px; border-radius: 99px;
+      border: 1px solid rgba(5,150,105,.55); color: #059669;
+      background: transparent; font-weight: 600; line-height: 1.5; white-space: nowrap;
+    }
+    .btn-cancel-validation {
+      font-size: 10px; padding: 2px 9px; flex-shrink: 0;
+      border-radius: 99px; border: 1px solid var(--surface-border-strong);
+      color: var(--text-secondary); background: transparent; cursor: pointer;
+      transition: background .18s, color .18s, border-color .18s;
+      line-height: 1.5; white-space: nowrap; font-weight: 600;
+    }
+    .btn-cancel-validation:hover:not(:disabled) {
+      background: rgba(248,113,113,.12); border-color: var(--danger); color: var(--danger);
+    }
+    .btn-cancel-validation:disabled { opacity: .55; cursor: default; }
+
     /* Label-only issue (no red-flag box) */
     .label-issue-card {
       display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
@@ -4541,16 +4561,34 @@ function isFlagValidated(flagText, validatedFlags) {
   });
 }
 
-/** Inline Valid button for one flag card — NOT one button per conversation. */
+/**
+ * Inline controls for one flag card — NOT one button per conversation.
+ *
+ * Unconfirmed: a single "Mark Valid" button.
+ * Confirmed:   a "✓ Valid" state chip PLUS an explicit "Cancel" button.
+ *
+ * The confirmed state used to be one button that silently reversed itself on a
+ * second click, with only a tooltip saying so — auditors could not tell that
+ * undo existed, and could undo by accident while trying to re-confirm. The
+ * state and the reversal are now two separate controls.
+ */
 function flagValidBtnHtml(flagText, validatedFlags) {
   const valid = isFlagValidated(flagText, validatedFlags);
-  return `<button type="button" class="btn-validate-flag${valid ? " is-valid" : ""}"
-      data-flag="${esc(flagText)}"
-      onclick="event.stopPropagation(); submitFlagValid(this)"
-      title="${valid
-        ? "Counted in the Trend + Detailed dashboards. Click to remove it."
-        : "Confirm this flag so it counts toward this agent's record."}"
-      >${valid ? "✓ Valid" : "Mark Valid"}</button>`;
+  if (!valid) {
+    return `<button type="button" class="btn-validate-flag"
+        data-flag="${esc(flagText)}" data-action="validate"
+        onclick="event.stopPropagation(); submitFlagValid(this)"
+        title="Confirm this flag so it counts toward this agent's record."
+        >Mark Valid</button>`;
+  }
+  return `<span class="flag-valid-group">`
+    + `<span class="flag-valid-chip" title="Confirmed — counted in the Trend + Detailed dashboards.">✓ Valid</span>`
+    + `<button type="button" class="btn-cancel-validation"
+        data-flag="${esc(flagText)}" data-action="cancel"
+        onclick="event.stopPropagation(); submitFlagValid(this)"
+        title="Cancel this validation. The flag stays visible here but stops counting toward this agent's record."
+        >Cancel</button>`
+    + `</span>`;
 }
 
 function renderAiAnalysis(a, invalidatedFlags, validatedFlags = []) {
@@ -6259,7 +6297,17 @@ function refreshOpenChatAnalysis() {
  */
 async function submitFlagValid(btn) {
   const flagText = btn.dataset.flag;
-  const validated = !btn.classList.contains("is-valid");
+  // Explicit intent from the control that was clicked, not inferred from the
+  // button's own styling — "Mark Valid" always confirms, "Cancel" always reverses.
+  const validated = btn.dataset.action !== "cancel";
+
+  if (!validated && !confirm(
+        `Cancel the validation for:\n\n${flagText}\n\n`
+        + `The flag stays in this conversation for review, but stops counting `
+        + `toward this agent's record in the Trend and Detailed dashboards.`)) {
+    return;
+  }
+
   const body = {
     agent_id:        selectedAgent?.id || 0,
     agent_name:      selectedAgent?.name || "",
@@ -6270,7 +6318,7 @@ async function submitFlagValid(btn) {
   };
 
   btn.disabled = true;
-  btn.textContent = validated ? "Saving…" : "Removing…";
+  btn.textContent = validated ? "Saving…" : "Cancelling…";
 
   try {
     const res = await fetch("/api/redflag/valid", {
@@ -6286,10 +6334,10 @@ async function submitFlagValid(btn) {
     await reloadAgentConvos();
     refreshOpenChatAnalysis();
     toast(validated ? "Marked valid — now counted in the dashboards"
-                    : "Validation removed — no longer counted", 3000);
+                    : "Validation cancelled — no longer counted", 3000);
   } catch (err) {
     btn.disabled = false;
-    btn.textContent = validated ? "Mark Valid" : "✓ Valid";
+    btn.textContent = validated ? "Mark Valid" : "Cancel";
     alert("Error saving: " + err.message);
   }
 }

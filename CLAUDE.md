@@ -208,9 +208,14 @@ A flag reaches the Trend Dashboard, the Detailed Dashboard, or an agent's
 history **only** after an auditor clicks "Mark Valid" on that conversation.
 This is enforced by `validation_log` (`database/schema.sql`) and
 `POST /api/redflag/valid` (`dashboard/app.py`) — the endpoint writes a
-`status='valid'` row keyed on `(agent_id, LOWER(contact_name))` and then calls
-`_recompute_trend_counts` to fold the change into that day's `trend_snapshots`
-row. It never touches `conversation_scores`/`audit_scores`, so raw audit output
+`status='valid'` row keyed on `(agent_id, conversation_id, flag_text)` and then
+calls `_recompute_trend_counts` to fold the change into that day's
+`trend_snapshots` row. The key was `(agent_id, LOWER(contact_name))` until
+migration 009; matching by name meant one click validated every conversation
+that account ever had with the same contact, including conversations belonging
+to a different texter. Every reader now matches through the validation row's
+own `conversation_id`, widened only to duplicate conversation rows for the same
+contact on the same conversation day. It never touches `conversation_scores`/`audit_scores`, so raw audit output
 stays intact and a validation can be toggled back off (row deleted, counts
 recomputed). This replaced the old model where a flag was valid by default and
 a dismissal permanently deleted it; a one-time backfill in `schema.sql`

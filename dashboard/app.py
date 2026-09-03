@@ -952,7 +952,9 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
         conv_rows = await conn.fetch(
             f"""SELECT c.id, c.extracted_at, c.audit_date, c.convo_date, c.assigned_labels,
                       COALESCE(ap.texter_name, aa.agent_name, c.texter_name) AS texter_name,
-                      ct.name AS contact_name
+                      ct.name AS contact_name, c.contact_id,
+                      (CASE WHEN c.convo_date <> '' THEN TO_DATE(c.convo_date, 'MM/DD/YYYY')
+                            ELSE c.audit_date END) AS effective_date
                FROM conversations c
                JOIN contacts ct ON ct.id = c.contact_id
                -- Time-ranged ownership first, so a mid-day shuffle wins over the
@@ -1004,8 +1006,18 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
         # Manually validated FLAGS — the opt-in gate that decides which flags
         # reach the dashboards and the agent's history. flag_text IS NULL is a
         # legacy pre-per-flag row that covers every flag on the conversation.
+        # Keyed on conversation_id, NOT contact_name: the same account can hold
+        # several conversations with the same contact (a returning contact on a
+        # later day, or duplicate rows from re-running an audit), and matching
+        # by name marked all of them valid off a single click.
         vl_rows = await conn.fetch(
-            "SELECT contact_name, flag_text FROM validation_log WHERE agent_id = $1 AND status = 'valid'",
+            """SELECT vc.contact_id,
+                      (CASE WHEN vc.convo_date <> '' THEN TO_DATE(vc.convo_date, 'MM/DD/YYYY')
+                            ELSE vc.audit_date END) AS effective_date,
+                      vl.flag_text
+                 FROM validation_log vl
+                 JOIN conversations vc ON vc.id = vl.conversation_id
+                WHERE vl.agent_id = $1 AND vl.status = 'valid'""",
             agent_id,
         )
 
@@ -1020,10 +1032,10 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
 
     # "*" is the legacy-blanket sentinel: any flag on that conversation counts
     # as validated (see validation_log.flag_text IS NULL).
-    validated_map: dict[str, set] = {}
+    validated_map: dict[tuple, set] = {}
     for vl in vl_rows:
-        key = (vl["contact_name"] or "").lower().strip()
-        validated_map.setdefault(key, set()).add(vl["flag_text"] or "*")
+        vkey = (vl["contact_id"], vl["effective_date"])
+        validated_map.setdefault(vkey, set()).add(vl["flag_text"] or "*")
 
     merged = []
     conv_ids = [conv["id"] for conv in unique_convos]
@@ -1112,7 +1124,8 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
             "analysis":          analysis,
             "invalidated_flags": list(invalidated_map.get(contact_key, set())),
             "is_flag_reviewed":  contact_key in reviewed_set,
-            "validated_flags":   list(validated_map.get(contact_key, set())),
+            "validated_flags":   list(validated_map.get(
+                (conv["contact_id"], conv["effective_date"]), set())),
             "conversation_id":   conv_id,
         })
 
@@ -1384,6 +1397,15 @@ async def _recompute_trend_counts(conn, agent_name: str, audit_date=None) -> Non
     Every counter is gated on validation_log — a conversation contributes
     nothing until an auditor explicitly confirmed it.
 
+    A validation row is matched through its own `conversation_id`, never
+    through `contact_name`. Name matching made one click count for every
+    conversation the account ever had with that contact — a returning contact
+    on a later day, and (because account ownership moves between texters) often
+    a texter the auditor had never reviewed. The join deliberately widens to
+    the duplicate rows for the SAME contact and SAME conversation day, since
+    re-running an audit appends a second copy of one real conversation and the
+    click may have landed on either copy.
+
     Pass `audit_date` to target the snapshot for that specific day. Without it
     this recomputes every snapshot the agent has (all dates).
 
@@ -1427,7 +1449,8 @@ async def _recompute_trend_counts(conn, agent_name: str, audit_date=None) -> Non
                -- than gating the whole array's length on any validation existing.
                SELECT COALESCE(SUM(matched.cnt), 0)
                FROM (
-                   SELECT DISTINCT ON (c.contact_id) c.contact_id, c.agent_id, cs.red_flags
+                   SELECT DISTINCT ON (c.contact_id) c.contact_id, c.agent_id, cs.red_flags,
+                          c.convo_date, c.audit_date
                    FROM conversations c
                    JOIN accounts a ON a.id = c.agent_id
                    JOIN LATERAL (
@@ -1444,18 +1467,24 @@ async def _recompute_trend_counts(conn, agent_name: str, audit_date=None) -> Non
                CROSS JOIN LATERAL (
                    SELECT COUNT(*) AS cnt
                    FROM jsonb_array_elements_text(lc.red_flags::jsonb) ft
-                   WHERE EXISTS (SELECT 1 FROM validation_log vl, contacts ct2
-                                 WHERE ct2.id = lc.contact_id
-                                   AND vl.agent_id = lc.agent_id
-                                   AND LOWER(vl.contact_name) = LOWER(ct2.name)
+                   WHERE EXISTS (SELECT 1 FROM validation_log vl
+                                 JOIN conversations vc ON vc.id = vl.conversation_id
+                                 WHERE vl.agent_id = lc.agent_id
                                    AND vl.status = 'valid'
+                                   AND vc.agent_id   = lc.agent_id
+                                   AND vc.contact_id = lc.contact_id
+                                   AND (CASE WHEN vc.convo_date <> '' THEN TO_DATE(vc.convo_date, 'MM/DD/YYYY')
+                                             ELSE vc.audit_date END)
+                                     = (CASE WHEN lc.convo_date <> '' THEN TO_DATE(lc.convo_date, 'MM/DD/YYYY')
+                                             ELSE lc.audit_date END)
                                    AND (vl.flag_text IS NULL OR LOWER(vl.flag_text) = LOWER(ft)))
                ) matched
            ),
            late_response_flags = (
                SELECT COUNT(*)
                FROM (
-                   SELECT DISTINCT ON (c.contact_id) c.contact_id, c.agent_id, cs.red_flags
+                   SELECT DISTINCT ON (c.contact_id) c.contact_id, c.agent_id, cs.red_flags,
+                          c.convo_date, c.audit_date
                    FROM conversations c
                    JOIN accounts a ON a.id = c.agent_id
                    JOIN LATERAL (
@@ -1473,17 +1502,23 @@ async def _recompute_trend_counts(conn, agent_name: str, audit_date=None) -> Non
                              WHERE LOWER(ft) = LOWER($2))
                  -- This specific flag must itself be validated, not just any
                  -- flag on the conversation (or covered by a legacy blanket row).
-                 AND EXISTS (SELECT 1 FROM validation_log vl, contacts ct2
-                             WHERE ct2.id = lc.contact_id
-                               AND vl.agent_id = lc.agent_id
-                               AND LOWER(vl.contact_name) = LOWER(ct2.name)
+                 AND EXISTS (SELECT 1 FROM validation_log vl
+                             JOIN conversations vc ON vc.id = vl.conversation_id
+                             WHERE vl.agent_id = lc.agent_id
                                AND vl.status = 'valid'
+                               AND vc.agent_id   = lc.agent_id
+                               AND vc.contact_id = lc.contact_id
+                               AND (CASE WHEN vc.convo_date <> '' THEN TO_DATE(vc.convo_date, 'MM/DD/YYYY')
+                                         ELSE vc.audit_date END)
+                                 = (CASE WHEN lc.convo_date <> '' THEN TO_DATE(lc.convo_date, 'MM/DD/YYYY')
+                                         ELSE lc.audit_date END)
                                AND (vl.flag_text IS NULL OR LOWER(vl.flag_text) = LOWER($2)))
            ),
            wrong_label_flags = (
                SELECT COUNT(*)
                FROM (
-                   SELECT DISTINCT ON (c.contact_id) c.contact_id, c.agent_id, cs.red_flags
+                   SELECT DISTINCT ON (c.contact_id) c.contact_id, c.agent_id, cs.red_flags,
+                          c.convo_date, c.audit_date
                    FROM conversations c
                    JOIN accounts a ON a.id = c.agent_id
                    JOIN LATERAL (
@@ -1503,11 +1538,16 @@ async def _recompute_trend_counts(conn, agent_name: str, audit_date=None) -> Non
                WHERE EXISTS (
                    SELECT 1 FROM jsonb_array_elements_text(lc.red_flags::jsonb) ft
                    WHERE LOWER(ft) LIKE 'wrong label:%'
-                     AND EXISTS (SELECT 1 FROM validation_log vl, contacts ct2
-                                 WHERE ct2.id = lc.contact_id
-                                   AND vl.agent_id = lc.agent_id
-                                   AND LOWER(vl.contact_name) = LOWER(ct2.name)
+                     AND EXISTS (SELECT 1 FROM validation_log vl
+                                 JOIN conversations vc ON vc.id = vl.conversation_id
+                                 WHERE vl.agent_id = lc.agent_id
                                    AND vl.status = 'valid'
+                                   AND vc.agent_id   = lc.agent_id
+                                   AND vc.contact_id = lc.contact_id
+                                   AND (CASE WHEN vc.convo_date <> '' THEN TO_DATE(vc.convo_date, 'MM/DD/YYYY')
+                                             ELSE vc.audit_date END)
+                                     = (CASE WHEN lc.convo_date <> '' THEN TO_DATE(lc.convo_date, 'MM/DD/YYYY')
+                                             ELSE lc.audit_date END)
                                    AND (vl.flag_text IS NULL OR LOWER(vl.flag_text) = LOWER(ft)))
                )
            )
@@ -1565,9 +1605,21 @@ async def _save_trend_snapshot(agent_name: str) -> None:
             # A freshly-completed audit has none, so a new snapshot legitimately
             # records 0 issues; the counts climb as the auditor clicks Valid,
             # which re-runs the recompute in /api/redflag/valid.
+            #
+            # Restricted to the conversations THIS run scraped. The per-conversation
+            # details below carry only a contact name, and validation rows used to
+            # be looked up by that name alone — so a contact validated weeks ago
+            # made today's brand-new conversation with the same person count as
+            # already confirmed. Joining through the validation row's own
+            # conversation confines it to this run.
             vl_rows = await conn.fetch(
-                "SELECT contact_name FROM validation_log WHERE agent_id = $1 AND status = 'valid'",
-                agent_id,
+                """SELECT DISTINCT vc.id AS conversation_id, ct.name AS contact_name
+                     FROM validation_log vl
+                     JOIN conversations vc ON vc.id = vl.conversation_id
+                     JOIN contacts ct ON ct.id = vc.contact_id
+                    WHERE vl.agent_id = $1 AND vl.status = 'valid'
+                      AND vc.agent_id = $1 AND vc.audit_date = $2""",
+                agent_id, score_row["audit_date"] or today,
             )
             validated_set = {(v["contact_name"] or "").lower().strip() for v in vl_rows}
 
@@ -2700,9 +2752,10 @@ async def api_redflag_valid(body: FlagValidateRequest):
                     """INSERT INTO validation_log
                        (agent_id, agent_name, contact_name, conversation_id, flag_text, status, validated_by)
                        VALUES ($1, $2, $3, $4, $5, 'valid', $6)
-                       ON CONFLICT (agent_id, LOWER(contact_name), COALESCE(LOWER(flag_text), '')) DO UPDATE SET
+                       ON CONFLICT (agent_id, conversation_id, COALESCE(LOWER(flag_text), ''))
+                       WHERE conversation_id IS NOT NULL DO UPDATE SET
                            status          = 'valid',
-                           conversation_id = EXCLUDED.conversation_id,
+                           contact_name    = EXCLUDED.contact_name,
                            validated_by    = EXCLUDED.validated_by,
                            created_at      = NOW()""",
                     body.agent_id, body.agent_name, contact, conv_id, flag_text, "dashboard",
@@ -2710,17 +2763,32 @@ async def api_redflag_valid(body: FlagValidateRequest):
                 # Confirming a flag means the auditor has been through this conversation.
                 await _upsert_flag_review(conn, body.agent_id, contact, conv_id)
             else:
+                # Scoped to THIS conversation (plus the duplicate rows that a
+                # re-run left behind for the same contact on the same day), so
+                # cancelling here can never reach the same contact's other
+                # conversations — which is exactly what the old contact-name
+                # delete did, in both directions.
+                #
                 # A legacy pre-migration row (flag_text IS NULL) covers every
-                # flag on the conversation — un-validating any one of them
-                # removes that whole blanket row rather than leaving it
-                # silently still covering the others. Known, narrow, and
-                # self-resolving: only affects conversations validated before
-                # per-flag validation shipped.
+                # flag on the conversation — cancelling any one of them removes
+                # that whole blanket row rather than leaving it silently still
+                # covering the others. Known, narrow, and self-resolving: only
+                # affects conversations validated before per-flag validation
+                # shipped.
                 await conn.execute(
-                    """DELETE FROM validation_log
-                       WHERE agent_id = $1 AND LOWER(contact_name) = LOWER($2)
-                         AND (flag_text IS NULL OR LOWER(flag_text) = LOWER($3))""",
-                    body.agent_id, contact, flag_text,
+                    """DELETE FROM validation_log vl
+                       USING conversations vc, conversations c
+                       WHERE vl.conversation_id = vc.id
+                         AND c.id = $2
+                         AND vl.agent_id = $1
+                         AND vc.agent_id   = c.agent_id
+                         AND vc.contact_id = c.contact_id
+                         AND (CASE WHEN vc.convo_date <> '' THEN TO_DATE(vc.convo_date, 'MM/DD/YYYY')
+                                   ELSE vc.audit_date END)
+                           = (CASE WHEN c.convo_date <> '' THEN TO_DATE(c.convo_date, 'MM/DD/YYYY')
+                                   ELSE c.audit_date END)
+                         AND (vl.flag_text IS NULL OR LOWER(vl.flag_text) = LOWER($3))""",
+                    body.agent_id, conv_id, flag_text,
                 )
 
             # Fold the change into the agent's snapshot for that audit day.
@@ -4525,12 +4593,25 @@ async def api_detailed_dashboard(
                     -- one row per validated flag and duplicate the
                     -- conversation. '*' stands in for a legacy pre-per-flag
                     -- row (flag_text IS NULL), which covers every flag here.
+                    -- Matched through the validation row's own conversation,
+                    -- not the contact's name: one account can hold several
+                    -- conversations with the same contact, and name matching
+                    -- marked every one of them valid off a single click.
+                    -- Widened to duplicate rows for the same contact on the
+                    -- same conversation day, which are copies of one real
+                    -- conversation left behind by re-running an audit.
                     LEFT JOIN LATERAL (
-                        SELECT ARRAY_AGG(LOWER(COALESCE(flag_text, '*'))) AS validated_flags
-                          FROM validation_log
-                         WHERE agent_id = c.agent_id
-                           AND LOWER(contact_name) = LOWER(ct.name)
-                           AND status = 'valid'
+                        SELECT ARRAY_AGG(LOWER(COALESCE(vl0.flag_text, '*'))) AS validated_flags
+                          FROM validation_log vl0
+                          JOIN conversations vc ON vc.id = vl0.conversation_id
+                         WHERE vl0.agent_id = c.agent_id
+                           AND vl0.status   = 'valid'
+                           AND vc.agent_id   = c.agent_id
+                           AND vc.contact_id = c.contact_id
+                           AND (CASE WHEN vc.convo_date <> '' THEN TO_DATE(vc.convo_date, 'MM/DD/YYYY')
+                                     ELSE vc.audit_date END)
+                             = (CASE WHEN c.convo_date <> '' THEN TO_DATE(c.convo_date, 'MM/DD/YYYY')
+                                     ELSE c.audit_date END)
                     ) vl ON TRUE
                     -- Time-ranged ownership takes precedence over the day-grained row
                     {period_texter_lateral}
@@ -4706,10 +4787,17 @@ async def api_conversation_messages(conversation_id: int):
             # Which flags has the auditor confirmed count? "*" (flag_text IS
             # NULL) is a legacy pre-per-flag row covering every flag here.
             vl_rows = await conn.fetch(
-                """SELECT flag_text FROM validation_log
-                   WHERE agent_id = $1 AND LOWER(contact_name) = LOWER($2)
-                     AND status = 'valid'""",
-                agent_id, conv_row["contact_name"],
+                """SELECT vl.flag_text FROM validation_log vl
+                     JOIN conversations vc ON vc.id = vl.conversation_id
+                     JOIN conversations c  ON c.id  = $2
+                    WHERE vl.agent_id = $1 AND vl.status = 'valid'
+                      AND vc.agent_id   = c.agent_id
+                      AND vc.contact_id = c.contact_id
+                      AND (CASE WHEN vc.convo_date <> '' THEN TO_DATE(vc.convo_date, 'MM/DD/YYYY')
+                                ELSE vc.audit_date END)
+                        = (CASE WHEN c.convo_date <> '' THEN TO_DATE(c.convo_date, 'MM/DD/YYYY')
+                                ELSE c.audit_date END)""",
+                agent_id, conversation_id,
             )
 
         analysis = {}
