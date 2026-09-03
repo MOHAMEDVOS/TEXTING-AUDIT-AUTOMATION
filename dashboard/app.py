@@ -2598,7 +2598,7 @@ async def api_redflag_valid(body: FlagValidateRequest):
                                    ELSE vc.audit_date END)
                            = (CASE WHEN c.convo_date <> '' THEN TO_DATE(c.convo_date, 'MM/DD/YYYY')
                                    ELSE c.audit_date END)
-                         AND (vl.flag_text IS NULL OR LOWER(vl.flag_text) = LOWER($3))""",
+                         AND (vl.flag_text IS NULL OR validation_flag_key(vl.flag_text) = validation_flag_key($3))""",
                     body.agent_id, conv_id, flag_text,
                 )
 
@@ -4363,12 +4363,12 @@ async def api_detailed_dashboard(
                           -- the reconstructed flag_text was validated anyway.
                           (SELECT COUNT(*) FROM jsonb_array_elements_text(cs.red_flags::jsonb) ft
                             WHERE LOWER(ft) NOT LIKE 'wrong label:%'
-                              AND ('*' = ANY(vl.validated_flags) OR LOWER(ft) = ANY(vl.validated_flags)))
+                              AND ('*' = ANY(vl.validated_flags) OR validation_flag_key(ft) = ANY(vl.validated_flags)))
                           + CASE WHEN cs.label_correct = false
                                    AND cs.label_assigned IS DISTINCT FROM cs.label_should_be
                                    AND (
                                      '*' = ANY(vl.validated_flags)
-                                     OR LOWER('Wrong label: assigned ''' || cs.label_assigned
+                                     OR validation_flag_key('Wrong label: assigned ''' || cs.label_assigned
                                               || ''' but should be ''' || cs.label_should_be || '''')
                                         = ANY(vl.validated_flags)
                                    )
@@ -4412,7 +4412,7 @@ async def api_detailed_dashboard(
                     -- same conversation day, which are copies of one real
                     -- conversation left behind by re-running an audit.
                     LEFT JOIN LATERAL (
-                        SELECT ARRAY_AGG(LOWER(COALESCE(vl0.flag_text, '*'))) AS validated_flags
+                        SELECT ARRAY_AGG(validation_flag_key(COALESCE(vl0.flag_text, '*'))) AS validated_flags
                           FROM validation_log vl0
                           JOIN conversations vc ON vc.id = vl0.conversation_id
                          WHERE vl0.agent_id = c.agent_id

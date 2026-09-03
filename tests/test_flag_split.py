@@ -202,3 +202,35 @@ class TestCulpritRefInterval:
 
 if __name__ == "__main__":  # pragma: no cover
     pytest.main([__file__])
+
+
+# ── validation_flag_key ──────────────────────────────────────────────────────
+# Mirrors database/schema.sql::validation_flag_key and
+# dashboard/views/index.html::validationFlagKey. A re-audit rewording a flag
+# used to orphan the auditor's click on it.
+def test_validation_flag_key_ignores_trailing_annotation():
+    from ai.prefilter._guards import validation_flag_key, DEFENSIBLE_ALTERNATIVE_SUFFIX
+
+    stem = "Wrong label: assigned 'Not Interested' but should be 'DO Not Call'"
+    assert validation_flag_key(stem + DEFENSIBLE_ALTERNATIVE_SUFFIX) == validation_flag_key(stem)
+    assert validation_flag_key(stem + " (contact said: 'six million')") == validation_flag_key(stem)
+
+
+def test_validation_flag_key_normalizes_case_space_and_period():
+    from ai.prefilter._guards import validation_flag_key
+
+    assert validation_flag_key("  Slow  response TIME to an engaged lead. ") == \
+        validation_flag_key("Slow response time to an engaged lead")
+
+
+def test_validation_flag_key_keeps_distinct_flags_distinct():
+    from ai.prefilter._guards import validation_flag_key
+
+    assert validation_flag_key("Wrong label: assigned 'A' but should be 'B'") != \
+        validation_flag_key("Wrong label: assigned 'A' but should be 'C'")
+
+
+def test_validation_flag_key_passes_legacy_sentinel_through():
+    from ai.prefilter._guards import validation_flag_key
+
+    assert validation_flag_key("*") == "*"

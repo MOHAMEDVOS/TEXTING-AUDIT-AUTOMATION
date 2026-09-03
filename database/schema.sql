@@ -401,6 +401,35 @@ CREATE INDEX IF NOT EXISTS idx_validation_conv  ON validation_log(conversation_i
 -- deployments where the table predates this column.
 ALTER TABLE validation_log ADD COLUMN IF NOT EXISTS flag_text TEXT;
 
+-- ── validation_flag_key: how a stored validation matches a live flag ────────
+-- A validation row stores the flag's text as it read at click time, and every
+-- reader used to match it with plain LOWER() equality. Re-auditing a day can
+-- reword the same finding — ai/scorer.py appends
+-- DEFENSIBLE_ALTERNATIVE_SUFFIX to a "Wrong label:" flag when the texter's
+-- label is also defensible, and prefilter wrong-label flags carry annotations
+-- like "(contact said: 'six million')". The stored text then no longer equals
+-- the live text, the auditor's click stops counting, and the conversation
+-- silently drops out of the trend counters with nothing to show it happened.
+--
+-- The key is the flag's stem: lowercased, with ONE trailing parenthetical
+-- annotation removed, whitespace collapsed, and trailing periods trimmed. Two
+-- flags on one conversation that differ only inside those parentheses
+-- deliberately collapse to the same key — they are the same finding with
+-- different commentary, so one click covers both.
+--
+-- Kept separate from ai/prefilter/_guards.py's canon_flag_text, which feeds
+-- T4 whitelist matching and learned-rule suppression: that one must not start
+-- stripping annotations. ai/prefilter/_guards.py::validation_flag_key and
+-- dashboard/views/index.html::validationFlagKey mirror THIS definition; the
+-- legacy '*' sentinel must survive it unchanged.
+CREATE OR REPLACE FUNCTION validation_flag_key(txt TEXT) RETURNS TEXT AS $fn$
+    SELECT rtrim(
+             regexp_replace(
+               regexp_replace(lower(btrim(COALESCE(txt, ''))), '\s*\([^()]*\)\s*$', ''),
+               '\s+', ' ', 'g'),
+             ' .');
+$fn$ LANGUAGE sql IMMUTABLE;
+
 -- ── Manual flag validation (opt-in gate) ────────────────────────────────────
 -- validation_log is now the authoritative "this flag counts" record. A flag
 -- reaches the Trend/Detailed dashboards ONLY when an auditor has explicitly
@@ -427,6 +456,11 @@ ALTER TABLE validation_log ADD COLUMN IF NOT EXISTS flag_text TEXT;
 -- COALESCE(flag_text, '') because Postgres treats NULL as distinct from NULL
 -- in a unique index — without it, every legacy (pre-flag_text) row could
 -- collide-free duplicate instead of being the one blanket slot per conversation.
+-- Keyed on LOWER(), not validation_flag_key(): re-validating a flag a re-audit
+-- has since reworded writes a second row rather than updating the first. Both
+-- rows carry the same key, and every reader is an EXISTS, so the flag still
+-- counts exactly once — narrowing the index would mean rewriting it over live
+-- rows that may already collide under the looser key.
 DELETE FROM validation_log a USING validation_log b
  WHERE a.id < b.id AND a.agent_id = b.agent_id
    AND a.conversation_id IS NOT NULL

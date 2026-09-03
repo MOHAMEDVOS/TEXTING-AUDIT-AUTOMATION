@@ -4550,13 +4550,30 @@ function sevBadge(sev) {
   return `<span title="Severity" style="display:inline-flex;align-items:center;padding:1px 7px;border-radius:99px;background:${bg};border:1px solid ${col}44;color:${col};font-size:.56rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;flex-shrink:0;">${lbl}</span>`;
 }
 
+/** How a stored validation matches a live flag — the flag's stem.
+ *
+ *  A re-audit can reword the same finding: ai/scorer.py appends
+ *  "(defensible alternative — texter's label is also valid)" to a wrong-label
+ *  flag, and prefilter flags carry annotations like "(contact said: '...')".
+ *  Plain equality then stopped matching the auditor's own click. Strips ONE
+ *  trailing parenthetical, collapses whitespace, trims trailing periods.
+ *  Mirrors database/schema.sql::validation_flag_key and
+ *  ai/prefilter/_guards.py::validation_flag_key — change all three together.
+ */
+function validationFlagKey(text) {
+  return String(text || "").trim().toLowerCase()
+    .replace(/\s*\([^()]*\)\s*$/, "")
+    .replace(/\s+/g, " ")
+    .replace(/[\s.]+$/, "");
+}
+
 /** Is this one specific flag confirmed? "*" in validatedFlags is the legacy
  *  sentinel (a pre-per-flag validation_log row) — it covers every flag here. */
 function isFlagValidated(flagText, validatedFlags) {
   if (!Array.isArray(validatedFlags) || !validatedFlags.length) return false;
-  const key = String(flagText || "").trim().toLowerCase();
+  const key = validationFlagKey(flagText);
   return validatedFlags.some(f => {
-    const v = String(f || "").trim().toLowerCase();
+    const v = validationFlagKey(f);
     return v === "*" || v === key;
   });
 }

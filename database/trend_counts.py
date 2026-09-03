@@ -102,7 +102,7 @@ async def recompute_trend_counts(conn, agent_name: str | None = None, audit_date
                                              ELSE vc.audit_date END)
                                      = (CASE WHEN lc.convo_date <> '' THEN TO_DATE(lc.convo_date, 'MM/DD/YYYY')
                                              ELSE lc.audit_date END)
-                                   AND (vl.flag_text IS NULL OR LOWER(vl.flag_text) = LOWER(ft)))
+                                   AND (vl.flag_text IS NULL OR validation_flag_key(vl.flag_text) = validation_flag_key(ft)))
                ) matched
            ),
            late_response_flags = (
@@ -137,7 +137,7 @@ async def recompute_trend_counts(conn, agent_name: str | None = None, audit_date
                                          ELSE vc.audit_date END)
                                  = (CASE WHEN lc.convo_date <> '' THEN TO_DATE(lc.convo_date, 'MM/DD/YYYY')
                                          ELSE lc.audit_date END)
-                               AND (vl.flag_text IS NULL OR LOWER(vl.flag_text) = LOWER($2)))
+                               AND (vl.flag_text IS NULL OR validation_flag_key(vl.flag_text) = validation_flag_key($2)))
            ),
            wrong_label_flags = (
                SELECT COUNT(*)
@@ -173,7 +173,7 @@ async def recompute_trend_counts(conn, agent_name: str | None = None, audit_date
                                              ELSE vc.audit_date END)
                                      = (CASE WHEN lc.convo_date <> '' THEN TO_DATE(lc.convo_date, 'MM/DD/YYYY')
                                              ELSE lc.audit_date END)
-                                   AND (vl.flag_text IS NULL OR LOWER(vl.flag_text) = LOWER(ft)))
+                                   AND (vl.flag_text IS NULL OR validation_flag_key(vl.flag_text) = validation_flag_key(ft)))
                )
            )
            WHERE ($1::text IS NULL OR LOWER(ts.agent_name) = LOWER($1))

@@ -449,6 +449,32 @@ def canon_flag_text(text: str) -> str:
     return _canon_flag_text(text)
 
 
+_TRAILING_ANNOTATION_RE = re.compile(r"\s*\([^()]*\)\s*$")
+
+
+def validation_flag_key(text: str) -> str:
+    """How a stored validation matches a live flag — the flag's stem.
+
+    Deliberately NOT canon_flag_text. That one feeds T4 whitelist matching and
+    learned-rule suppression and must keep comparing flags exactly; this one
+    exists because a re-audit can reword the same finding. ai/scorer.py appends
+    DEFENSIBLE_ALTERNATIVE_SUFFIX to a "Wrong label:" flag when the texter's
+    label is also defensible, and prefilter wrong-label flags carry annotations
+    like "(contact said: 'six million')" — after which the auditor's stored
+    click no longer equals the live text and silently stops counting.
+
+    Strips ONE trailing parenthetical annotation, collapses whitespace, and
+    trims trailing periods. Two flags on a conversation differing only inside
+    those parentheses collapse to one key on purpose: same finding, different
+    commentary. The legacy '*' sentinel passes through unchanged.
+
+    Mirrors database/schema.sql::validation_flag_key and
+    dashboard/views/index.html::validationFlagKey — change all three together.
+    """
+    t = _TRAILING_ANNOTATION_RE.sub("", (text or "").strip().lower())
+    return re.sub(r"\s+", " ", t).rstrip(" .")
+
+
 _WHITELIST_CANON = {_canon_flag_text(x): x for x in WHITELIST_FLAG_OUTPUTS}
 
 
