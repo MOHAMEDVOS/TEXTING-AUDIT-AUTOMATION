@@ -420,16 +420,26 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_validation_unique_conv
 -- still-flagged pre-cutover conversation 'valid' reproduces the old numbers
 -- exactly and leaves history untouched.
 --
--- The hardcoded cutover date makes this permanently idempotent, and the bounded
--- date range can never auto-validate new work. Anything audited on/after the
--- cutover requires a manual Valid click.
+-- The hardcoded cutover date makes this permanently idempotent: the dashboard
+-- re-runs this whole file on every boot, and the bounded date range can never
+-- auto-validate new work. Anything audited on/after the cutover requires a
+-- manual Valid click.
 --
--- NOTE: this file does NOT run on every boot. database/db.py only executes it
--- when the tables are absent (`if not tables_exist`), so on an existing
--- deployment every statement here is skipped — which is why migration 007's
--- uq_conversations_agent_contact_day is still missing in production. Treat
--- schema.sql as the fresh-install path and ship changes to live databases as a
--- numbered migration under database/migrations/.
+-- Two callers run this file, and they disagree — know which one you are
+-- reasoning about:
+--   * dashboard/app.py startup executes it UNCONDITIONALLY on every boot, so
+--     every Railway deploy and container restart replays the whole file. This
+--     is the path that matters in production (the Procfile boots the dashboard).
+--   * database/db.py::initialize() runs it only when `conversations` is absent,
+--     so the CLI audit runner skips it on an existing database.
+-- Everything here must therefore be re-runnable, which is why the DDL is all
+-- IF NOT EXISTS and the backfill ends in ON CONFLICT DO NOTHING.
+--
+-- What this file does NOT carry is anything only defined in a numbered
+-- migration — migration 007's uq_conversations_agent_contact_day is absent
+-- here, which is why it is still missing in production however many times the
+-- dashboard reboots. A change that must reach live databases belongs in BOTH
+-- this file and database/migrations/.
 INSERT INTO validation_log (agent_id, agent_name, contact_name, conversation_id,
                             status, validated_by, notes)
 SELECT c.agent_id, COALESCE(a.name, ''), ct.name, c.id, 'valid', 'system-backfill',
