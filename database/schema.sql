@@ -248,39 +248,34 @@ CREATE INDEX IF NOT EXISTS idx_trends_date  ON trend_snapshots(audit_date);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_trends_unique ON trend_snapshots(agent_name, audit_date, account_email);
 
 -- ── Per-flag-type breakdown of total_issues (additive) ────────────────────────
--- total_issues sums raw flag instances across a day's conversations (see the
--- "single source of truth" recompute below), so a conversation flagged both
--- Late Response and Wrong Label adds 2. These two columns break that same
--- total down by flag type so the Trends table can show what's driving it —
--- note they can therefore sum to less than total_issues (other flag types
--- exist) or overlap with it (a convo counted in both).
--- No DEFAULT: existing rows land NULL so the backfill below can tell "never
--- computed" apart from "computed to be zero", and only has to run once.
+-- All three counters mean VALIDATED flags only — an auditor's Mark Valid click
+-- is what puts a number here (database/trend_counts.py). total_issues sums
+-- validated flag instances across a day's conversations, so a conversation
+-- with both a confirmed Late Response and a confirmed Wrong Label adds 2.
+-- These two columns break that same total down by flag type so the Trends
+-- table can show what's driving it — they can therefore sum to less than
+-- total_issues (other flag types exist) or overlap with it (a convo counted
+-- in both). Because they share one gate, a row can never show a red
+-- total_issues tint next to two zero flag columns; that mismatch was the
+-- symptom of the raw-count write ai/scorer.py used to do.
 ALTER TABLE trend_snapshots ADD COLUMN IF NOT EXISTS late_response_flags INTEGER;
 ALTER TABLE trend_snapshots ADD COLUMN IF NOT EXISTS wrong_label_flags   INTEGER;
 
-UPDATE trend_snapshots ts SET
-    late_response_flags = COALESCE((
-        SELECT COUNT(*) FROM conversations c
-        JOIN LATERAL (
-            SELECT red_flags FROM conversation_scores cs2
-            WHERE cs2.conversation_id = c.id ORDER BY cs2.id DESC LIMIT 1
-        ) cs ON TRUE
-        WHERE LOWER(c.texter_name) = LOWER(ts.agent_name) AND c.audit_date = ts.audit_date
-          AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(cs.red_flags::jsonb) ft
-                      WHERE LOWER(ft) = 'slow response time to an engaged lead.')
-    ), 0),
-    wrong_label_flags = COALESCE((
-        SELECT COUNT(*) FROM conversations c
-        JOIN LATERAL (
-            SELECT red_flags FROM conversation_scores cs2
-            WHERE cs2.conversation_id = c.id ORDER BY cs2.id DESC LIMIT 1
-        ) cs ON TRUE
-        WHERE LOWER(c.texter_name) = LOWER(ts.agent_name) AND c.audit_date = ts.audit_date
-          AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(cs.red_flags::jsonb) ft
-                      WHERE LOWER(ft) LIKE 'wrong label:%')
-    ), 0)
-WHERE ts.late_response_flags IS NULL OR ts.wrong_label_flags IS NULL;
+-- Existing rows land NULL from the ADD COLUMN; normalize them to 0 so the
+-- dashboard does not have to distinguish "never computed" from "nothing
+-- validated" — under the validation gate those mean the same thing.
+--
+-- This block used to try to backfill real counts here, joining
+-- `c.audit_date = ts.audit_date`. That is the SCRAPE day against a row keyed
+-- by the CONVERSATION day (the department audits a day behind), so it matched
+-- nothing, COALESCE wrote 0, and the IS NULL guard then made that wrong 0
+-- permanent. It was also un-gated by validation_log, which the columns
+-- require. Real counts come from database/trend_counts.py only — on a Mark
+-- Valid click, or via scripts/repair_trend_counts.py for a bulk repair.
+UPDATE trend_snapshots
+   SET late_response_flags = COALESCE(late_response_flags, 0),
+       wrong_label_flags   = COALESCE(wrong_label_flags, 0)
+ WHERE late_response_flags IS NULL OR wrong_label_flags IS NULL;
 
 -- ── ML pre-filter telemetry (folded in from migration 001) ───────────────────
 -- These were ONLY ever in database/migrations/001_*.sql, which is applied by

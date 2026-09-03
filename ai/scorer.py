@@ -854,7 +854,16 @@ async def score_agent_conversations(
             )
             snapshot_texter = assign_row["texter_name"] if assign_row else agent_name
             snapshot_email  = assign_row["account_email"] if assign_row else agent_email
-            total_flag_count = sum(len(r.get("red_flags") or []) for r in per_convo)
+            # Deliberately NOT the raw flag count. Every counter on
+            # trend_snapshots means "flags an auditor confirmed" (see
+            # database/trend_counts.py), and nothing is confirmed at the moment
+            # an audit finishes — so a fresh snapshot starts at zero and climbs
+            # as Mark Valid clicks fold conversations in. Writing the raw count
+            # here made the Trends table's row tint (keyed off total_issues)
+            # light up for agents whose flag columns correctly read 0, because
+            # the tint was reading un-validated audit output while the columns
+            # read validated output.
+            initial_issue_count = 0
 
             # The department audits a day behind (today's run covers
             # yesterday's conversations), so the Trends dashboard has to key
@@ -880,17 +889,21 @@ async def score_agent_conversations(
                 """INSERT INTO trend_snapshots
                    (agent_name, audit_date, audit_timestamp, account_email,
                     total_issues, overall_score, compliance_score, sentiment_score,
-                    professionalism_score, script_adherence_score, conversations_analyzed)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+                    professionalism_score, script_adherence_score, conversations_analyzed,
+                    late_response_flags, wrong_label_flags)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,0,0)
                    ON CONFLICT (agent_name, audit_date, account_email) DO UPDATE
                      SET overall_score           = EXCLUDED.overall_score,
                          compliance_score        = EXCLUDED.compliance_score,
                          sentiment_score         = EXCLUDED.sentiment_score,
                          professionalism_score   = EXCLUDED.professionalism_score,
                          script_adherence_score  = EXCLUDED.script_adherence_score,
-                         total_issues            = EXCLUDED.total_issues,
                          conversations_analyzed  = EXCLUDED.conversations_analyzed,
                          audit_timestamp         = EXCLUDED.audit_timestamp
+                     -- total_issues / late_response_flags / wrong_label_flags are
+                     -- absent on purpose: a re-audit of a day an auditor has
+                     -- already worked through must not reset their confirmed
+                     -- counts back to zero. Validation owns those three columns.
 """,
                 snapshot_texter,
                 snapshot_date,
@@ -900,7 +913,7 @@ async def score_agent_conversations(
                 # backfill, which already used get_now() (deep review F24).
                 get_now(),
                 snapshot_email,
-                total_flag_count,
+                initial_issue_count,
                 overall,
                 compliance,
                 sentiment,

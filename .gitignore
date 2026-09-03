@@ -64,14 +64,14 @@ logs/
 *.db
 # Dev-only scripts are ignored, but post_audit_reflection.py is a runtime
 # dependency of ai/scorer.py, report.py is a shipped reporting CLI, and
-# backfill_assignment_periods.py / backfill_trend_counts.py / backfill_trend_dates.py
-# are one-time migrations that have to run against the deployed database.
+# backfill_assignment_periods.py / backfill_trend_dates.py / repair_trend_counts.py
+# are migrations and repairs that have to run against the deployed database.
 scripts/*
 !scripts/post_audit_reflection.py
 !scripts/report.py
 !scripts/backfill_assignment_periods.py
-!scripts/backfill_trend_counts.py
 !scripts/backfill_trend_dates.py
+!scripts/repair_trend_counts.py
 # tests/ intentionally NOT ignored — the repo had zero tests and this line was
 # actively preventing anyone from adding them (deep review F20).
 .pytest_cache/
