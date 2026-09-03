@@ -55,6 +55,33 @@ CREATE TABLE IF NOT EXISTS conversations (
 -- as scraped — shown on the conversation card next to the audit date.
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS convo_date TEXT NOT NULL DEFAULT '';
 
+-- One conversation per (agent, contact, day). Without it, re-running an audit
+-- appends a complete duplicate set of conversations, messages and scores every
+-- time — production had 25,260 duplicate rows before migration 010 cleaned them.
+-- save_extraction()'s ON CONFLICT clause names this constraint, and simply does
+-- nothing until it exists.
+--
+-- Guarded, and deliberately not a bare ALTER: the dashboard executes this whole
+-- file on every boot, and ADD CONSTRAINT throws on a database that still holds
+-- duplicates — which would take the dashboard down at startup instead of just
+-- leaving the constraint unapplied. A database with duplicates is left alone
+-- for database/migrations/010_dedupe_conversations.sql to clean up first.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                    WHERE conname = 'uq_conversations_agent_contact_day')
+       AND NOT EXISTS (SELECT 1 FROM conversations a JOIN conversations b
+                          ON a.agent_id   = b.agent_id
+                         AND a.contact_id = b.contact_id
+                         AND a.audit_date = b.audit_date
+                         AND a.id <> b.id)
+    THEN
+        ALTER TABLE conversations
+            ADD CONSTRAINT uq_conversations_agent_contact_day
+            UNIQUE (agent_id, contact_id, audit_date);
+    END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_conversations_agent   ON conversations(agent_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_texter  ON conversations(texter_name);
 CREATE INDEX IF NOT EXISTS idx_conversations_date    ON conversations(audit_date);
