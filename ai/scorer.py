@@ -371,7 +371,8 @@ async def score_agent_conversations(
             # re-flagged (and re-deducted 25 points) on every audit, forever, on
             # data the rest of the audit deliberately excludes (deep review F28).
             _rt = check_response_time(
-                filter_recent_messages(parsed), labels, periods=account_periods
+                filter_recent_messages(parsed), labels, periods=account_periods,
+                audit_date=convo.get("audit_date"),
             )
             if _rt:
                 rflags = list(result.get("red_flags") or [])
@@ -541,13 +542,25 @@ async def score_agent_conversations(
                         f"(over the {thr}-min threshold)."
                     )
                     ev = []
+                    response_time_messages = []
                     for i, m in enumerate(_rt.get("evidence") or []):
                         sender = (m.get("sender") or "").strip() or "Unknown"
                         body = (m.get("message") or m.get("body") or "").strip()
                         quote = body if len(body) <= 240 else body[:237] + "..."
                         ev.append({"seq": m.get("seq", i), "sender": sender, "quote": quote})
+                        sent_at = m.get("timestamp") or m.get("sent_at")
+                        if isinstance(sent_at, datetime):
+                            sent_at = sent_at.isoformat()
+                        if sent_at:
+                            response_time_messages.append({
+                                "timestamp": str(sent_at),
+                                "sender": sender,
+                                "role": "wait_start" if i == 0 else "late_reply",
+                            })
                     if ev:
                         d["evidence"] = ev
+                    if response_time_messages:
+                        d["response_time_messages"] = response_time_messages
                     break
         r["prompt_version"] = PROMPT_VERSION
 

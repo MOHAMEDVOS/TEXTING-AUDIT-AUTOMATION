@@ -808,6 +808,19 @@
       background: var(--agent-bubble-bg); color: var(--agent-bubble-color);
       border-radius: 18px 4px 18px 18px;
     }
+    /* F17 highlights only the two messages whose timestamps formed the wait. */
+    .bbl-response-time-start {
+      border: 2px solid #fbbf24 !important;
+      background: rgba(245,158,11,.2) !important;
+      box-shadow: 0 0 0 3px rgba(251,191,36,.16), 0 0 18px rgba(251,191,36,.2);
+    }
+    .bbl-response-time-reply {
+      border: 2px solid #e879f9 !important;
+      background: #9333a8 !important;
+      box-shadow: 0 0 0 3px rgba(232,121,249,.18), 0 0 18px rgba(232,121,249,.24);
+    }
+    .bbl-response-time-start .bbl-time { color: #fcd34d !important; font-weight: 800; }
+    .bbl-response-time-reply .bbl-time { color: #f5d0fe !important; font-weight: 800; }
     /* Telegram-style inline time — inside bubble, bottom-right */
     .bbl-time {
       display: inline; float: right; font-size: .6rem;
@@ -4451,6 +4464,20 @@ function renderChatMessages(msgs, convo) {
   const agentInit   = fmtInit(selectedAgent?.name || "Agent");
   const contactInit = fmtInit(convo.contact_name || "Contact");
   const html = [];
+  const f17 = (convo.analysis?.flag_details || []).find(d => d?.flag_id === "F17");
+  const responseTimeRefs = Array.isArray(f17?.response_time_messages)
+    ? f17.response_time_messages : [];
+
+  function responseTimeMark(msg) {
+    if (!responseTimeRefs.length) return null;
+    const messageTime = Date.parse(msg.time || "");
+    if (!Number.isFinite(messageTime)) return null;
+    const sender = String(msg.sender || "").trim().toLowerCase();
+    return responseTimeRefs.find(ref =>
+      Date.parse(ref.timestamp || "") === messageTime &&
+      String(ref.sender || "").trim().toLowerCase() === sender
+    ) || null;
+  }
 
   // Telegram-style time formatter: "2026-05-08T19:43:00+00:00" → "7:43 PM"
   function fmtMsgTime(raw) {
@@ -4471,7 +4498,17 @@ function renderChatMessages(msgs, convo) {
   msgs.forEach((msg, i) => {
     const isAgent   = msg.sender !== "Contact" && msg.sender !== "System";
     const wrapCls   = isAgent ? "bw-right"       : "bw-left";
-    const bubbleCls = isAgent ? "bbl bbl-agent"  : "bbl bbl-contact";
+    const baseBubbleCls = isAgent ? "bbl bbl-agent" : "bbl bbl-contact";
+    const responseMark = responseTimeMark(msg);
+    const responseClass = responseMark?.role === "wait_start"
+      ? " bbl-response-time-start"
+      : responseMark?.role === "late_reply" ? " bbl-response-time-reply" : "";
+    const bubbleCls = baseBubbleCls + responseClass;
+    const responseTitle = responseMark?.role === "wait_start"
+      ? "This lead message started the response-time clock."
+      : responseMark?.role === "late_reply"
+        ? "This agent reply ended the response-time clock."
+        : "";
     const avCls     = isAgent ? `av av-sm ${agentAv(selectedAgent?.name || "")}` : "av av-sm av-c";
     const init      = isAgent ? agentInit         : contactInit;
     const showAv    = !msgs[i - 1] || msgs[i - 1].sender !== msg.sender;
@@ -4503,7 +4540,7 @@ function renderChatMessages(msgs, convo) {
         ${avHtml}
         <div class="${wrapRClass}">
           ${senderLabel}
-          <div class="${bubbleCls}">${esc(msg.message)}${timeInBubble}</div>
+          <div class="${bubbleCls}"${responseTitle ? ` title="${esc(responseTitle)}"` : ""}>${esc(msg.message)}${timeInBubble}</div>
         </div>
       </div>`);
   });

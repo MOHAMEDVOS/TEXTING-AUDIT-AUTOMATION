@@ -400,6 +400,11 @@ class Database:
             extracted_at = get_now()
 
         audit_date = extracted_at.date() if hasattr(extracted_at, "date") else date.today()
+        # Keep the exact persisted audit day with each in-memory conversation so
+        # scoring rules that depend on the reviewed day don't infer it from the
+        # historical message timestamps.
+        for convo in conversations:
+            convo["audit_date"] = audit_date
 
         # Get the texter name for this agent from account_assignments.
         # Use the assignment that was active ON the audit date (assigned_date <= audit_date),

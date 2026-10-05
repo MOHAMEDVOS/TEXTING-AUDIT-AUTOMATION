@@ -25,9 +25,11 @@ from __future__ import annotations
 import os
 import re
 import logging
+from datetime import date, datetime, time
 
 from ai.shift import shift_minutes_by_texter, shift_minutes_with_periods
 from database.db import _parse_msg_datetime, _is_outgoing
+from config.settings import TIMEZONE
 
 logger = logging.getLogger(__name__)
 
@@ -102,8 +104,36 @@ def _is_agent(sender: str | None) -> bool:
     return _is_outgoing(sender)
 
 
+def _review_date(value) -> date | None:
+    """Normalize a conversation's stored audit date for F17 calculations."""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            return None
+    return None
+
+
+def _message_datetime(msg: dict, audit_date: date | None) -> datetime | None:
+    """Use the reviewed audit day while preserving the message's local time."""
+    dt = _parse_msg_datetime(msg)
+    if dt is None or audit_date is None:
+        return dt
+
+    # SmarterContact's raw timestamps are UTC. Keep the same Eastern wall time
+    # the shift calculator uses, but put it on the day the auditor selected.
+    local_dt = TIMEZONE.localize(dt) if dt.tzinfo is None else dt.astimezone(TIMEZONE)
+    return TIMEZONE.localize(datetime.combine(audit_date, time(
+        local_dt.hour, local_dt.minute, local_dt.second, local_dt.microsecond
+    )))
+
+
 def check_response_time(parsed_messages, assigned_labels, *,
-                        periods=None) -> dict | None:
+                        periods=None, audit_date=None) -> dict | None:
     """
     Return a slow-response descriptor, or None when there's no violation or the
     conversation isn't in scope.
@@ -111,7 +141,9 @@ def check_response_time(parsed_messages, assigned_labels, *,
     `periods` are the account's assignment_periods rows. The gap is measured
     only against the hours a texter is CONFIRMED to have owned the account -
     clipped to the global shift, never widened by it (see
-    ai.shift.shift_minutes_with_periods). Without any periods covering the
+    ai.shift.shift_minutes_with_periods). `audit_date`, when supplied, anchors
+    message clock times to the day being reviewed so an older transcript date
+    cannot create a multi-day F17 interval. Without any periods covering the
     gap - including when the account has no periods at all - zero minutes are
     confirmed and the flag cannot fire, even if the raw elapsed time is huge.
     Keyword-only and defaulted so every existing positional call site is
@@ -130,6 +162,7 @@ def check_response_time(parsed_messages, assigned_labels, *,
           "by_texter": {name: minutes}, # empty without periods
         }
     """
+    audit_day = _review_date(audit_date)
     if not _labels_match(assigned_labels):
         return None
 
@@ -142,7 +175,7 @@ def check_response_time(parsed_messages, assigned_labels, *,
     pending_msg = None     # that lead message (for evidence)
 
     for msg in parsed_messages or []:
-        dt = _parse_msg_datetime(msg)
+        dt = _message_datetime(msg, audit_day)
 
         if _is_agent(msg.get("sender")):
             if pending_open and pending_dt is not None and dt is not None:
