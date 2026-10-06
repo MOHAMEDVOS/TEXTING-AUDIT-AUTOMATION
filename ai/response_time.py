@@ -25,7 +25,7 @@ from __future__ import annotations
 import os
 import re
 import logging
-from datetime import date, datetime, time
+from datetime import date, datetime
 
 from ai.shift import shift_minutes_by_texter, shift_minutes_with_periods
 from database.db import _parse_msg_datetime, _is_outgoing
@@ -104,6 +104,11 @@ def _is_agent(sender: str | None) -> bool:
     return _is_outgoing(sender)
 
 
+def _is_contact(sender: str | None) -> bool:
+    """Only an explicitly identified lead/contact message starts the clock."""
+    return (sender or "").strip().lower() in {"contact", "lead"}
+
+
 def _review_date(value) -> date | None:
     """Normalize a conversation's stored audit date for F17 calculations."""
     if isinstance(value, datetime):
@@ -118,18 +123,13 @@ def _review_date(value) -> date | None:
     return None
 
 
-def _message_datetime(msg: dict, audit_date: date | None) -> datetime | None:
-    """Use the reviewed audit day while preserving the message's local time."""
-    dt = _parse_msg_datetime(msg)
-    if dt is None or audit_date is None:
-        return dt
-
-    # SmarterContact's raw timestamps are UTC. Keep the same Eastern wall time
-    # the shift calculator uses, but put it on the day the auditor selected.
-    local_dt = TIMEZONE.localize(dt) if dt.tzinfo is None else dt.astimezone(TIMEZONE)
-    return TIMEZONE.localize(datetime.combine(audit_date, time(
-        local_dt.hour, local_dt.minute, local_dt.second, local_dt.microsecond
-    )))
+def _message_local_date(dt: datetime | None) -> date | None:
+    """Return the actual timestamp's calendar date in the team's timezone."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.date()
+    return dt.astimezone(TIMEZONE).date()
 
 
 def check_response_time(parsed_messages, assigned_labels, *,
@@ -141,9 +141,11 @@ def check_response_time(parsed_messages, assigned_labels, *,
     `periods` are the account's assignment_periods rows. The gap is measured
     only against the hours a texter is CONFIRMED to have owned the account -
     clipped to the global shift, never widened by it (see
-    ai.shift.shift_minutes_with_periods). `audit_date`, when supplied, anchors
-    message clock times to the day being reviewed so an older transcript date
-    cannot create a multi-day F17 interval. Without any periods covering the
+    ai.shift.shift_minutes_with_periods). When `audit_date` is supplied, only
+    messages whose actual timestamps fall on that local calendar date are
+    considered; timestamps are never shifted to another date. Each contact
+    message replaces the pending one, so a reply is paired with the immediately
+    previous contact message. Without any periods covering the
     gap - including when the account has no periods at all - zero minutes are
     confirmed and the flag cannot fire, even if the raw elapsed time is huge.
     Keyword-only and defaulted so every existing positional call site is
@@ -171,11 +173,20 @@ def check_response_time(parsed_messages, assigned_labels, *,
     worst_span: tuple | None = None   # the winning gap's two instants
 
     pending_open = False   # is a lead burst awaiting a reply?
-    pending_dt = None      # timestamp of the FIRST lead message in that burst
+    pending_dt = None      # timestamp of the immediately previous lead message
     pending_msg = None     # that lead message (for evidence)
 
     for msg in parsed_messages or []:
-        dt = _message_datetime(msg, audit_day)
+        dt = _parse_msg_datetime(msg)
+
+        # Never carry an open response clock across the selected audit date.
+        # Use the real timestamp converted only for date comparison; the raw
+        # instant below remains unchanged for shift-minute arithmetic.
+        if audit_day is not None and _message_local_date(dt) != audit_day:
+            pending_open = False
+            pending_dt = None
+            pending_msg = None
+            continue
 
         if _is_agent(msg.get("sender")):
             if pending_open and pending_dt is not None and dt is not None:
@@ -187,17 +198,20 @@ def check_response_time(parsed_messages, assigned_labels, *,
             pending_open = False
             pending_dt = None
             pending_msg = None
-        else:
-            # A message tagged _stale_rescue (ai.analyzer.filter_recent_messages)
-            # is a historical message stitched back in purely so the thread
-            # isn't mislabeled Stopped Responding — it's not a fresh reply
-            # waiting on the agent. Opening a clock on it pairs a months-old
-            # message with today's agent reply and reports the whole gap as
-            # one continuous wait.
-            if not pending_open and not msg.get("_stale_rescue"):
+        elif _is_contact(msg.get("sender")):
+            # A message tagged _stale_rescue is historical context only and
+            # must never start a response clock. For consecutive contact
+            # messages, retain the immediately previous one for the next reply.
+            if not msg.get("_stale_rescue"):
                 pending_open = True
                 pending_dt = dt
                 pending_msg = msg
+        else:
+            # An unknown/system message breaks the adjacency: the next agent
+            # reply must not be paired with an earlier contact message.
+            pending_open = False
+            pending_dt = None
+            pending_msg = None
 
     if worst_evidence is None or worst_minutes <= YELLOW_MIN:
         return None

@@ -17,7 +17,6 @@ from ai.prefilter.label_validator import _label_key as _lk
 from ai.prefilter.label_validator import is_defensible_alternative
 from ai.prefilter._guards import build_flag_details, DEFENSIBLE_ALTERNATIVE_SUFFIX, canon_flag_text
 from ai.prefilter.tier4_flag_generator import _culprit_ref
-from ai.analyzer import filter_recent_messages
 from ai.response_time import check_response_time, FLAG_TEXT as RESPONSE_TIME_FLAG
 from ai.shift import is_on_shift, shift_window_label
 from ai.prompts import PROMPT_VERSION
@@ -366,12 +365,12 @@ async def score_agent_conversations(
             # Runs after analysis regardless of which tier produced the result,
             # so a "clean"/short-circuited convo is still checked. Deducting
             # here feeds the script_adherence aggregation below.
-            # Same rolling window analyze_conversation() applies. Passing the full
-            # unfiltered thread meant a single slow reply from months ago was
-            # re-flagged (and re-deducted 25 points) on every audit, forever, on
-            # data the rest of the audit deliberately excludes (deep review F28).
+            # F17 applies its own strict selected-audit-date filter to the real
+            # message timestamps. Do not pass the analyzer's rolling 7-day
+            # window here: that window is relative to the newest transcript
+            # message and can omit the selected day or retain other dates.
             _rt = check_response_time(
-                filter_recent_messages(parsed), labels, periods=account_periods,
+                parsed, labels, periods=account_periods,
                 audit_date=convo.get("audit_date"),
             )
             if _rt:
