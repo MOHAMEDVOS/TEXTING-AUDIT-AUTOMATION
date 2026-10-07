@@ -116,10 +116,12 @@ def _review_date(value) -> date | None:
     if isinstance(value, date):
         return value
     if isinstance(value, str):
-        try:
-            return date.fromisoformat(value[:10])
-        except ValueError:
-            return None
+        value = value.strip()
+        for fmt in ("%Y-%m-%d", "%m/%d/%Y"):
+            try:
+                return datetime.strptime(value[:10], fmt).date()
+            except ValueError:
+                continue
     return None
 
 

@@ -369,9 +369,11 @@ async def score_agent_conversations(
             # message timestamps. Do not pass the analyzer's rolling 7-day
             # window here: that window is relative to the newest transcript
             # message and can omit the selected day or retain other dates.
+            # Audits are commonly run the day after the messages; convo_date is
+            # the conversation's local day, while audit_date is the scrape day.
             _rt = check_response_time(
                 parsed, labels, periods=account_periods,
-                audit_date=convo.get("audit_date"),
+                audit_date=convo.get("convo_date") or convo.get("audit_date"),
             )
             if _rt:
                 rflags = list(result.get("red_flags") or [])
