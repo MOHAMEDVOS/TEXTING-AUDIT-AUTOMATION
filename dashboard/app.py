@@ -3863,8 +3863,8 @@ async def api_copy_latest_assignments(request: Request, date: str = ""):
     """
     Find the most recent date with any assignments and copy them to the target date.
 
-    Copy each account's primary texter from the latest assigned day as one
-    all-day range. Mid-day shuffles from that source day are not carried forward.
+    Copy each account's first texter on the latest assigned day as one all-day
+    range. Mid-day shuffles from that source day are not carried forward.
     Accounts already assigned on the target date are left alone.
     """
     from datetime import date as _date
@@ -3885,11 +3885,6 @@ async def api_copy_latest_assignments(request: Request, date: str = ""):
             if not latest_date:
                 return {"success": False, "error": "No previous assignments found to copy."}
 
-            source = await conn.fetch(
-                """SELECT account_email, agent_name FROM account_assignments
-                    WHERE assigned_date = $1 AND agent_name IS NOT NULL AND agent_name <> ''""",
-                latest_date,
-            )
             already = {
                 r["account_email"].lower()
                 for r in await conn.fetch(
@@ -3898,17 +3893,23 @@ async def api_copy_latest_assignments(request: Request, date: str = ""):
                 )
             }
 
+        # The day-grained mirror stores the longest-held texter, which can be
+        # different from the texter assigned first that day. Use the timeline
+        # and take its first owned segment for each account.
+        source_day = await api_assignment_day_segments(str(latest_date))
         entries = [
             AccountDaySegments(
                 account_email=row["account_email"],
                 segments=[DaySegment(
-                    texter_name=row["agent_name"],
+                    texter_name=row["segments"][0]["texter_name"],
                     start_time="00:00",
                     end_time="24:00",
                 )],
             )
-            for row in source
-            if row["account_email"].lower() not in already
+            for row in source_day["data"]
+            if row["segments"]
+            and row["segments"][0].get("texter_name")
+            and row["account_email"].lower() not in already
         ]
         if not entries:
             return {"success": True, "from_date": str(latest_date), "count": 0,
