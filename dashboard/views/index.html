@@ -7191,7 +7191,7 @@ async function saveAssignments() {
   allCards.forEach(card => {
     const segs  = _cardSegments(card);
     const dirty = card.classList.contains("is-dirty");
-    if (card.dataset.mode === "allday" && isToday) {
+    if (card.dataset.mode === "allday" && isToday && !dirty) {
       if (segs.length || dirty) {
         simple.push({
           account_email: card.dataset.email,

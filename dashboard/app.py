@@ -3885,10 +3885,6 @@ async def api_copy_latest_assignments(request: Request, date: str = ""):
             if not latest_date:
                 return {"success": False, "error": "No previous assignments found to copy."}
 
-            source = await conn.fetch(
-                "SELECT account_email, agent_name FROM account_assignments WHERE assigned_date = $1",
-                latest_date,
-            )
             already = {
                 r["account_email"].lower()
                 for r in await conn.fetch(
@@ -3897,29 +3893,35 @@ async def api_copy_latest_assignments(request: Request, date: str = ""):
                 )
             }
 
+        # Copy the actual ownership timeline, not just the day-grained mirror.
+        # The mirror deliberately stores only one dominant owner and loses
+        # handovers (and whether the source day was all-day).
+        source_day = await api_assignment_day_segments(str(latest_date))
         entries = [
-            AssignmentEntry(account_email=r["account_email"], agent_name=r["agent_name"])
-            for r in source
-            if r["account_email"].lower() not in already
+            AccountDaySegments(
+                account_email=row["account_email"],
+                segments=[DaySegment(**segment) for segment in row["segments"]],
+            )
+            for row in source_day["data"]
+            if row["segments"] and row["account_email"].lower() not in already
         ]
         if not entries:
             return {"success": True, "from_date": str(latest_date), "count": 0,
                     "changed": 0, "unchanged": 0}
 
-        result = await api_save_all_assignments(
-            SaveAllAssignmentsRequest(assigned_date=date, assignments=entries),
-            request,
+        result = await api_save_day_segments(
+            SaveDaySegmentsRequest(assigned_date=date, accounts=entries), request
         )
         logger.info(
             f"Assignments copied from {latest_date} to {target_date} "
-            f"({len(entries)} accounts, {result['changed']} ownership changes)"
+            f"({len(entries)} accounts, {result['periods']} timeline ranges)"
         )
         return {
             "success":   True,
             "from_date": str(latest_date),
             "count":     len(entries),
-            "changed":   result["changed"],
-            "unchanged": result["unchanged"],
+            "changed":   result["accounts"],
+            "unchanged": 0,
         }
     except HTTPException:
         raise
