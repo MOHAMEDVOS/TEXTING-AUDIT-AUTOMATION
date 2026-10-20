@@ -1348,6 +1348,7 @@ class SaveDaySegmentsRequest(BaseModel):
     assigned_date: str                 # "YYYY-MM-DD"
     accounts:      list[AccountDaySegments]
     reattribute:   bool = True         # replay message/flag attribution afterwards
+    detect_shuffles: bool = True       # false for roster copies that start a fresh day
 
 
 class AddTexterRequest(BaseModel):
@@ -3768,7 +3769,7 @@ async def api_save_day_segments(body: SaveDaySegmentsRequest, request: Request):
                         # same texter continuing is not a change at all.
                         contiguous = (start == day_start if idx == 0
                                       else prev_end == start)
-                        handover = (contiguous and previous is not None
+                        handover = (body.detect_shuffles and contiguous and previous is not None
                                     and previous != texter)
                         action = "shuffle" if handover else "open"
                         await _log_assignment(
@@ -3862,10 +3863,9 @@ async def api_copy_latest_assignments(request: Request, date: str = ""):
     """
     Find the most recent date with any assignments and copy them to the target date.
 
-    Accounts already assigned on the target date are left alone. The copy runs
-    through the batch handler, so an account whose owner is unchanged produces
-    no ownership period — carrying the same roster forward day after day keeps
-    one continuous period instead of one row per day.
+    Copy each account's primary texter from the latest assigned day as one
+    all-day range. Mid-day shuffles from that source day are not carried forward.
+    Accounts already assigned on the target date are left alone.
     """
     from datetime import date as _date
     if not date:
@@ -3885,6 +3885,11 @@ async def api_copy_latest_assignments(request: Request, date: str = ""):
             if not latest_date:
                 return {"success": False, "error": "No previous assignments found to copy."}
 
+            source = await conn.fetch(
+                """SELECT account_email, agent_name FROM account_assignments
+                    WHERE assigned_date = $1 AND agent_name IS NOT NULL AND agent_name <> ''""",
+                latest_date,
+            )
             already = {
                 r["account_email"].lower()
                 for r in await conn.fetch(
@@ -3893,28 +3898,31 @@ async def api_copy_latest_assignments(request: Request, date: str = ""):
                 )
             }
 
-        # Copy the actual ownership timeline, not just the day-grained mirror.
-        # The mirror deliberately stores only one dominant owner and loses
-        # handovers (and whether the source day was all-day).
-        source_day = await api_assignment_day_segments(str(latest_date))
         entries = [
             AccountDaySegments(
                 account_email=row["account_email"],
-                segments=[DaySegment(**segment) for segment in row["segments"]],
+                segments=[DaySegment(
+                    texter_name=row["agent_name"],
+                    start_time="00:00",
+                    end_time="24:00",
+                )],
             )
-            for row in source_day["data"]
-            if row["segments"] and row["account_email"].lower() not in already
+            for row in source
+            if row["account_email"].lower() not in already
         ]
         if not entries:
             return {"success": True, "from_date": str(latest_date), "count": 0,
                     "changed": 0, "unchanged": 0}
 
         result = await api_save_day_segments(
-            SaveDaySegmentsRequest(assigned_date=date, accounts=entries), request
+            SaveDaySegmentsRequest(
+                assigned_date=date, accounts=entries, detect_shuffles=False
+            ),
+            request,
         )
         logger.info(
             f"Assignments copied from {latest_date} to {target_date} "
-            f"({len(entries)} accounts, {result['periods']} timeline ranges)"
+            f"({len(entries)} accounts, no source-day shuffles copied)"
         )
         return {
             "success":   True,
