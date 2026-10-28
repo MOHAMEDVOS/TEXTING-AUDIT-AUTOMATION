@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
 from ai.prefilter.summary_builder import (
     detect_fu_track,
@@ -753,7 +754,13 @@ def _sender(message: dict) -> str:
 
 
 def _norm(label: str | None) -> str:
-    return re.sub(r"\s+", " ", (label or "").strip()).lower()
+    # CRM labels can include decorative emoji (for example, "Not Interested 📞").
+    # They are presentation markers, not part of the label's meaning.
+    without_symbols = "".join(
+        char for char in (label or "")
+        if not unicodedata.category(char).startswith("S")
+    )
+    return re.sub(r"\s+", " ", without_symbols.strip()).lower()
 
 
 def _is_bluffer_label(label: str | None) -> bool:

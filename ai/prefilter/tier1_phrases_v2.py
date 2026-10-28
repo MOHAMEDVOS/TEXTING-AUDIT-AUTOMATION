@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import re
+import unicodedata
 from typing import Optional
 
 from ._pipeline_types import PipelineResult as PrefilterResult
@@ -1151,7 +1152,13 @@ def _clean_result(
 
 
 def _label_key(label: str | None) -> str:
-    normalized = re.sub(r"\s+", " ", (label or "").strip()).lower()
+    # CRM labels may decorate statuses with emoji; ignore those markers when
+    # comparing the assigned label with the rule's expected label.
+    without_symbols = "".join(
+        char for char in (label or "")
+        if not unicodedata.category(char).startswith("S")
+    )
+    normalized = re.sub(r"\s+", " ", without_symbols.strip()).lower()
     if normalized in {"dnc", "do not call", "do not call (dnc)"}:
         return "do not call"
     # Team synonyms for Not Interested (mirrors label_validator._label_key)
