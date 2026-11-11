@@ -898,31 +898,12 @@ async def _upsert_flag_review(
     )
 
 
-# Inbound messages are nobody's work product, so they never carry a texter.
-_OUTGOING_EXCLUDED_SQL = "('contact', 'lead', 'unknown')"
-
-# Time-ranged ownership resolved at the conversation's last outgoing message.
-# A day with a single owner produces the same name the day-grained
-# account_assignments row would, so this only changes anything where a shuffle
-# was actually recorded — which is the point.
-#
-# Requires `c` (conversations) in scope. Callers COALESCE it ahead of the
-# day-grained value: ap → aa → the frozen c.texter_name.
-_PERIOD_TEXTER_LATERAL = f"""
-    LEFT JOIN LATERAL (
-        SELECT p.texter_name
-          FROM messages m
-          JOIN assignment_periods p
-            ON LOWER(p.account_email) =
-               LOWER((SELECT email FROM accounts WHERE id = c.agent_id))
-           AND p.period @> m.sent_at
-         WHERE m.conversation_id = c.id
-           AND m.sent_at IS NOT NULL
-           AND LOWER(m.sender) NOT IN {_OUTGOING_EXCLUDED_SQL}
-         ORDER BY m.seq DESC, m.id DESC
-         LIMIT 1
-    ) ap ON TRUE
-"""
+# Owner-resolution SQL lives in database/owner_sql.py so the trend counters use
+# the exact same definition of "who owns this conversation" as these views.
+from database.owner_sql import (  # noqa: E402
+    OUTGOING_EXCLUDED_SQL as _OUTGOING_EXCLUDED_SQL,
+    PERIOD_TEXTER_LATERAL as _PERIOD_TEXTER_LATERAL,
+)
 
 
 async def _fetch_agent_conversations(agent_id: int) -> dict | None:
@@ -2523,13 +2504,11 @@ async def api_redflag_valid(body: FlagValidateRequest):
             # on that normal schedule silently update zero rows.
             date_row = await conn.fetchrow(
                 """SELECT (CASE WHEN convo_date <> '' THEN TO_DATE(convo_date, 'MM/DD/YYYY')
-                                ELSE audit_date END) AS audit_date,
-                          texter_name
+                                ELSE audit_date END) AS audit_date
                    FROM conversations WHERE id = $1""",
                 conv_id,
             )
-            audit_date  = date_row["audit_date"] if date_row else None
-            texter_name = (date_row["texter_name"] if date_row else None) or body.agent_name
+            audit_date = date_row["audit_date"] if date_row else None
 
             if body.validated:
                 await conn.execute(
@@ -2575,8 +2554,14 @@ async def api_redflag_valid(body: FlagValidateRequest):
                     body.agent_id, conv_id, flag_text,
                 )
 
-            # Fold the change into the agent's snapshot for that audit day.
-            await _recompute_trend_counts(conn, texter_name, audit_date)
+            # Fold the change into that audit day's snapshots. Every agent, not
+            # one: the counters follow the RESOLVED owner (database/owner_sql.py),
+            # which can differ from the texter stamped on the conversation, and
+            # the row a flag leaves needs refreshing as much as the one it lands
+            # on. Without a date this would sweep all history, so audit_date None
+            # (no conversation found) is skipped.
+            if audit_date is not None:
+                await _recompute_trend_counts(conn, None, audit_date)
 
         invalidate_review_stats_cache()
         logger.info(
