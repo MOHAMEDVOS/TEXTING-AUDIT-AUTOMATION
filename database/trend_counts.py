@@ -112,17 +112,16 @@ _UPDATE_COUNTS_SQL = f"""
     WITH {_latest_convos('$3')}
     UPDATE trend_snapshots ts
        SET total_issues = (
-               -- Per-flag: count how many of THIS conversation's individual
-               -- red_flags entries have their own matching validation_log row
-               -- (or are covered by a legacy pre-flag_text blanket row).
-               SELECT COALESCE(SUM(matched.cnt), 0)
+               -- One per CONVERSATION that has at least one confirmed flag. A
+               -- conversation with two confirmed flags is still one issue, so
+               -- this equals the number of cards the Detailed Dashboard shows.
+               -- (The Late Response / Wrong Label columns are per-flag-type and
+               -- can overlap, so they may add up to more than this.)
+               SELECT COUNT(*)
                  FROM latest lc
-                CROSS JOIN LATERAL (
-                    SELECT COUNT(*) AS cnt
-                      FROM jsonb_array_elements_text(lc.red_flags::jsonb) ft
-                     WHERE {_validated("ft")}
-                ) matched
                 WHERE {_BELONGS_TO_ROW}
+                  AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(lc.red_flags::jsonb) ft
+                               WHERE {_validated("ft")})
            ),
            late_response_flags = (
                SELECT COUNT(*)

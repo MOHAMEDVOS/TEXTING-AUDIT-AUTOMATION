@@ -263,12 +263,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_trends_unique ON trend_snapshots(agent_nam
 
 -- ── Per-flag-type breakdown of total_issues (additive) ────────────────────────
 -- All three counters mean VALIDATED flags only — an auditor's Mark Valid click
--- is what puts a number here (database/trend_counts.py). total_issues sums
--- validated flag instances across a day's conversations, so a conversation
--- with both a confirmed Late Response and a confirmed Wrong Label adds 2.
--- These two columns break that same total down by flag type so the Trends
+-- is what puts a number here (database/trend_counts.py). total_issues counts
+-- CONVERSATIONS with at least one validated flag, so a conversation with both a
+-- confirmed Late Response and a confirmed Wrong Label still adds 1.
+-- These two columns break that total down by flag type so the Trends
 -- table can show what's driving it — they can therefore sum to less than
--- total_issues (other flag types exist) or overlap with it (a convo counted
+-- total_issues (other flag types exist) or MORE than it (a convo counted
 -- in both). Because they share one gate, a row can never show a red
 -- total_issues tint next to two zero flag columns; that mismatch was the
 -- symptom of the raw-count write ai/scorer.py used to do.

@@ -4313,7 +4313,9 @@ async def api_detailed_dashboard(
                         -- own flag_text has been validated — or the
                         -- conversation only has a legacy pre-per-flag row
                         -- ('*' in validated_flags), which covers everything.
-                        CASE WHEN vl.validated_flags IS NULL THEN 0 ELSE (
+                        -- One per conversation, however many of its flags are confirmed:
+                        -- the same unit the trend's Total Issues counts.
+                        LEAST(1, CASE WHEN vl.validated_flags IS NULL THEN 0 ELSE (
                           -- Wrong-label text is deliberately excluded here: when
                           -- label_correct=false, ai/scorer.py injects that exact
                           -- string into red_flags too, so counting it from BOTH
@@ -4337,7 +4339,7 @@ async def api_detailed_dashboard(
                                         = ANY(vl.validated_flags)
                                    )
                                  THEN 1 ELSE 0 END
-                        ) END AS issue_count,
+                        ) END) AS issue_count,
                         vl.validated_flags,
                         (
                             SELECT m.body FROM messages m
