@@ -86,6 +86,20 @@ CREATE INDEX IF NOT EXISTS idx_conversations_agent   ON conversations(agent_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_texter  ON conversations(texter_name);
 CREATE INDEX IF NOT EXISTS idx_conversations_date    ON conversations(audit_date);
 CREATE INDEX IF NOT EXISTS idx_conversations_contact ON conversations(contact_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_active
+    ON conversations (agent_id, extracted_at DESC)
+    WHERE is_archived = FALSE;
+
+-- Folded in from migration 007: one contact per case/whitespace-insensitive
+-- name. Guarded like uq_conversations_agent_contact_day above — a database that
+-- still holds duplicate names is left alone rather than failing boot.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM contacts GROUP BY LOWER(TRIM(name)) HAVING COUNT(*) > 1) THEN
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_name_lower
+            ON contacts (LOWER(TRIM(name)));
+    END IF;
+END $$;
 
 -- ── messages (normalized from JSON blobs) ────────────────────────────────────
 CREATE TABLE IF NOT EXISTS messages (
@@ -394,6 +408,25 @@ CREATE TABLE IF NOT EXISTS validation_log (
 
 CREATE INDEX IF NOT EXISTS idx_validation_agent ON validation_log(agent_id);
 CREATE INDEX IF NOT EXISTS idx_validation_conv  ON validation_log(conversation_id);
+
+-- Folded in from migration 007: deleting an agent cascades to its validation and
+-- feedback rows instead of aborting. Only rewritten when the FK is not already
+-- ON DELETE CASCADE (confdeltype 'c'), so reboots are a no-op.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                    WHERE conname = 'validation_log_agent_id_fkey' AND confdeltype = 'c') THEN
+        ALTER TABLE validation_log DROP CONSTRAINT IF EXISTS validation_log_agent_id_fkey;
+        ALTER TABLE validation_log ADD CONSTRAINT validation_log_agent_id_fkey
+            FOREIGN KEY (agent_id) REFERENCES accounts(id) ON DELETE CASCADE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                    WHERE conname = 'flag_feedback_agent_id_fkey' AND confdeltype = 'c') THEN
+        ALTER TABLE flag_feedback DROP CONSTRAINT IF EXISTS flag_feedback_agent_id_fkey;
+        ALTER TABLE flag_feedback ADD CONSTRAINT flag_feedback_agent_id_fkey
+            FOREIGN KEY (agent_id) REFERENCES accounts(id) ON DELETE CASCADE;
+    END IF;
+END $$;
 
 -- Migration 008 (folded in): validate per FLAG, not per conversation. NULL
 -- means a legacy row from before this column existed — it covers every flag

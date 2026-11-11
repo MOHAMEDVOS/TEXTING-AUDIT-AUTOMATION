@@ -81,6 +81,8 @@ def status_label_keys(assigned_labels: list[str] | None) -> set[str]:
     """
     keys: set[str] = set()
     for raw in assigned_labels or []:
+        if not isinstance(raw, str):
+            continue
         if _norm(raw) in STATUS_LABELS:
             keys.add(_label_key(raw))
     return keys

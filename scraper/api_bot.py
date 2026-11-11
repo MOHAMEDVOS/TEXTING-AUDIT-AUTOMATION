@@ -54,8 +54,8 @@ def _build_transcript(messages: list[dict], agent_name: str) -> tuple[str, list[
         if not content:
             continue
 
-        sender = (agent_name.split()[0] if agent_name else "Agent") \
-            if direction == "OUTGOING" else "Contact"
+        agent_first = ((agent_name or "").split() or ["Agent"])[0]
+        sender = agent_first if direction == "OUTGOING" else "Contact"
 
         try:
             dt       = datetime.fromisoformat(created.replace("Z", "+00:00"))

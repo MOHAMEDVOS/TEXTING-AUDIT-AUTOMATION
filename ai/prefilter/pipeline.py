@@ -1,8 +1,9 @@
 """
 Pipeline orchestrator for the 4-tier ML pre-filter.
 
-Called by ai/analyzer.py before the Groq path. Returns a fully-formed
-analyzer-style dict if a tier short-circuited, or None to escalate to Groq.
+Called by ai/analyzer.py. Returns a fully-formed analyzer-style dict if a
+tier short-circuited, or None if no tier produced a result (the analyzer then
+applies its deterministic default). There is no LLM in the pipeline.
 
 Tier stack:
   T1 — Phrase matching (deterministic, instant)
@@ -11,11 +12,11 @@ Tier stack:
   T4 — Deterministic flag generator (terminal tier, zero API calls)
 
 When PREFILTER_T4_LIVE is True (default), T4 is the terminal tier and
-Groq is NEVER called.  When False, conversations that pass all tiers
-still escalate to Groq (pre-elimination behavior).
+produces the final result.  When False, conversations that pass all tiers
+fall through with no result (None).
 
 In shadow mode, ALL tiers run and record decisions to prefilter_decisions,
-but the result is always None so Groq still produces the final score.
+but the result is always None so nothing is acted on.
 """
 from __future__ import annotations
 
@@ -51,7 +52,7 @@ def run_prefilter(
 ) -> Optional[dict]:
     """
     Main entry point. Runs tiers in order, records the decision, returns
-    a Groq-shaped result dict if a tier short-circuited (and we're not in
+    an analyzer-shaped result dict if a tier short-circuited (and we're not in
     shadow mode), otherwise None.
 
     tier_hit values:
@@ -60,7 +61,7 @@ def run_prefilter(
       2 — Tier 2 embedding kNN
       3 — Tier 3 classifier
       4 — Tier 4 deterministic flag generator (terminal)
-      5 — escalated to Groq (T4 disabled, no tier confident)
+      5 — no result (T4 disabled, no tier confident)
 
     `db_pool` — optional asyncpg pool for recording the decision. The recording
     happens fire-and-forget; failure to record never blocks the pipeline.
@@ -86,12 +87,12 @@ def run_prefilter(
     if conversation_id is not None and db_pool is not None:
         _record_decision_async(db_pool, conversation_id, decision)
 
-    # In shadow mode, ALWAYS escalate so Groq still produces the truth.
-    # The decision row will get its `groq_scores` filled in later by scorer.py.
+    # In shadow mode, never act on the decision; return None.
+    # The decision row's historical `groq_scores` ground truth is filled in elsewhere.
     if settings.PREFILTER_SHADOW_MODE:
         logger.debug(
             f"[Prefilter] {contact_name}: tier {decision.tier_hit} "
-            f"({decision.decision}) — SHADOW, escalating to Groq"
+            f"({decision.decision}) — SHADOW, no action"
         )
         return None
 
@@ -108,20 +109,20 @@ def run_prefilter(
         logger.info(
             f"[Prefilter] {contact_name}: SHORT-CIRCUIT at tier {decision.tier_hit} "
             f"(conf={decision.confidence}, {decision.elapsed_ms:.1f}ms) — "
-            f"skipping Groq"
+            f"result returned"
         )
         # ── Semantic learner: capture high-quality short-circuits ──────
         _try_semantic_capture(conversation_id, messages, decision.result)
         return decision.result
 
     # Decision was "escalate" (T1 suspicious, or all tiers passed + T4 off).
-    # ML-only mode: never hand off to Groq — finalize with terminal T4 instead.
+    # ML-only mode: finalize with terminal T4 instead of returning None.
     if settings.PREFILTER_DISABLE_GROQ:
         terminal = _force_terminal_t4(messages, agent_name, contact_name, ft, assigned_labels)
         if terminal is not None:
             logger.info(
                 f"[Prefilter] {contact_name}: ML-ONLY terminal T4 "
-                f"(would have escalated at tier {decision.tier_hit}) — Groq disabled"
+                f"(would have escalated at tier {decision.tier_hit}) — ML-only"
             )
             _try_semantic_capture(conversation_id, messages, terminal.result)
             return terminal.result
@@ -234,7 +235,7 @@ def _run_tiers(
         except Exception as e:
             logger.warning(f"[Prefilter] Tier 4 failed for {contact_name}: {e}")
 
-    # No tier was confident + T4 disabled → escalate to Groq.
+    # No tier was confident + T4 disabled → no result.
     return PrefilterResult(tier_hit=5, decision="escalate", notes="all tiers passed, t4 disabled")
 
 

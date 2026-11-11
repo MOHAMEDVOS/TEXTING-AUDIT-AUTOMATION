@@ -74,7 +74,12 @@ async def firebase_sign_in(email: str, password: str, client: httpx.AsyncClient)
         "password": password,
         "returnSecureToken": True,
     })
-    data = resp.json()
+    try:
+        data = resp.json()
+    except ValueError:
+        raise RuntimeError(
+            f"Firebase sign-in failed for {email}: HTTP {resp.status_code}, non-JSON response"
+        ) from None
 
     if "idToken" not in data:
         error = data.get("error", {}).get("message", "Unknown error")

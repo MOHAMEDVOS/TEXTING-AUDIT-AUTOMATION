@@ -202,3 +202,9 @@ class TestFlagPlumbing:
     def test_no_labels_never_flags(self):
         assert _dispo_flags([], REPLIED) == []
         assert check_label_combination(None, REPLIED) == []
+
+
+def test_non_string_labels_are_skipped():
+    labels = ["Fishnet list", None, 5, "New Lead", "Wrong Number"]
+    assert check_label_combination(labels, REPLIED) == [CONFLICTING_DISPO_FLAG]
+    assert check_label_combination([None, 7], REPLIED) == []
