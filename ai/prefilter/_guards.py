@@ -637,6 +637,23 @@ def agent_continued_pitch_after_wn(messages: list[dict]) -> bool:
     return False
 
 
+def contact_evidence_is_stale_only(messages: list[dict]) -> bool:
+    """True when every contact reply in this slice is a stitched-in historical one.
+
+    ai.analyzer.filter_recent_messages applies a 7-day audit window. When that
+    window leaves no contact reply at all, it rescues the most recent one from
+    outside the window and tags it `_stale_rescue`, so a thread with real (but
+    old) engagement isn't misread as Stopped Responding. The rescue fires ONLY
+    in that no-reply-in-window case, so a tagged message present here means the
+    window itself holds nothing the contact said.
+    """
+    contact = [
+        m for m in (messages or [])
+        if (m.get("sender") or "").strip().lower() in ("contact", "lead")
+    ]
+    return bool(contact) and all(m.get("_stale_rescue") for m in contact)
+
+
 def apply_label_guards(result: dict, messages: list[dict]) -> None:
     """
     Deterministic label guard:
@@ -656,6 +673,31 @@ def apply_label_guards(result: dict, messages: list[dict]) -> None:
         if (m.get("sender") or "").strip().lower() in ("contact", "lead")
     )
     _wants_ni = bool(re.search(r"\bnot\s+interested\b", should_be, re.I))
+
+    # Guard 0: the only thing the contact ever said is older than the audit
+    # window and was stitched back in for context. Read it — it is what makes
+    # the label right — but never charge a wrong-label flag for it. The texter
+    # on shift this week did not see that message and cannot be held to it.
+    # Without this, a contact's "please don't contact me" from last year forced
+    # Do Not Call and flagged whoever happened to send this week's drip, on
+    # every single audit, forever.
+    if contact_evidence_is_stale_only(messages):
+        if result.get("label_correct") is False:
+            result["label_correct"] = True
+            result["label_should_be"] = assigned or should_be
+            result["label_reason"] = (
+                "The contact's last reply predates the audit window and was kept "
+                f"for context only — '{assigned}' is not flagged as a wrong label "
+                "for a message sent before this period."
+            )
+            flags = list(result.get("red_flags") or [])
+            result["red_flags"] = [
+                f for f in flags if "wrong label" not in str(f).lower()
+            ]
+            culprits = result.get("flag_culprits")
+            if isinstance(culprits, dict):
+                culprits.pop("__label__", None)
+        return
 
     # Guard A: texter chose DNC, auditor wants Not Interested, contact was
     # mocking/condescending ("do you ask dumb things on purpose?"). Dismissive
