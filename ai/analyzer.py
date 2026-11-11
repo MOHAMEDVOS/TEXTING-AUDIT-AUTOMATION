@@ -132,36 +132,11 @@ from ai.prefilter._guards import (
 )
 
 
-def _mark_label_wrong(
-    result: dict, assigned_labels: list[str] | None, hygiene_flags: list[str]
-) -> None:
-    """Make the label verdict agree with an F18/F19 flag. A label another rule
-    already judged wrong keeps its own, more specific, 'should be'."""
-    from ai.prefilter.label_combination import (
-        CONFLICTING_DISPO_FLAG,
-        status_label_keys,
-    )
-
-    if result.get("label_correct") is False:
-        return
-    if CONFLICTING_DISPO_FLAG in hygiene_flags:
-        left = status_label_keys(assigned_labels) - {"new lead"}
-        should = next(iter(left)).title() if len(left) == 1 else "a single status"
-        reason = "More than one status is on the account — clear the one that no longer applies."
-    else:
-        should = "a real status (not New Lead)"
-        reason = "The contact replied, so the account should no longer be on New Lead."
-    result["label_assigned"] = result.get("label_assigned") or ", ".join(assigned_labels or [])
-    result["label_correct"] = False
-    result["label_should_be"] = should
-    result["label_reason"] = reason
-    result["_dispo_hygiene"] = True
-
-
-def _apply_dispo_hygiene_flags(
+def _apply_dispo_hygiene(
     result: dict, messages: list[dict], assigned_labels: list[str] | None
 ) -> None:
-    """Flag an account the texter left on the wrong number of statuses.
+    """Mark the label wrong when the texter left the account on conflicting or
+    stale statuses (see ai.prefilter.label_combination).
 
     Lives here rather than in the T4 generator because Tier 1 short-circuits on
     trivial conversations (a bare "wrong number" reply never reaches T4), and a
@@ -169,57 +144,33 @@ def _apply_dispo_hygiene_flags(
     through _apply_deterministic_guards, so this is the one place that sees all
     of them.
 
-    These are state flags, not message flags: nobody said anything wrong, the
-    account was simply left untidy, so the holder at the last activity owns it
-    — the same rule the wrong-label flag uses.
-
-    The label itself is also marked wrong (label_correct=False), so the panel
-    never shows "Correct" next to a flag saying the dispositions are wrong, and
-    the scorer adds the usual "Wrong label" flag.
+    It only sets the label verdict; ai/scorer.py turns that into the one
+    "Wrong label" flag. A label another rule already judged wrong keeps its own,
+    more specific, 'should be'. The label is a state, not a message, so the
+    holder at the last activity owns it — the same rule every wrong label uses.
     """
-    try:
-        from ai.prefilter.label_combination import check_label_combination
-        from ai.prefilter._guards import canon_flag_text
-        from ai.prefilter.tier4_flag_generator import _culprit_ref
-    except Exception as e:  # pragma: no cover - import guard
-        logger.debug(f"[Analyzer] dispo hygiene unavailable: {e!r}")
-        return
+    from ai.prefilter.label_combination import check_label_combination
+    from ai.prefilter.tier4_flag_generator import _culprit_ref
 
-    new_flags = check_label_combination(assigned_labels, messages)
-    if not new_flags:
+    if result.get("label_correct") is False:
         return
-    _mark_label_wrong(result, assigned_labels, new_flags)
+    verdict = check_label_combination(assigned_labels, messages)
+    if not verdict:
+        return
+    result["label_assigned"] = result.get("label_assigned") or ", ".join(assigned_labels or [])
+    result["label_correct"] = False
+    result["label_should_be"], result["label_reason"] = verdict
+    result["_dispo_hygiene"] = True
 
-    flags = list(result.get("red_flags") or [])
-    existing = {canon_flag_text(f) for f in flags if isinstance(f, str)}
     culprits = result.get("flag_culprits")
     if not isinstance(culprits, dict):
         culprits = {}
-
-    for flag in new_flags:
-        key = canon_flag_text(flag)
-        if key in existing:
-            continue
-        flags.append(flag)
-        existing.add(key)
-        culprits.setdefault(
-            key,
-            _culprit_ref(
-                messages[-1] if messages else None,
-                len(messages) - 1 if messages else None,
-                "label",
-            ),
-        )
-
-    result["red_flags"] = flags
-    if result.get("_dispo_hygiene"):
-        culprits.setdefault("__label__", _culprit_ref(
-            messages[-1] if messages else None,
-            len(messages) - 1 if messages else None,
-            "label",
-        ))
-    if culprits:
-        result["flag_culprits"] = culprits
+    culprits.setdefault("__label__", _culprit_ref(
+        messages[-1] if messages else None,
+        len(messages) - 1 if messages else None,
+        "label",
+    ))
+    result["flag_culprits"] = culprits
 
 
 def _apply_deterministic_guards(
@@ -237,7 +188,7 @@ def _apply_deterministic_guards(
         flags = [f for f in flags if f != "Continued original pitch after wrong number."]
     result["red_flags"] = flags
     _apply_label_guards(result, messages)
-    _apply_dispo_hygiene_flags(result, messages, assigned_labels)
+    _apply_dispo_hygiene(result, messages, assigned_labels)
 
 
 # ── Main public function ──────────────────────────────────────────────────────

@@ -224,7 +224,7 @@ def _inject_wrong_label_flags(per_convo: list[dict]) -> None:
             should = (r.get("label_should_be") or "").strip()
             # AI sometimes returns label_correct=false but identical values — ignore it
             # Also treat semantically equivalent labels (Decision Maker, Verified, etc.) as correct
-            # F18/F19 name a state, not a label, so the equivalence check is skipped:
+            # Disposition-hygiene results name a state, not a label, so the equivalence check is skipped:
             # "New Lead, Wrong Number" would otherwise read as the same label as "Wrong Number".
             hygiene = r.get("_dispo_hygiene")
             if not wrong or not should or (not hygiene and _lk(wrong) == _lk(should)):

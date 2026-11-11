@@ -1,14 +1,18 @@
-"""Disposition hygiene — F18/F19, ai/prefilter/label_combination.py.
+"""Disposition hygiene, ai/prefilter/label_combination.py.
 
 An account must end on ONE status. SmarterContact seeds every contact with a
 campaign tag plus "New Lead", so a texter who sets the real outcome without
 clearing "New Lead" leaves the CRM saying two contradictory things:
 
-    New Lead, Wrong Number      -> F18
-    Do Not Call, New lead       -> F18
-    New Lead  (contact replied) -> F19
+    New Lead, Wrong Number      -> wrong label
+    Do Not Call, New lead       -> wrong label
+    New Lead  (contact replied) -> wrong label
 
-The three things that must NOT flag are the whole difficulty of the rule:
+It is reported as an ordinary wrong label (label_correct False plus the scorer's
+"Wrong label" flag), so Trends counts it under Wrong Label and there is no
+separate flag.
+
+The things that must NOT be marked wrong are the whole difficulty of the rule:
 campaign/list tags (every row has one), team synonyms that mean the same
 status ("Decision Maker, Not interested"), and genuine two-word dispositions
 ("Lead, Pushed to client", "FU1, WL drip").
@@ -26,19 +30,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from ai.analyzer import analyze_conversation
-from ai.prefilter._guards import (
-    CONFIDENCE_MAP,
-    FLAG_ID_MAP,
-    SEVERITY_MAP,
-    WHITELIST_FLAG_OUTPUTS,
-    normalize_red_flags,
-)
-from ai.prefilter.label_combination import (
-    CONFLICTING_DISPO_FLAG,
-    STALE_NEW_LEAD_FLAG,
-    check_label_combination,
-    status_label_keys,
-)
+from ai.prefilter.label_combination import check_label_combination, status_label_keys
 
 NOW = datetime(2026, 11, 10, 11, 16)
 
@@ -70,10 +62,19 @@ OLD_REPLY = [
 ]
 
 
-def _dispo_flags(labels: list[str], thread: list[dict]) -> list[str]:
+# A reply no other label rule has an opinion about, so only this rule can mark
+# the label wrong.
+NEUTRAL = [
+    _msg("Emma", "Hi Sheriff, have you thought about selling?", NOW - timedelta(minutes=5)),
+    _msg("Contact", "Hi, sorry", NOW),
+]
+
+
+def _flagged(labels: list[str], thread: list[dict]) -> bool:
+    """True when the hygiene rule marked the label wrong."""
     result = analyze_conversation(thread, "Emma", "Sheriff Kristin",
                                   assigned_labels=labels)
-    return [f for f in (result.get("red_flags") or []) if f.startswith("Left ")]
+    return bool(result.get("_dispo_hygiene"))
 
 
 class TestStatusLabelKeys:
@@ -98,7 +99,7 @@ class TestStatusLabelKeys:
 
 
 class TestConflictingDispositions:
-    """F18 — two statuses that don't belong together."""
+    """Two statuses that don't belong together."""
 
     @pytest.mark.parametrize("labels", [
         ["Fishnet list", "New Lead", "Wrong Number"],   # the Sheriff Kristin case
@@ -108,7 +109,7 @@ class TestConflictingDispositions:
         ["Wrong Number", "Maybe later"],
     ])
     def test_unrelated_statuses_are_flagged(self, labels):
-        assert _dispo_flags(labels, REPLIED) == [CONFLICTING_DISPO_FLAG]
+        assert _flagged(labels, NEUTRAL)
 
     @pytest.mark.parametrize("labels", [
         ["Fishnet list", "Not interested", "Decision Maker"],  # 94 rows in the snapshot
@@ -119,7 +120,7 @@ class TestConflictingDispositions:
         ["Waiting to be pushed", "Lead"],
     ])
     def test_coherent_label_sets_are_not_flagged(self, labels):
-        assert _dispo_flags(labels, REPLIED) == []
+        assert not _flagged(labels, NEUTRAL)
 
     @pytest.mark.parametrize("labels", [
         ["Fishnet list", "Wrong Number"],
@@ -128,98 +129,48 @@ class TestConflictingDispositions:
         ["Fishnet list", "Undefined"],
     ])
     def test_one_status_plus_a_campaign_tag_is_fine(self, labels):
-        assert _dispo_flags(labels, REPLIED) == []
+        assert not _flagged(labels, NEUTRAL)
 
 
 class TestStaleNewLead:
-    """F19 — 'New Lead' left on after the contact actually engaged."""
+    """'New Lead' left on after the contact actually engaged."""
 
     def test_flagged_when_the_contact_replied_in_window(self):
-        assert _dispo_flags(["Fishnet list", "New Lead"], REPLIED) == [STALE_NEW_LEAD_FLAG]
+        assert _flagged(["Fishnet list", "New Lead"], NEUTRAL)
 
     def test_not_flagged_when_the_contact_never_replied(self):
         """A drip firing into silence is still genuinely a New Lead."""
-        assert _dispo_flags(["Fishnet list", "New Lead"], SILENT) == []
+        assert not _flagged(["Fishnet list", "New Lead"], SILENT)
 
     def test_not_flagged_when_the_only_reply_predates_the_window(self):
         """The 40-days-ago case: the texter on shift never saw that reply, so
         they cannot be charged for not acting on it. Same reasoning as the
         stale-rescue label guard."""
-        assert _dispo_flags(["Fishnet list", "New Lead"], OLD_REPLY) == []
+        assert not _flagged(["Fishnet list", "New Lead"], OLD_REPLY)
 
     def test_an_empty_contact_message_does_not_count_as_a_reply(self):
         thread = [
             _msg("Contact", "   ", NOW - timedelta(minutes=5)),
             _msg("Emma", "Checking back in", NOW),
         ]
-        assert _dispo_flags(["Fishnet list", "New Lead"], thread) == []
+        assert not _flagged(["Fishnet list", "New Lead"], thread)
 
-    def test_only_new_lead_triggers_this_one(self):
-        """A single real status is a finished disposition, not a stale one."""
-        assert _dispo_flags(["Fishnet list", "Wrong Number"], REPLIED) == []
+    def test_a_single_real_status_is_a_finished_disposition(self):
+        assert not _flagged(["Fishnet list", "Wrong Number"], NEUTRAL)
 
 
-class TestFlagPlumbing:
-    """A flag the rest of the pipeline doesn't know about is invisible."""
-
-    @pytest.mark.parametrize("flag", [CONFLICTING_DISPO_FLAG, STALE_NEW_LEAD_FLAG])
-    def test_flag_survives_the_whitelist(self, flag):
-        """normalize_red_flags drops anything not in WHITELIST_FLAG_OUTPUTS."""
-        assert flag in WHITELIST_FLAG_OUTPUTS
-        assert normalize_red_flags([flag]) == [flag]
-
-    @pytest.mark.parametrize("flag,fid", [
-        (CONFLICTING_DISPO_FLAG, "F18"),
-        (STALE_NEW_LEAD_FLAG, "F19"),
-    ])
-    def test_flag_carries_id_severity_and_confidence(self, flag, fid):
-        assert FLAG_ID_MAP[flag] == fid
-        assert SEVERITY_MAP[fid] == "medium"
-        assert CONFIDENCE_MAP[fid] > 0
-
-    def test_culprit_ref_is_recorded_so_attribution_is_not_legacy(self):
-        """Without a ref, database/db.py falls back to the conversation owner
-        and stamps attribution='legacy' — wrong for a brand-new flag."""
-        from ai.prefilter._guards import canon_flag_text
-
-        result = analyze_conversation(
-            REPLIED, "Emma", "Sheriff Kristin",
-            assigned_labels=["Fishnet list", "New Lead", "Wrong Number"],
-        )
-        culprits = result.get("flag_culprits") or {}
-        assert canon_flag_text(CONFLICTING_DISPO_FLAG) in culprits
-
-    def test_runs_on_tier1_short_circuits(self):
-        """A bare 'wrong number' reply is answered by Tier 1 and never reaches
-        the T4 generator. The flag must still appear."""
-        result = analyze_conversation(
-            REPLIED, "Emma", "Sheriff Kristin",
-            assigned_labels=["Fishnet list", "New Lead", "Wrong Number"],
-        )
-        assert result.get("model_used", "").startswith("prefilter_t1")
-        assert CONFLICTING_DISPO_FLAG in (result.get("red_flags") or [])
-
-    def test_no_labels_never_flags(self):
-        assert _dispo_flags([], REPLIED) == []
-        assert check_label_combination(None, REPLIED) == []
+def test_no_labels_never_flags():
+    assert not _flagged([], REPLIED)
+    assert check_label_combination(None, REPLIED) is None
 
 
 def test_non_string_labels_are_skipped():
-    labels = ["Fishnet list", None, 5, "New Lead", "Wrong Number"]
-    assert check_label_combination(labels, REPLIED) == [CONFLICTING_DISPO_FLAG]
-    assert check_label_combination([None, 7], REPLIED) == []
+    assert check_label_combination(["Fishnet list", None, 5, "New Lead", "Wrong Number"], REPLIED)
+    assert check_label_combination([None, 7], REPLIED) is None
 
 
-# A reply no other label rule has an opinion about, so only F18/F19 can mark
-# the label wrong.
-NEUTRAL = [
-    _msg("Emma", "Hi Sheriff, have you thought about selling?", NOW - timedelta(minutes=5)),
-    _msg("Contact", "Hi, sorry", NOW),
-]
-
-
-class TestLabelIsMarkedWrong:
-    """F18/F19 must not sit next to a 'Correct' label verdict."""
+class TestItIsOneWrongLabelFlag:
+    """The mixed disposition is the wrong-label flag, not a second flag."""
 
     def _result(self, labels, thread=NEUTRAL):
         return analyze_conversation(thread, "Emma", "Sheriff Kristin",
@@ -229,7 +180,6 @@ class TestLabelIsMarkedWrong:
         r = self._result(["Fishnet list", "Missed Call", "Not interested", "New Lead"])
         assert r["label_correct"] is False
         assert r["label_should_be"] == "a single status"
-        assert r["_dispo_hygiene"] is True
 
     def test_new_lead_plus_one_status_names_that_status(self):
         r = self._result(["Fishnet list", "New Lead", "Maybe later"])
@@ -246,15 +196,29 @@ class TestLabelIsMarkedWrong:
         assert r["label_correct"] is not False
         assert "_dispo_hygiene" not in r
 
+    def test_no_separate_red_flag_is_added(self):
+        r = self._result(["Fishnet list", "New Lead", "Maybe later"])
+        assert not any("disposition" in f.lower() or "new lead" in f.lower()
+                       for f in (r.get("red_flags") or []))
+
     def test_wrong_label_culprit_is_recorded(self):
+        """Without a ref, database/db.py falls back to the conversation owner
+        and stamps attribution='legacy'."""
         r = self._result(["Fishnet list", "New Lead", "Maybe later"])
         assert "__label__" in (r.get("flag_culprits") or {})
+
+    def test_runs_on_tier1_short_circuits(self):
+        """A bare 'wrong number' reply is answered by Tier 1 and never reaches
+        the T4 generator. The label must still be marked wrong."""
+        r = self._result(["Fishnet list", "New Lead", "Wrong Number"], REPLIED)
+        assert r.get("model_used", "").startswith("prefilter_t1")
+        assert r["label_correct"] is False
 
 
 class TestScorerKeepsTheWrongLabel:
     """ai/scorer.py re-checks every label_correct=False result. For 'New Lead,
     Wrong Number' it once judged the label equal to 'Wrong Number', reset it to
-    Correct and added no flag — the exact case F18 exists for."""
+    Correct and added no flag."""
 
     def _scored(self, labels, thread=REPLIED):
         from ai.scorer import _inject_wrong_label_flags
@@ -267,17 +231,13 @@ class TestScorerKeepsTheWrongLabel:
         ["Fishnet list", "New Lead", "Wrong Number"],
         ["Do Not Call", "New lead"],
         ["New Lead", "Do Not Call"],
+        ["Fishnet list", "New Lead"],
     ])
-    def test_conflict_stays_wrong_and_gets_the_wrong_label_flag(self, labels):
+    def test_conflict_gets_exactly_one_wrong_label_flag(self, labels):
         r = self._scored(labels)
         assert r["label_correct"] is False
-        assert any(f.startswith("Wrong label:") for f in r["red_flags"])
-        assert CONFLICTING_DISPO_FLAG in r["red_flags"]
-
-    def test_stale_new_lead_gets_the_wrong_label_flag(self):
-        r = self._scored(["Fishnet list", "New Lead"])
-        assert r["label_correct"] is False
-        assert any(f.startswith("Wrong label:") for f in r["red_flags"])
+        assert [f for f in r["red_flags"] if f.startswith("Wrong label:")]
+        assert len(r["red_flags"]) == len([f for f in r["red_flags"] if f.startswith("Wrong label:")])
 
     def test_equivalent_labels_are_still_reset_to_correct(self):
         """The scorer's original check must keep working for ordinary results."""

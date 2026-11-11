@@ -9,6 +9,10 @@ applies. Leaving both on is the defect this module catches:
     Do Not Call, New lead       -> same
     New Lead  (contact replied) -> status never set at all
 
+Both are reported as an ordinary wrong label (ai.analyzer marks label_correct
+False, the scorer adds the "Wrong label" flag), so the Trends Wrong Label count
+covers them and there is no separate flag to validate.
+
 Three things are deliberately NOT flagged:
 
 1. Campaign / list tags. Every conversation carries one ("Fishnet list" is on
@@ -36,13 +40,6 @@ _guards.contact_evidence_is_stale_only().
 from __future__ import annotations
 
 from ai.prefilter.label_validator import _label_key, _norm
-
-# ── Flag text ────────────────────────────────────────────────────────────────
-# Fixed strings: dashboard/views/index.html FLAG_SHORT maps flags by exact text,
-# and database/db.py keys attribution off canon_flag_text(), so these must not
-# be built by interpolation.
-CONFLICTING_DISPO_FLAG = "Left conflicting dispositions on the account."
-STALE_NEW_LEAD_FLAG = "Left New Lead after the contact replied."
 
 # ── Status vocabulary ────────────────────────────────────────────────────────
 # Every status the team uses, as dashboard/static/labels-guide.html lists them,
@@ -109,16 +106,20 @@ def _has_fresh_contact_reply(messages: list[dict] | None) -> bool:
 def check_label_combination(
     assigned_labels: list[str] | None,
     messages: list[dict] | None,
-) -> list[str]:
-    """Return the disposition-hygiene flags this account has earned."""
+) -> tuple[str, str] | None:
+    """Return (should_be, reason) when the account's statuses are wrong, else None."""
     keys = status_label_keys(assigned_labels)
-    flags: list[str] = []
 
     if len(keys) > 1:
         # Legal only when every status belongs to one multi-part disposition.
-        if not any(keys <= stack for stack in _COHERENT_STACKS):
-            flags.append(CONFLICTING_DISPO_FLAG)
-    elif keys == {"new lead"} and _has_fresh_contact_reply(messages):
-        flags.append(STALE_NEW_LEAD_FLAG)
-
-    return flags
+        if any(keys <= stack for stack in _COHERENT_STACKS):
+            return None
+        left = keys - {"new lead"}
+        should = next(iter(left)).title() if len(left) == 1 else "a single status"
+        return should, "More than one status is on the account — clear the one that no longer applies."
+    if keys == {"new lead"} and _has_fresh_contact_reply(messages):
+        return (
+            "a real status (not New Lead)",
+            "The contact replied, so the account should no longer be on New Lead.",
+        )
+    return None
