@@ -3950,6 +3950,8 @@ const FLAG_SHORT = {
   "Contact denied knowing the address after providing property details. Agent should have asked clarifying questions (parcel number, correct address) instead of closing the conversation. Label should be Potential or Undefined, not Bluffer.":    { label: "Address",      tier: "med"  },
   "No handoff message sent after lead push.":                                                                                                                                                                                                        { label: "No handoff",   tier: "med"  },
   "Slow response time to an engaged lead.":                                                                                                                                                                                                          { label: "Slow reply",   tier: "med"  },
+  "Left conflicting dispositions on the account.":                                                                                                                                                                                                   { label: "Mixed dispo",  tier: "med"  },
+  "Left New Lead after the contact replied.":                                                                                                                                                                                                        { label: "Stale dispo",  tier: "med"  },
 };
 
 function wrongLabelFlagText(a) {

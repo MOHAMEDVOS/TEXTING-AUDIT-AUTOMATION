@@ -132,7 +132,67 @@ from ai.prefilter._guards import (
 )
 
 
-def _apply_deterministic_guards(result: dict, messages: list[dict]) -> None:
+def _apply_dispo_hygiene_flags(
+    result: dict, messages: list[dict], assigned_labels: list[str] | None
+) -> None:
+    """Flag an account the texter left on the wrong number of statuses.
+
+    Lives here rather than in the T4 generator because Tier 1 short-circuits on
+    trivial conversations (a bare "wrong number" reply never reaches T4), and a
+    stale disposition is exactly as wrong on those. Every tier's result passes
+    through _apply_deterministic_guards, so this is the one place that sees all
+    of them.
+
+    These are state flags, not message flags: nobody said anything wrong, the
+    account was simply left untidy, so the holder at the last activity owns it
+    — the same rule the wrong-label flag uses.
+
+    Note these do NOT move the scores. Tier scoring (compliance/script) is
+    already computed by the time we get here, which matches how the existing
+    wrong-label finding behaves: a CRM hygiene defect is surfaced for coaching,
+    not charged against the agent's compliance.
+    """
+    try:
+        from ai.prefilter.label_combination import check_label_combination
+        from ai.prefilter._guards import canon_flag_text
+        from ai.prefilter.tier4_flag_generator import _culprit_ref
+    except Exception as e:  # pragma: no cover - import guard
+        logger.debug(f"[Analyzer] dispo hygiene unavailable: {e!r}")
+        return
+
+    new_flags = check_label_combination(assigned_labels, messages)
+    if not new_flags:
+        return
+
+    flags = list(result.get("red_flags") or [])
+    existing = {canon_flag_text(f) for f in flags if isinstance(f, str)}
+    culprits = result.get("flag_culprits")
+    if not isinstance(culprits, dict):
+        culprits = {}
+
+    for flag in new_flags:
+        key = canon_flag_text(flag)
+        if key in existing:
+            continue
+        flags.append(flag)
+        existing.add(key)
+        culprits.setdefault(
+            key,
+            _culprit_ref(
+                messages[-1] if messages else None,
+                len(messages) - 1 if messages else None,
+                "label",
+            ),
+        )
+
+    result["red_flags"] = flags
+    if culprits:
+        result["flag_culprits"] = culprits
+
+
+def _apply_deterministic_guards(
+    result: dict, messages: list[dict], assigned_labels: list[str] | None = None
+) -> None:
     """Drop flags that require a follow-up condition the transcript doesn't support."""
     flags = list(result.get("red_flags") or [])
     if "Continued texting after explicit opt-out." in flags and not _agent_continued_after_opt_out(messages):
@@ -145,6 +205,7 @@ def _apply_deterministic_guards(result: dict, messages: list[dict]) -> None:
         flags = [f for f in flags if f != "Continued original pitch after wrong number."]
     result["red_flags"] = flags
     _apply_label_guards(result, messages)
+    _apply_dispo_hygiene_flags(result, messages, assigned_labels)
 
 
 # ── Main public function ──────────────────────────────────────────────────────
@@ -190,7 +251,9 @@ def analyze_conversation(
         )
         if prefilter_result is not None:
             if isinstance(prefilter_result, dict):
-                _apply_deterministic_guards(prefilter_result, messages)
+                _apply_deterministic_guards(
+                    prefilter_result, messages, assigned_labels
+                )
             if conversation_id is not None:
                 prefilter_result.setdefault("conversation_id", conversation_id)
             return prefilter_result

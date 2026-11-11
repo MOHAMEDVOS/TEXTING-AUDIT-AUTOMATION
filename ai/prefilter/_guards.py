@@ -35,6 +35,9 @@ WHITELIST_FLAG_OUTPUTS = [
     "No handoff message sent after lead push.",
     # FLAG 17 — slow agent response to an engaged lead (ai.response_time)
     "Slow response time to an engaged lead.",
+    # FLAG 18/19 — disposition hygiene (ai.prefilter.label_combination)
+    "Left conflicting dispositions on the account.",
+    "Left New Lead after the contact replied.",
 ]
 
 # ── Phase 1: stable flag IDs + rule-assigned metadata ────────────────────────
@@ -60,6 +63,8 @@ FLAG_ID_MAP: dict[str, str] = {
     "Contact denied knowing the address after providing property details. Agent should have asked clarifying questions (parcel number, correct address) instead of closing the conversation. Label should be Potential or Undefined, not Bluffer.": "F14",
     "No handoff message sent after lead push.":                                    "F16",
     "Slow response time to an engaged lead.":                                       "F17",
+    "Left conflicting dispositions on the account.":                                "F18",
+    "Left New Lead after the contact replied.":                                     "F19",
 }
 
 # Severity is a fixed business attribute of the flag — never model-decided.
@@ -71,6 +76,8 @@ SEVERITY_MAP: dict[str, str] = {
     # F17 default = medium (yellow). Overridden to "high" (red) per-case in the
     # scorer when the worst gap exceeds the red threshold.
     "F17": "medium",
+    # Disposition hygiene: a CRM tidiness defect, not a compliance breach.
+    "F18": "medium", "F19": "medium",
 }
 
 # Rule-assigned confidence by detection strength (no model confidence available).
@@ -81,6 +88,9 @@ CONFIDENCE_MAP: dict[str, float] = {
     "F6": 0.60, "F7": 0.60, "F8": 0.60, "F9": 0.60, "F10": 0.60,
     "F11": 0.60, "F12": 0.60, "F13": 0.40, "F14": 0.60, "F15": 0.60,
     "F16": 0.85, "F17": 0.90,
+    # Set logic over the assigned labels themselves — nothing is inferred from
+    # the transcript, so there is no regex or judgement to be wrong about.
+    "F18": 0.95, "F19": 0.90,
 }
 
 # Context-heavy / fragile flags routed to Needs-Review more aggressively
@@ -109,6 +119,8 @@ DEFAULT_COACHING: dict[str, str] = {
     "F15": "On an above-market price, switch to the referral close rather than continuing to push.",
     "F16": "A pushed lead must be closed with a handoff message — coach the agent to always tell the lead the team will reach out.",
     "F17": "Reply to engaged leads within 10 minutes of shift time (10a-7p ET, Mon-Fri); over 15 is a red alert and over 25 needs immediate attention. Off-shift and weekend gaps are not counted.",
+    "F18": "Clear the previous disposition when setting the new one — an account should end with a single status. Stacking 'New Lead' under the real outcome leaves the CRM wrong for the next texter.",
+    "F19": "Once the contact replies, set the real disposition. 'New Lead' is only correct while the drip is still going out unanswered.",
     WRONG_LABEL_FLAG_ID: "Re-label the conversation per the audit; review the labelling rule that was missed.",
 }
 
