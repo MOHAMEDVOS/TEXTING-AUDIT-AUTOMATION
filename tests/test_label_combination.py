@@ -249,3 +249,42 @@ class TestLabelIsMarkedWrong:
     def test_wrong_label_culprit_is_recorded(self):
         r = self._result(["Fishnet list", "New Lead", "Maybe later"])
         assert "__label__" in (r.get("flag_culprits") or {})
+
+
+class TestScorerKeepsTheWrongLabel:
+    """ai/scorer.py re-checks every label_correct=False result. For 'New Lead,
+    Wrong Number' it once judged the label equal to 'Wrong Number', reset it to
+    Correct and added no flag — the exact case F18 exists for."""
+
+    def _scored(self, labels, thread=REPLIED):
+        from ai.scorer import _inject_wrong_label_flags
+
+        r = analyze_conversation(thread, "Emma", "Sheriff Kristin", assigned_labels=labels)
+        _inject_wrong_label_flags([r])
+        return r
+
+    @pytest.mark.parametrize("labels", [
+        ["Fishnet list", "New Lead", "Wrong Number"],
+        ["Do Not Call", "New lead"],
+        ["New Lead", "Do Not Call"],
+    ])
+    def test_conflict_stays_wrong_and_gets_the_wrong_label_flag(self, labels):
+        r = self._scored(labels)
+        assert r["label_correct"] is False
+        assert any(f.startswith("Wrong label:") for f in r["red_flags"])
+        assert CONFLICTING_DISPO_FLAG in r["red_flags"]
+
+    def test_stale_new_lead_gets_the_wrong_label_flag(self):
+        r = self._scored(["Fishnet list", "New Lead"])
+        assert r["label_correct"] is False
+        assert any(f.startswith("Wrong label:") for f in r["red_flags"])
+
+    def test_equivalent_labels_are_still_reset_to_correct(self):
+        """The scorer's original check must keep working for ordinary results."""
+        from ai.scorer import _inject_wrong_label_flags
+
+        r = {"label_correct": False, "label_assigned": "Verified",
+             "label_should_be": "Not Interested", "red_flags": []}
+        _inject_wrong_label_flags([r])
+        assert r["label_correct"] is True
+        assert r["red_flags"] == []

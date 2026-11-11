@@ -216,6 +216,42 @@ def _is_allowed_label_name(label: str) -> bool:
     return (label or "").strip().lower() in _ALLOWED_LABELS
 
 
+def _inject_wrong_label_flags(per_convo: list[dict]) -> None:
+    """Turn each label_correct=False result into a visible 'Wrong label' red flag."""
+    for r in per_convo:
+        if r.get("label_correct") is False:
+            wrong  = (r.get("label_assigned") or "").strip()
+            should = (r.get("label_should_be") or "").strip()
+            # AI sometimes returns label_correct=false but identical values — ignore it
+            # Also treat semantically equivalent labels (Decision Maker, Verified, etc.) as correct
+            # F18/F19 name a state, not a label, so the equivalence check is skipped:
+            # "New Lead, Wrong Number" would otherwise read as the same label as "Wrong Number".
+            hygiene = r.get("_dispo_hygiene")
+            if not wrong or not should or (not hygiene and _lk(wrong) == _lk(should)):
+                r["label_correct"] = True
+                continue
+            # Routing hints are not real labels — never show as a flag
+            if "groq" in should.lower() or "needs groq" in should.lower():
+                r["label_correct"] = True
+                continue
+            # AI can hallucinate non-existent labels; ignore those wrong-label claims.
+            if not hygiene and not _is_allowed_label_name(should):
+                r["label_correct"] = True
+                continue
+            flag = f"Wrong label: assigned '{wrong}' but should be '{should}'"
+            # Defensible-alternative pairs (DNC vs Not Interested with no explicit
+            # opt-out; a specialist label like Investor vs generic Not Interested)
+            # still surface as a flag — label drift stays visible — but are marked
+            # so _guards._detail_wrong_label emits them at needs_review confidence
+            # instead of counting as a texter error. See is_defensible_alternative().
+            if is_defensible_alternative(wrong, should):
+                flag += DEFENSIBLE_ALTERNATIVE_SUFFIX
+            flags = list(r.get("red_flags") or [])
+            if flag not in flags:
+                flags.insert(0, flag)
+            r["red_flags"] = flags
+
+
 def _source_from_model(model_used: str | None) -> str:
     """Map a result's model_used string to a conversation_scores.source value."""
     m = model_used or ""
@@ -452,35 +488,7 @@ async def score_agent_conversations(
         return {}
 
     # ── Inject wrong-label as a red flag on each conversation ───────────────
-    for r in per_convo:
-        if r.get("label_correct") is False:
-            wrong  = (r.get("label_assigned") or "").strip()
-            should = (r.get("label_should_be") or "").strip()
-            # AI sometimes returns label_correct=false but identical values — ignore it
-            # Also treat semantically equivalent labels (Decision Maker, Verified, etc.) as correct
-            if not wrong or not should or _lk(wrong) == _lk(should):
-                r["label_correct"] = True
-                continue
-            # Routing hints are not real labels — never show as a flag
-            if "groq" in should.lower() or "needs groq" in should.lower():
-                r["label_correct"] = True
-                continue
-            # AI can hallucinate non-existent labels; ignore those wrong-label claims.
-            if not r.get("_dispo_hygiene") and not _is_allowed_label_name(should):
-                r["label_correct"] = True
-                continue
-            flag = f"Wrong label: assigned '{wrong}' but should be '{should}'"
-            # Defensible-alternative pairs (DNC vs Not Interested with no explicit
-            # opt-out; a specialist label like Investor vs generic Not Interested)
-            # still surface as a flag — label drift stays visible — but are marked
-            # so _guards._detail_wrong_label emits them at needs_review confidence
-            # instead of counting as a texter error. See is_defensible_alternative().
-            if is_defensible_alternative(wrong, should):
-                flag += DEFENSIBLE_ALTERNATIVE_SUFFIX
-            flags = list(r.get("red_flags") or [])
-            if flag not in flags:
-                flags.insert(0, flag)
-            r["red_flags"] = flags
+    _inject_wrong_label_flags(per_convo)
 
     # Strip any injected wrong-label flags that are known-invalid
     for r in per_convo:
