@@ -2,7 +2,7 @@
 Scorer — Phase 2/3 bridge.
 
 Runs the local model analyzer on every conversation for an agent,
-aggregates the scores, and writes the result to the audit_scores table.
+collects flags and label checks, and writes the result to the audit_scores table.
 """
 import asyncio
 import json
@@ -363,8 +363,7 @@ async def score_agent_conversations(
 
             # ── F17: slow agent response time (deterministic, label-gated) ──
             # Runs after analysis regardless of which tier produced the result,
-            # so a "clean"/short-circuited convo is still checked. Deducting
-            # here feeds the script_adherence aggregation below.
+            # so a "clean"/short-circuited convo is still checked.
             # F17 applies its own strict selected-audit-date filter to the real
             # message timestamps. Do not pass the analyzer's rolling 7-day
             # window here: that window is relative to the newest transcript
@@ -380,9 +379,6 @@ async def score_agent_conversations(
                 if RESPONSE_TIME_FLAG not in rflags:
                     rflags.append(RESPONSE_TIME_FLAG)
                     result["red_flags"] = rflags
-                    sa = result.get("script_adherence_score")
-                    if isinstance(sa, (int, float)):
-                        result["script_adherence_score"] = max(0.0, sa - _rt["script_penalty"])
                     result["_resp_time"] = _rt
 
                     # F17 is injected here rather than by the flag generator, so
@@ -413,12 +409,11 @@ async def score_agent_conversations(
             # mutations (wrong-label injection, second filter) are complete.
             result["_parsed_messages"] = parsed
 
-            score = result.get("compliance_score")
             flags = len(result.get("red_flags") or [])
             funnel = result.get("funnel_stage_reached") or "?"
             logger.info(
                 f"[Scorer] {agent_name} [{idx}/{total}] {contact} — "
-                f"adherence={score} funnel={funnel} flags={flags}"
+                f"funnel={funnel} flags={flags}"
             )
             return result
 
@@ -455,19 +450,6 @@ async def score_agent_conversations(
     if not per_convo:
         logger.warning(f"[Scorer] {agent_name}: all conversations had empty parsed_messages")
         return {}
-
-    # ── Aggregate numeric scores ─────────────────────────────────────────────
-    def _avg(key: str) -> float | None:
-        vals = [r[key] for r in per_convo if r.get(key) is not None]
-        return round(sum(vals) / len(vals), 1) if vals else None
-
-    compliance   = _avg("compliance_score")
-    sentiment    = _avg("sentiment_score")
-    professional = _avg("professionalism_score")
-    script       = _avg("script_adherence_score")
-
-    scored_vals = [x for x in [compliance, sentiment, professional, script] if x is not None]
-    overall = round(sum(scored_vals) / len(scored_vals), 1) if scored_vals else None
 
     # ── Inject wrong-label as a red flag on each conversation ───────────────
     for r in per_convo:
@@ -603,10 +585,6 @@ async def score_agent_conversations(
         "per_conversation": [
             {
                 "contact": r.get("contact_name", "Contact"),
-                "compliance": r.get("compliance_score"),
-                "sentiment": r.get("sentiment_score"),
-                "professionalism": r.get("professionalism_score"),
-                "script_adherence": r.get("script_adherence_score"),
                 "funnel_stage_reached": r.get("funnel_stage_reached"),
                 "pillars_gathered": r.get("pillars_gathered", []),
                 "rebuttals_used": r.get("rebuttals_used", []),
@@ -642,7 +620,7 @@ async def score_agent_conversations(
             )
 
             if existing_row:
-                # Merge: combine per_conversation lists, recompute weighted averages
+                # Merge: combine per_conversation lists
                 try:
                     prev_details = existing_row["details"] or {}
                     if isinstance(prev_details, str):
@@ -656,25 +634,6 @@ async def score_agent_conversations(
                 prev_pc_kept = [pc for pc in prev_pc if (pc.get("contact") or "").lower().strip() not in new_contacts]
                 merged_pc = prev_pc_kept + details["per_conversation"]
                 merged_count = len(merged_pc)
-
-                # Weighted average of scores across all conversations
-                def _wavg(key: str) -> float | None:
-                    vals = [pc[key] for pc in merged_pc if pc.get(key) is not None]
-                    return round(sum(vals) / len(vals), 2) if vals else None
-
-                merged_compliance   = _wavg("compliance")
-                merged_sentiment    = _wavg("sentiment")
-                merged_professional = _wavg("professionalism")
-                merged_script       = _wavg("script_adherence")
-                merged_overall = round(
-                    sum(v for v in [merged_compliance, merged_sentiment,
-                                    merged_professional, merged_script]
-                        if v is not None) /
-                    max(1, sum(1 for v in [merged_compliance, merged_sentiment,
-                                           merged_professional, merged_script]
-                               if v is not None)),
-                    2,
-                )
 
                 merged_flags = [pc.get("contact") or "Contact"
                                 for pc in merged_pc if pc.get("red_flags")]
@@ -696,29 +655,14 @@ async def score_agent_conversations(
 
                 await conn.execute(
                     """UPDATE audit_scores
-                       SET overall_score          = $1,
-                           compliance_score       = $2,
-                           sentiment_score        = $3,
-                           professionalism_score  = $4,
-                           script_adherence_score = $5,
-                           red_flags              = $6::jsonb,
-                           details                = $7::jsonb
-                       WHERE id = $8""",
-                    merged_overall,
-                    merged_compliance,
-                    merged_sentiment,
-                    merged_professional,
-                    merged_script,
+                       SET red_flags = $1::jsonb,
+                           details   = $2::jsonb
+                       WHERE id = $3""",
                     json.dumps(merged_flags),
                     json.dumps(merged_details),
                     existing_row["id"],
                 )
                 # Update local vars so trend snapshot uses merged totals
-                overall      = merged_overall
-                compliance   = merged_compliance
-                sentiment    = merged_sentiment
-                professional = merged_professional
-                script       = merged_script
                 all_flags    = merged_flags
                 details      = merged_details
                 per_convo    = merged_pc
@@ -726,19 +670,11 @@ async def score_agent_conversations(
                 await conn.execute(
                     """
                     INSERT INTO audit_scores
-                        (agent_id, audit_date, overall_score, compliance_score, sentiment_score,
-                         professionalism_score, response_time_score, script_adherence_score,
-                         red_flags, details)
-                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb)
+                        (agent_id, audit_date, red_flags, details)
+                    VALUES ($1,$2,$3::jsonb,$4::jsonb)
                     """,
                     agent_id,
                     audit_date,
-                    overall,
-                    compliance,
-                    sentiment,
-                    professional,
-                    None,
-                    script,
                     json.dumps(all_flags),
                     json.dumps(details),
                 )
@@ -781,21 +717,34 @@ async def score_agent_conversations(
                         logger.warning(
                             f"[Scorer] Flag attribution skipped for conv_id={conv_id}: {_e}"
                         )
+                    # Never let one score row carry the same flag twice.
+                    _seen_flags: set[str] = set()
+                    _unique_flags: list = []
+                    for _f in (r.get("red_flags") or []):
+                        _k = canon_flag_text(_f) if isinstance(_f, str) else repr(_f)
+                        if _k not in _seen_flags:
+                            _seen_flags.add(_k)
+                            _unique_flags.append(_f)
                     try:
+                      # Replace, don't append: re-auditing a conversation (same
+                      # conversations row via uq_conversations_agent_contact_day)
+                      # used to stack a second score row. The advisory lock makes
+                      # two concurrent audits of one conversation take turns.
+                      async with conn.transaction():
+                        await conn.execute("SELECT pg_advisory_xact_lock($1)", conv_id)
+                        await conn.execute(
+                            "DELETE FROM conversation_scores WHERE conversation_id = $1",
+                            conv_id,
+                        )
                         await conn.execute(
                             """INSERT INTO conversation_scores
-                                   (conversation_id, compliance_score, sentiment_score,
-                                    professionalism_score, script_adherence_score,
+                                   (conversation_id,
                                     funnel_stage, pillars_gathered, rebuttals_used,
                                     label_assigned, label_correct, label_should_be, label_reason,
                                     red_flags, actions_triggered, summary, model_used, source,
                                     flag_details, prompt_version)
-                               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14,$15,$16,$17,$18::jsonb,$19)""",
+                               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14::jsonb,$15)""",
                             conv_id,
-                            r.get("compliance_score"),
-                            r.get("sentiment_score"),
-                            r.get("professionalism_score"),
-                            r.get("script_adherence_score"),
                             r.get("funnel_stage_reached"),
                             r.get("pillars_gathered") or [],
                             r.get("rebuttals_used") or [],
@@ -803,7 +752,7 @@ async def score_agent_conversations(
                             r.get("label_correct"),
                             r.get("label_should_be"),
                             r.get("label_reason"),
-                            json.dumps(r.get("red_flags") or []),
+                            json.dumps(_unique_flags),
                             r.get("actions_triggered") or [],
                             r.get("summary"),
                             r.get("model_used"),
@@ -902,17 +851,11 @@ async def score_agent_conversations(
             await conn.execute(
                 """INSERT INTO trend_snapshots
                    (agent_name, audit_date, audit_timestamp, account_email,
-                    total_issues, overall_score, compliance_score, sentiment_score,
-                    professionalism_score, script_adherence_score, conversations_analyzed,
+                    total_issues, conversations_analyzed,
                     late_response_flags, wrong_label_flags)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,0,0)
+                   VALUES ($1,$2,$3,$4,$5,$6,0,0)
                    ON CONFLICT (agent_name, audit_date, account_email) DO UPDATE
-                     SET overall_score           = EXCLUDED.overall_score,
-                         compliance_score        = EXCLUDED.compliance_score,
-                         sentiment_score         = EXCLUDED.sentiment_score,
-                         professionalism_score   = EXCLUDED.professionalism_score,
-                         script_adherence_score  = EXCLUDED.script_adherence_score,
-                         conversations_analyzed  = EXCLUDED.conversations_analyzed,
+                     SET conversations_analyzed  = EXCLUDED.conversations_analyzed,
                          audit_timestamp         = EXCLUDED.audit_timestamp
                      -- total_issues / late_response_flags / wrong_label_flags are
                      -- absent on purpose: a re-audit of a day an auditor has
@@ -928,11 +871,6 @@ async def score_agent_conversations(
                 get_now(),
                 snapshot_email,
                 initial_issue_count,
-                overall,
-                compliance,
-                sentiment,
-                professional,
-                script,
                 len(per_convo),
             )
             logger.info(
@@ -944,9 +882,7 @@ async def score_agent_conversations(
     label_accuracy    = details["label_accuracy"]
 
     logger.info(
-        f"[Scorer] {agent_name} — overall={overall} | "
-        f"adherence={compliance} | attitude={sentiment} | "
-        f"professionalism={professional} | script={script} | "
+        f"[Scorer] {agent_name} — "
         f"flagged_chats={len(all_flags)} | convos={len(per_convo)} | "
         f"unread_left={unread_count} | "
         f"label_accuracy={label_accuracy}% ({wrong_label_count} wrong)"
@@ -1008,11 +944,6 @@ async def score_agent_conversations(
         logger.warning(f"[Scorer] could not spawn reflection process (non-fatal): {_e}")
 
     return {
-        "overall_score": overall,
-        "compliance_score": compliance,
-        "sentiment_score": sentiment,
-        "professionalism_score": professional,
-        "script_adherence_score": script,
         "red_flags": all_flags,
         "conversations_analyzed": len(per_convo),
         "unread_count": unread_count,

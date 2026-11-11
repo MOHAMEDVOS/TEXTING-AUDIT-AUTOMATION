@@ -229,7 +229,7 @@ def analyze_conversation(
     `conversation_id` + `db_pool` are optional — when both are provided the
     ML pre-filter records its tier decision for later evaluation.
 
-    Returns dict with audit scores or {scores=None, error=...} on failure.
+    Returns the audit result dict, or one with model_used=None and error=... on failure.
     """
     if not messages:
         return _empty_result("No messages to analyze", contact_name)
@@ -296,10 +296,6 @@ def _ml_only_fallback(
 
 def _empty_result(reason: str, contact_name: str = "Contact") -> dict:
     return {
-        "compliance_score": None,
-        "sentiment_score": None,
-        "professionalism_score": None,
-        "script_adherence_score": None,
         "red_flags": [],
         "summary": f"Analysis skipped: {reason}",
         "model_used": None,

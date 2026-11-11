@@ -399,7 +399,6 @@
     [data-theme="light"] .theme-toggle .icon-moon { display: none; }
 
     /* ── Score color helpers ── */
-    .sc-g { color: var(--success); } .sc-y { color: var(--warning); } .sc-r { color: var(--danger); } .sc-m { color: var(--text-muted); }
     .pill-g { background: rgba(34,197,94,.1);  color: var(--success); border: 1px solid rgba(34,197,94,.22); }
     .pill-y { background: rgba(245,158,11,.1); color: var(--warning); border: 1px solid rgba(245,158,11,.22); }
     .pill-r { background: rgba(239,68,68,.1);  color: var(--danger);  border: 1px solid rgba(239,68,68,.22); }
@@ -843,8 +842,6 @@
     }
 
     /* ── Score bar ── */
-    .sbar { height: 3px; background: var(--surface-border); border-radius: 99px; overflow: hidden; }
-    .sbar-fill { height: 3px; border-radius: 99px; transition: width .5s ease; }
 
     /* ── Animations ── */
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -1069,7 +1066,6 @@
     [data-theme="light"] .settings-label { color: #0f1117; font-size: .69rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
     [data-theme="light"] .hstat-val { letter-spacing: -0.374px; color: #0f1117; }
     [data-theme="light"] .hstat-lbl { color: #6b7280; letter-spacing: 0.04em; }
-    [data-theme="light"] .sbar { background: rgba(80,72,50,0.12); }
     [data-theme="light"] #run-bar { background: rgba(15,17,23,0.10); }
     [data-theme="light"] #run-bar::after { background: linear-gradient(90deg,transparent,#0f1117,transparent); }
     /* Header — warm stone glass */
@@ -1281,42 +1277,6 @@
     }
     .label-issue-reason { color: var(--text-muted); font-style: italic; font-weight: 500; }
 
-    /* ── Score metric tooltips ── */
-    .score-metric { position: relative; }
-    .score-metric .metric-label {
-      display: inline-flex; align-items: center; gap: 3px; cursor: help;
-    }
-    .score-metric .metric-info {
-      display: inline-flex; align-items: center; justify-content: center;
-      width: 12px; height: 12px; border-radius: 50%; font-size: 7px; font-weight: 600;
-      background: var(--surface-elevated); color: var(--text-muted); flex-shrink: 0;
-      transition: background .18s, color .18s, transform .18s;
-    }
-    .score-metric:hover .metric-info {
-      background: var(--brand-bg); color: var(--brand); transform: scale(1.15);
-    }
-    .score-metric .metric-tip {
-      position: absolute; top: calc(100% + 8px); left: 0; right: auto;
-      transform: translateY(-4px);
-      width: 200px; padding: 10px 12px;
-      background: var(--surface); border: 1px solid var(--surface-border);
-      border-radius: 10px; box-shadow: var(--shadow-md);
-      font-size: .68rem; font-weight: 400; color: var(--text-secondary); line-height: 1.55;
-      pointer-events: none; opacity: 0; z-index: 200;
-      transition: opacity .18s ease, transform .18s ease;
-      white-space: normal; letter-spacing: -0.01em;
-    }
-    .score-metric .metric-tip::before {
-      content: ''; position: absolute; bottom: 100%; left: 14px;
-      border: 5px solid transparent; border-bottom-color: var(--surface-border);
-    }
-    .score-metric:hover .metric-tip {
-      opacity: 1; transform: translateY(0); pointer-events: auto;
-    }
-    [data-theme="dark"] .score-metric .metric-tip {
-      background: var(--surface-elevated); border-color: var(--surface-border);
-    }
-    [data-theme="dark"] .score-metric .metric-tip::before { border-bottom-color: var(--surface-border); }
     /* ── Date Range Picker ── */
     .drp-trigger {
       display: inline-flex; align-items: center; gap: 6px;
@@ -1740,7 +1700,6 @@
   <!-- Stats (hidden to avoid confusion, but kept for JS compatibility) -->
   <div style="display:none;">
     <span id="stat-agents"></span>
-    <span id="stat-avg"></span>
     <span id="stat-flagged"></span>
     <span id="stat-unread"></span>
   </div>
@@ -1927,7 +1886,7 @@
         </div>
         <!-- Sort label / select-mode bar -->
         <div id="sb-sort-bar" style="padding:3px 10px; font-size:.63rem; color:var(--text-muted); border-bottom:1px solid var(--surface-border); background:var(--surface-subtle); display:flex; justify-content:flex-end; align-items:center; flex-shrink:0;">
-          <span style="color:var(--brand); font-weight:600;">score ↓</span>
+          <span style="color:var(--brand); font-weight:600;">name ↓</span>
         </div>
         <div id="sb-select-bar" style="display:none; padding:4px 10px; border-bottom:1px solid var(--surface-border); background:var(--brand-bg); flex-shrink:0; align-items:center; justify-content:space-between; gap:6px;">
           <span id="sel-count-label" style="font-size:.72rem; font-weight:600; color:var(--brand);">0 selected</span>
@@ -2762,11 +2721,7 @@
       <div style="flex:1; overflow-y:auto; padding:24px 32px;">
 
         <!-- Stat cards row -->
-        <div id="trends-stats" style="display:none; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:24px;">
-          <div style="background:var(--surface-elevated); border:1px solid var(--surface-border); border-radius:12px; padding:16px 20px;">
-            <div style="font-size:.72rem; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px;">Avg Score</div>
-            <div id="ts-avg-score" style="font-size:1.7rem; font-weight:700; color:var(--text-primary); letter-spacing:-.03em;">—</div>
-          </div>
+        <div id="trends-stats" style="display:none; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:24px;">
           <div style="background:var(--surface-elevated); border:1px solid var(--surface-border); border-radius:12px; padding:16px 20px;">
             <div style="font-size:.72rem; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px;">Total Issues</div>
             <div id="ts-total-issues" style="font-size:1.7rem; font-weight:600; color:var(--danger); letter-spacing:-.03em;">—</div>
@@ -2808,7 +2763,6 @@
                   <th data-sort-key="conversations_analyzed" onclick="_trSortBy('conversations_analyzed')" style="cursor:pointer; user-select:none; padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Convos Audited<span class="tr-sort-arrow"></span></th>
                   <th data-sort-key="late_response_flags" onclick="_trSortBy('late_response_flags')" style="cursor:pointer; user-select:none; padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Late Response<span class="tr-sort-arrow"></span></th>
                   <th data-sort-key="wrong_label_flags" onclick="_trSortBy('wrong_label_flags')" style="cursor:pointer; user-select:none; padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Wrong Label<span class="tr-sort-arrow"></span></th>
-                  <th data-sort-key="overall_score" onclick="_trSortBy('overall_score')" style="cursor:pointer; user-select:none; padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;">Score<span class="tr-sort-arrow"></span></th>
                   <th style="padding:10px 14px; text-align:center; font-weight:600; color:var(--text-secondary); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;"></th>
                 </tr>
               </thead>
@@ -3044,7 +2998,6 @@
           <!-- Account + texter name pills -->
           <div id="ch-label" style="display:flex; align-items:center; gap:5px; margin-top:4px; flex-wrap:wrap;"></div>
         </div>
-        <div id="ch-score" style="flex-shrink:0;"></div>
       </div>
 
       <!-- Body: AI info LEFT, chat RIGHT -->
@@ -3253,30 +3206,14 @@ function statusMessage(name, fallback = "") {
   return d.message || d.stage || fallback;
 }
 
-function scoreClass(v) {
-  if (v == null) return "sc-m";
-  return v >= 90 ? "sc-g" : v >= 75 ? "sc-y" : "sc-r";
-}
-function pillClass(v) {
-  if (v == null) return "pill-m";
-  return v >= 90 ? "pill-g" : v >= 75 ? "pill-y" : "pill-r";
-}
 function labelPillClass(v) {
   if (v == null) return "pill-m";
   return v >= 80 ? "pill-g" : v >= 50 ? "pill-y" : "pill-r";
-}
-function fmtScore(v) {
-  return v != null ? Number(v).toFixed(1) : "—";
 }
 function fmtInit(name) {
   if (!name) return "?";
   const p = String(name).trim().split(/\s+/);
   return p.length >= 2 ? (p[0][0] + p[p.length - 1][0]).toUpperCase() : name[0].toUpperCase();
-}
-function barGradient(v) {
-  if (v >= 90) return "linear-gradient(90deg,#059669,#10B981)";
-  if (v >= 75) return "linear-gradient(90deg,#d97706,#F59E0B)";
-  return "linear-gradient(90deg,#dc2626,#EF4444)";
 }
 function agentAv(name) {
   let h = 0;
@@ -3399,10 +3336,6 @@ function showView(id) {
 
 // ── Header stats ──────────────────────────────────────────────────────────────
 function updateStats() {
-  const scored  = allAgents.filter(a => a.overall_score != null);
-  const avg     = scored.length
-    ? (scored.reduce((s, a) => s + a.overall_score, 0) / scored.length).toFixed(1)
-    : "—";
   const unread  = allAgents.reduce((s, a) => s + (a.unread_messages_left || 0), 0);
 
   // Fetch real-time flag count from conversation_scores
@@ -3414,12 +3347,11 @@ function updateStats() {
     })
     .catch(() => {
       // Fallback to per-agent count
-      const flagged = scored.filter(a => (a.red_flags || []).length > 0).length;
+      const flagged = allAgents.filter(a => (a.red_flags || []).length > 0).length;
       document.getElementById("stat-flagged").textContent = flagged;
     });
 
   document.getElementById("stat-agents").textContent  = allAgents.length;
-  document.getElementById("stat-avg").textContent     = avg;
   document.getElementById("stat-unread").textContent  = unread;
 }
 
@@ -3573,7 +3505,7 @@ async function runSelectedAgents() {
 }
 
 
-// ── Sidebar review pill (replaces score pill on agent cards) ─────────────────
+// ── Sidebar review pill on agent cards ──────────────────────────────────────────────────────
 function agentNeedReviewCount(a) {
   if (!a) return 0;
   if (a.id === selectedAgent?.id && agentConvos.length) {
@@ -3647,7 +3579,6 @@ function renderSidebar() {
 
   list.innerHTML = filteredAgents.map((a, i) => {
     const sel    = selectedAgent && selectedAgent.id === a.id;
-    const score  = a.overall_score;
     const flags  = (a.red_flags || []).length;
     const unread = a.unread_messages_left || 0;
     const status = processStatus[a.name] || "idle";
@@ -3680,7 +3611,7 @@ function renderSidebar() {
     if (convos > 0) {
       metaSpans.push(`<span style="font-size:.67rem;font-weight:700;color:var(--brand);">${convos} convo${convos !== 1 ? 's' : ''}</span>`);
     }
-    if (score != null) {
+    if (a.audit_date) {
       const flagColor = flags > 0 ? 'var(--danger)' : 'var(--text-muted)';
       metaSpans.push(`<span style="font-size:.67rem;font-weight:700;color:${flagColor};">${flags} flag${flags !== 1 ? 's' : ''}</span>`);
     }
@@ -3689,10 +3620,6 @@ function renderSidebar() {
     }
 
     const scoreDisplay = `<span class="ac-review-slot">${agentReviewPillHtml(a)}</span>`;
-
-    const bar = score != null
-      ? `<div style="margin-top:5px;"><div class="sbar"><div class="sbar-fill" style="width:${Math.min(score,100)}%;background:${barGradient(score)};"></div></div></div>`
-      : "";
 
     const checked  = selectedIds.has(a.id);
     const cardClick = selectMode
@@ -3719,7 +3646,6 @@ function renderSidebar() {
               <span style="font-size:.84rem; font-weight:600; color:${(sel && !selectMode) || checked ? "var(--brand)" : "var(--text-primary)"}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(a.name)}</span>
               ${scoreDisplay}
             </div>
-            ${bar}
             <div style="margin-top:5px; display:flex; align-items:center; gap:6px; flex-wrap:nowrap; white-space:nowrap; overflow:hidden;">
               ${statusText ? `<span style="font-size:.67rem;color:${statusColor};font-weight:700;">${statusText}</span>` : ''}
               ${(statusText && metaSpans.length) ? `<span style="font-size:.67rem;color:var(--surface-border-strong);margin:0 2px;">·</span>` : ''}
@@ -3747,7 +3673,7 @@ function renderSidebar() {
 
 // ── Select Agent ──────────────────────────────────────────────────────────────
 async function selectAgent(id, { forceReload = false } = {}) {
-  // Always reload agent list so scores reflect latest audit result
+  // Always reload agent list so it reflects the latest audit result
   await loadAgents();
   const agent = allAgents.find(a => a.id === id);
   if (!agent) return;
@@ -3820,11 +3746,6 @@ async function selectAgent(id, { forceReload = false } = {}) {
 
 function renderAgentScores(agent) {
   const pills = [];
-
-  // Overall score
-  if (agent.overall_score != null) {
-    pills.push(`<span class="pill ${pillClass(agent.overall_score)}" style="font-weight:800;font-size:.88rem;">${fmtScore(agent.overall_score)}</span>`);
-  }
 
   // Labels X/Y (correct / total analyzed)
   const total = agent.conversations_analyzed || 0;
@@ -4243,8 +4164,6 @@ function renderConvoList() {
   el.innerHTML = visibleConvos.map((c) => {
     const i = agentConvos.indexOf(c);
     const a     = c.analysis || {};
-    const svs   = [a.compliance, a.sentiment, a.professionalism, a.script_adherence].filter(x => x != null);
-    const score = svs.length ? svs.reduce((s, v) => s + v, 0) / svs.length : null;
     const flags = issueCountForConvo(c);
     const msgs  = c.parsed_messages || [];
     const method = auditMethod(a.source);
@@ -4406,9 +4325,6 @@ function selectConversation(index) {
   const a       = convo.analysis || {};
   const msgs    = convo.parsed_messages || [];
 
-  const svs   = [a.compliance, a.sentiment, a.professionalism, a.script_adherence].filter(x => x != null);
-  const score = svs.length ? svs.reduce((s, v) => s + v, 0) / svs.length : null;
-
   const chAv = document.getElementById("ch-av");
   chAv.textContent = fmtInit(contact);
   chAv.className = `av av-sm ${agentAv(contact)}`;
@@ -4439,9 +4355,6 @@ function selectConversation(index) {
        </span>`).join("");
     chLabel.innerHTML = accountPill + texterPills;
   }
-  document.getElementById("ch-score").innerHTML   = score != null
-    ? `<span class="pill ${pillClass(score)}">${fmtScore(score)}</span>`
-    : "";
 
   renderChatMessages(msgs, convo);
   renderAiAnalysis(a, convo.invalidated_flags || [], convo.validated_flags || []);
@@ -4656,33 +4569,6 @@ function renderAiAnalysis(a, invalidatedFlags, validatedFlags = []) {
     return;
   }
 
-  const scoreItems = [
-    ["Adherence",    a.compliance,    "#2563EB"],
-    ["Attitude",      a.sentiment,     "#059669"],
-    ["Professional.", a.professionalism,"#0891B2"],
-    ["Script",        a.script_adherence,"#7C3AED"],
-  ].filter(([, v]) => v != null);
-
-  const scoreDescriptions = {
-    "Adherence":    "Did the agent follow legal rules? Stopped after opt-out requests, no deceptive claims.",
-    "Attitude":     "Was the agent warm and conversational? Good rapport, empathy, and de-escalation.",
-    "Professional.": "Was the communication clean? No wrong names, coherent messages, no major errors.",
-    "Script":       "Did the agent follow the sales playbook? Correct funnel, rebuttals, and pillar order.",
-  };
-
-  const scoreGrid = scoreItems.map(([lbl, v, col]) => `
-    <div class="score-metric">
-      <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-        <span class="metric-label" style="font-size:.63rem;font-weight:600;color:${col};">
-          ${lbl}
-          <span class="metric-info">?</span>
-        </span>
-        <span style="font-size:.72rem;font-weight:700;" class="${scoreClass(v)}">${fmtScore(v)}</span>
-      </div>
-      <div class="sbar"><div class="sbar-fill" style="width:${Math.min(v,100)}%;background:${barGradient(v)};"></div></div>
-      <div class="metric-tip">${scoreDescriptions[lbl] || ''}</div>
-    </div>`).join("");
-
   let labelBadge = labelIssueBlockHtml(a, invalidatedFlags, validatedFlags, true);
   if (!labelBadge) {
     labelBadge = mlLabelStatusHtml(a, false, invalidatedFlags);
@@ -4723,11 +4609,6 @@ function renderAiAnalysis(a, invalidatedFlags, validatedFlags = []) {
     </div>
 
     <div style="padding:.875rem 1.1rem;">
-
-      ${scoreItems.length ? `
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;margin-bottom:.85rem;overflow:visible;position:relative;">
-          ${scoreGrid}
-        </div>` : ""}
 
       ${a.funnel_stage_reached ? `
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;flex-wrap:wrap;row-gap:7px;min-width:0;">
@@ -5269,7 +5150,6 @@ function renderDetailedResults(rows, filters = {}) {
     const preview  = row.preview_snippet ? row.preview_snippet.slice(0, 90) + (row.preview_snippet.length > 90 ? "…" : "") : "No messages";
     const date     = row.convo_date || row.audit_date || "";
     const issues   = row.issue_count || 0;
-    const score    = row.compliance_score != null ? row.compliance_score.toFixed(1) : "—";
     const issueBadge = issues > 0
       ? `<span style="font-size:.72rem; padding:2px 7px; border-radius:5px; background:rgba(239,68,68,.1); color:#ef4444; font-weight:600;">${issues} issue${issues !== 1 ? "s" : ""}</span>`
       : `<span style="font-size:.72rem; padding:2px 7px; border-radius:5px; background:rgba(52,211,153,.1); color:var(--success); font-weight:600;">Clean</span>`;
@@ -5294,7 +5174,6 @@ function renderDetailedResults(rows, filters = {}) {
         <div style="font-size:.7rem; color:var(--text-muted); margin-bottom:4px;">${esc(date)}</div>
         <div style="display:flex; align-items:center; gap:6px; justify-content:flex-end;">
           ${issueBadge}
-          <span style="font-size:.72rem; color:var(--text-muted);">adherence ${score}</span>
         </div>
       </div>
     `;
@@ -5321,10 +5200,6 @@ async function openDetailedConversation(conversationId) {
       validated_flags:   d.validated_flags || [],
       texter_name:       d.texter_name || "",
       analysis: {
-        compliance:        a.compliance_score,
-        sentiment:         a.sentiment_score,
-        professionalism:   a.professionalism_score,
-        script_adherence:  a.script_adherence_score,
         funnel_stage_reached: a.funnel_stage,
         pillars_gathered:  a.pillars_gathered || [],
         rebuttals_used:    a.rebuttals_used || [],
@@ -5647,12 +5522,7 @@ async function loadAgents() {
       }
     }
 
-    data.sort((a, b) => {
-      if (a.overall_score != null && b.overall_score != null) return b.overall_score - a.overall_score;
-      if (a.overall_score != null) return -1;
-      if (b.overall_score != null) return 1;
-      return (a.name || "").localeCompare(b.name || "");
-    });
+    data.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
     allAgents      = data;
     // Filter to only show accounts with an assigned texter today in the sidebar
@@ -7376,13 +7246,6 @@ function _agentColor(name) {
   return _TREND_COLORS[Math.abs(h) % _TREND_COLORS.length];
 }
 
-function _scoreClass(v) {
-  if (v == null) return "sc-m";
-  if (v >= 90)  return "sc-g";
-  if (v >= 75)  return "sc-y";
-  return "sc-r";
-}
-
 // Row-highlight thresholds for the Trends Snapshot Records table, keyed off total_issues.
 // <=3 stays unstyled; >3 yellow; >5 orange; >8 red.
 function _issueRowBg(totalIssues) {
@@ -7405,7 +7268,7 @@ function _flagCountColor(n) {
  * Group Snapshot Records rows by (agent_name, audit_date). A texter who ran
  * audits on several accounts the same day used to print as N separate rows
  * with the name repeated N times — this collapses those into one summary row
- * (counts summed, score weighted by conversations audited), expandable to
+ * (counts summed), expandable to
  * reveal each account's own row underneath. A texter with only one account
  * that day renders exactly as a normal single row, no group overhead.
  */
@@ -7428,12 +7291,9 @@ function _groupSnapshotRows(rows) {
 function _renderSnapshotGroups(rows) {
   const groups = _groupSnapshotRows(rows);
   window._trSnapshotGroups = groups;
-  const sc = v => v != null ? v.toFixed(1) : "—";
-  const cl = v => `class="${_scoreClass(v)}"`;
-
   return groups.map((g, gi) => {
     if (g.items.length === 1) {
-      return _snapshotRowHtml(g.items[0].r, g.items[0].i, sc, cl);
+      return _snapshotRowHtml(g.items[0].r, g.items[0].i);
     }
 
     const sum = key => g.items.reduce((a, { r }) => a + (r[key] || 0), 0);
@@ -7441,16 +7301,6 @@ function _renderSnapshotGroups(rows) {
     const issues = sum("total_issues");
     const late   = sum("late_response_flags");
     const wrong  = sum("wrong_label_flags");
-
-    // Weighted by conversations audited so a 300-convo account isn't diluted
-    // by a 20-convo one; falls back to a plain average if none have a count.
-    const scored = g.items.filter(({ r }) => r.overall_score != null);
-    const totalWeight = scored.reduce((a, { r }) => a + (r.conversations_analyzed || 0), 0);
-    const avgScore = scored.length
-      ? (totalWeight > 0
-          ? scored.reduce((a, { r }) => a + r.overall_score * (r.conversations_analyzed || 0), 0) / totalWeight
-          : scored.reduce((a, { r }) => a + r.overall_score, 0) / scored.length)
-      : null;
 
     const rowBg = _issueRowBg(issues);
     const summary = `<tr class="tr-group-summary" data-group="${gi}" onclick="_trToggleGroup(${gi})"
@@ -7464,7 +7314,6 @@ function _renderSnapshotGroups(rows) {
       <td style="padding:9px 14px;text-align:center;color:var(--text-secondary);">${convos}</td>
       <td style="padding:9px 14px;text-align:center;color:${_flagCountColor(late)};font-weight:600;">${late}</td>
       <td style="padding:9px 14px;text-align:center;color:${_flagCountColor(wrong)};font-weight:600;">${wrong}</td>
-      <td style="padding:9px 14px;text-align:center;" ${cl(avgScore)}>${sc(avgScore)}</td>
       <td style="padding:9px 14px;text-align:center;">
         <button onclick="event.stopPropagation();_trOpenDetailedForGroup(${gi})"
           title="Open the Detailed Dashboard for ${esc(g.agentName)} on ${esc(g.auditDate)}, across every account"
@@ -7476,12 +7325,12 @@ function _renderSnapshotGroups(rows) {
       </td>
     </tr>`;
 
-    const children = g.items.map(({ r, i }) => _snapshotRowHtml(r, i, sc, cl, gi)).join("");
+    const children = g.items.map(({ r, i }) => _snapshotRowHtml(r, i, gi)).join("");
     return summary + children;
   }).join("");
 }
 
-function _snapshotRowHtml(r, i, sc, cl, groupIdx) {
+function _snapshotRowHtml(r, i, groupIdx) {
   const rowBg = _issueRowBg(r.total_issues || 0);
   const isChild = groupIdx != null;
   const trAttrs = isChild ? ` data-group="${groupIdx}" style="display:none;border-bottom:1px solid var(--surface-border);${rowBg ? `background:${rowBg};` : ""}"`
@@ -7493,7 +7342,6 @@ function _snapshotRowHtml(r, i, sc, cl, groupIdx) {
     <td style="padding:9px 14px;text-align:center;color:var(--text-secondary);">${r.conversations_analyzed||0}</td>
     <td style="padding:9px 14px;text-align:center;color:${_flagCountColor(r.late_response_flags||0)};font-weight:600;">${r.late_response_flags||0}</td>
     <td style="padding:9px 14px;text-align:center;color:${_flagCountColor(r.wrong_label_flags||0)};font-weight:600;">${r.wrong_label_flags||0}</td>
-    <td style="padding:9px 14px;text-align:center;" ${cl(r.overall_score)}>${sc(r.overall_score)}</td>
     <td style="padding:9px 14px;text-align:center;">
       <button onclick="_trOpenDetailedForRow(${i})"
         title="Open the Detailed Dashboard for ${esc(r.agent_name)} on ${esc(r.audit_date)}"
@@ -7620,8 +7468,6 @@ async function loadTrends() {
     emptyEl.style.display = "none";
 
     // ── Stat cards ──────────────────────────────────────────────────────────
-    const scores        = rows.map(r => r.overall_score).filter(v => v != null);
-    const avgScore      = scores.length ? (scores.reduce((a,b)=>a+b,0)/scores.length).toFixed(1) : "—";
     const totalIssues   = rows.reduce((a,r)=>a+(r.total_issues||0),0);
     // Sum the SAME per-row conversations_analyzed values the table below
     // shows in "Convos Audited" — this stat card must always equal that
@@ -7633,7 +7479,6 @@ async function loadTrends() {
     const totalConvos = rows.reduce((a,r)=>a+(r.conversations_analyzed||0),0);
     const agentSet      = new Set(rows.map(r=>r.agent_name));
 
-    document.getElementById("ts-avg-score").textContent      = avgScore !== "—" ? avgScore : "—";
     document.getElementById("ts-total-issues").textContent   = totalIssues;
     document.getElementById("ts-convos-audited").textContent = totalConvos != null ? totalConvos : "—";
     document.getElementById("ts-agents-tracked").textContent = agentSet.size;

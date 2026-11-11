@@ -221,7 +221,7 @@ def _build_result(
 
     if messages:
         smart_summary = summary_builder.build_summary(
-            messages, agent_name, contact_name, scores, model_used="prefilter_t2",
+            messages, agent_name, contact_name, model_used="prefilter_t2",
         )
         funnel = summary_builder.detect_funnel_stage(messages)
     else:

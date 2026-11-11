@@ -1092,7 +1092,6 @@ def _clean_result(
     contact_name: str,
     *,
     summary: str,
-    scores: dict,
     funnel_tier: str,
     funnel_stage: str = "none",
     label_assigned: str = "Stopped Responding",
@@ -1131,10 +1130,6 @@ def _clean_result(
         label_should_be = None
 
     return {
-        "compliance_score": scores["compliance_score"],
-        "sentiment_score": scores["sentiment_score"],
-        "professionalism_score": scores["professionalism_score"],
-        "script_adherence_score": scores["script_adherence_score"],
         "funnel_tier": funnel_tier,
         "funnel_stage_reached": funnel_stage,
         "pillars_gathered": pillars or [],
@@ -1251,22 +1246,16 @@ def evaluate(
             )
         else:
             from . import summary_builder as _sb
-            _sold_scores = {
-                "compliance_score": 100, "sentiment_score": 80,
-                "professionalism_score": 90, "script_adherence_score": 100,
-            }
             _sold_summary = _sb.build_summary(
-                messages, agent_name, contact_name, _sold_scores,
+                messages, agent_name, contact_name,
                 model_used="prefilter_t1_v2",
             )
             return PrefilterResult(
                 tier_hit=1, decision="short_circuit", confidence=0.97,
                 notes=f"[{funnel_tier}] property already sold — contact reply: '{contact_text[:40]}'",
-                predicted_scores=_sold_scores,
                 result=_clean_result(
                     contact_name,
                     summary=_sold_summary,
-                    scores=_sold_scores,
                     funnel_tier=funnel_tier,
                     funnel_stage="none",
                     label_assigned="Sold",
@@ -1278,8 +1267,6 @@ def evaluate(
 
     for pat in _HARASSMENT_DNC_PATTERNS:
         if pat.search(contact_text):
-            scores = {"compliance_score": 100, "sentiment_score": 55,
-                      "professionalism_score": 95, "script_adherence_score": 90}
             return PrefilterResult(
                 tier_hit=1, decision="short_circuit", confidence=0.98,
                 notes=f"sexual/private-meeting harassment: /{pat.pattern}/",
@@ -1290,7 +1277,6 @@ def evaluate(
                         "continue as a serious property owner. Texter remained professional; "
                         "conversation should be treated as DNC/unserious lead."
                     ),
-                    scores=scores,
                     funnel_tier=funnel_tier,
                     funnel_stage="none",
                     label_assigned="DO Not Call",
@@ -1318,25 +1304,14 @@ def evaluate(
                 ]
                 if len(_agent_after_early) >= 2:
                     from . import summary_builder
-                    _e1_scores = {
-                        "compliance_score": 0,
-                        "sentiment_score": 60,
-                        "professionalism_score": 70,
-                        "script_adherence_score": 60,
-                    }
                     _e1_summary = summary_builder.build_summary(
-                        _all_msgs_early, agent_name, contact_name, _e1_scores,
+                        _all_msgs_early, agent_name, contact_name,
                         model_used="prefilter_t1_v2",
                     )
                     return PrefilterResult(
                         tier_hit=1, decision="short_circuit", confidence=1.0,
                         notes=f"F1: opt-out ignored — agent sent {len(_agent_after_early)} msgs after contact opted out",
-                        predicted_scores=_e1_scores,
                         result={
-                            "compliance_score": _e1_scores["compliance_score"],
-                            "sentiment_score": _e1_scores["sentiment_score"],
-                            "professionalism_score": _e1_scores["professionalism_score"],
-                            "script_adherence_score": _e1_scores["script_adherence_score"],
                             "funnel_tier": funnel_tier,
                             "funnel_stage_reached": "none",
                             "pillars_gathered": [],
@@ -1375,16 +1350,13 @@ def evaluate(
                 break  # exit profanity loop, let downstream tiers handle
             matched = pat.pattern
             from . import summary_builder
-            scores = {"compliance_score": 100, "sentiment_score": 60,
-                      "professionalism_score": 95, "script_adherence_score": 80}
-            summary = summary_builder.build_summary(messages, agent_name, contact_name, scores, model_used="prefilter_t1_v2")
+            summary = summary_builder.build_summary(messages, agent_name, contact_name, model_used="prefilter_t1_v2")
             return PrefilterResult(
                 tier_hit=1, decision="short_circuit", confidence=0.97,
                 notes=f"profanity/hostility: /{matched}/",
                 result=_clean_result(
                     contact_name,
                     summary=summary,
-                    scores=scores,
                     funnel_tier=funnel_tier,
                     funnel_stage="none",
                     label_assigned="DO Not Call",
@@ -1415,16 +1387,13 @@ def evaluate(
                 break  # exit opt-out loop, let downstream tiers handle
             matched = pat.pattern
             from . import summary_builder
-            scores = {"compliance_score": 100, "sentiment_score": 80,
-                      "professionalism_score": 95, "script_adherence_score": 90}
-            summary = summary_builder.build_summary(messages, agent_name, contact_name, scores, model_used="prefilter_t1_v2")
+            summary = summary_builder.build_summary(messages, agent_name, contact_name, model_used="prefilter_t1_v2")
             return PrefilterResult(
                 tier_hit=1, decision="short_circuit", confidence=0.97,
                 notes=f"explicit opt-out: /{matched}/",
                 result=_clean_result(
                     contact_name,
                     summary=summary,
-                    scores=scores,
                     funnel_tier=funnel_tier,
                     funnel_stage="none",
                     label_assigned="DO Not Call",
@@ -1480,34 +1449,17 @@ def evaluate(
     collected_flags:   list[str] = []
     collected_actions: list[str] = []
 
-    # Scores are degraded by the worst single violation found; we track the
-    # minimum value seen for each dimension and use that for the final result.
-    _flag_scores = {
-        "compliance_score": 100,
-        "sentiment_score": 100,
-        "professionalism_score": 100,
-        "script_adherence_score": 100,
-    }
-
-    def _degrade(new: dict) -> None:
-        for k in _flag_scores:
-            if new.get(k, 100) < _flag_scores[k]:
-                _flag_scores[k] = new[k]
 
     # ── Check F7: jumped to 6-month window before trying shorter timeline ───────
     if _f7_violated:
         collected_flags.append(_f7_flag_text)
         collected_actions.append("Wrong Message")
-        _degrade({"compliance_score": 100, "sentiment_score": 85,
-                  "professionalism_score": 95, "script_adherence_score": 80})
 
     # ── Check 2: agent stated specific dollar offer — F3 ─────────────────────
     for pat in _SUSPICIOUS_PATTERNS:
         if pat.search(all_text):
             collected_flags.append("Stated a specific dollar offer.")
             collected_actions.append("Not Following Lead Flow")
-            _degrade({"compliance_score": 80, "sentiment_score": 75,
-                      "professionalism_score": 80, "script_adherence_score": 60})
             break
 
     # ── Check 2b: agent affirmed contact's asking price (F13) ────────────────
@@ -1518,8 +1470,6 @@ def evaluate(
                 if next_agent and _AGENT_PRICE_AFFIRMATION_RE.search(_body(next_agent[0])):
                     collected_flags.append("Affirmed lead's asking price without negotiation.")
                     collected_actions.append("Not Following Lead Flow")
-                    _degrade({"compliance_score": 100, "sentiment_score": 85,
-                              "professionalism_score": 95, "script_adherence_score": 80})
                 break  # only check first price statement
 
     # ── Check 2b2: bluffer / paranoid contact → wrong label ──────────────────
@@ -1542,8 +1492,6 @@ def evaluate(
                 f"(contact said: '{_bluff_text[:60]}')"
             )
             collected_actions.append("Wrong Label")
-            _degrade({"compliance_score": 100, "sentiment_score": 80,
-                      "professionalism_score": 95, "script_adherence_score": 100})
 
     # ── Check 2b2.5: Agent labeled Bluffer, but contact just denied the address ──
     _label_lower_b2 = (_actual_label or "").lower()
@@ -1573,8 +1521,6 @@ def evaluate(
                 "Agent should have asked for parcel number or correct address instead of labeling Bluffer."
             )
             collected_actions.append("Wrong Label")
-            _degrade({"compliance_score": 100, "sentiment_score": 75,
-                      "professionalism_score": 85, "script_adherence_score": 80})
 
     # ── Check 2b3: contact stated inflated price → AbvMV label check ─────────
     _inflated, _price = _contact_stated_inflated_price(messages)
@@ -1593,16 +1539,12 @@ def evaluate(
                 f"Contact stated inflated price (${_price:,.0f}) — likely Above Market Value, "
                 f"label '{_actual_label}' may be wrong"
             )
-            _degrade({"compliance_score": 100, "sentiment_score": 85,
-                      "professionalism_score": 95, "script_adherence_score": 100})
 
     # ── Check 2c: agent re-asked same pillar same day after contact answered ──
     _dup_flag, _dup_pillar = _agent_sent_duplicate(messages)
     if _dup_flag:
         collected_flags.append(f"Re-asked {_dup_pillar} same day after contact answered.")
         collected_actions.append("Robotic Conversation")
-        _degrade({"compliance_score": 100, "sentiment_score": 75,
-                  "professionalism_score": 65, "script_adherence_score": 80})
 
     # ── Check 2d: agent asked for pillar info contact already gave ────────────
     if contact_msgs and agent_msgs:
@@ -1645,13 +1587,11 @@ def evaluate(
                 collected_actions.append("Robotic Conversation")
             if "Not Following Lead Flow" not in collected_actions:
                 collected_actions.append("Not Following Lead Flow")
-            _degrade({"compliance_score": 100, "sentiment_score": 80,
-                      "professionalism_score": 85, "script_adherence_score": 80})
 
     # ── Emit combined result if any flags collected ───────────────────────────
     if collected_flags:
         _combined_summary = _sb.build_summary(
-            messages, agent_name, contact_name, _flag_scores,
+            messages, agent_name, contact_name,
             model_used="prefilter_t1_v2",
         )
         _pillars_found = _detect_pillars(contact_msgs)
@@ -1695,12 +1635,7 @@ def evaluate(
             tier_hit=1, decision="short_circuit",
             confidence=0.92,
             notes=f"{len(collected_flags)} flag(s): {'; '.join(collected_flags)[:120]}",
-            predicted_scores=_flag_scores,
             result={
-                "compliance_score":        _flag_scores["compliance_score"],
-                "sentiment_score":         _flag_scores["sentiment_score"],
-                "professionalism_score":   _flag_scores["professionalism_score"],
-                "script_adherence_score":  _flag_scores["script_adherence_score"],
                 "funnel_tier":             funnel_tier,
                 "funnel_stage_reached":    "wide",
                 "pillars_gathered":        _pillars_found,
@@ -1719,10 +1654,6 @@ def evaluate(
 
     # ── Check 3: contact never replied → drip / silent ───────────────────────
     if len(contact_msgs) == 0:
-        scores = {
-            "compliance_score": 100, "sentiment_score": 80,
-            "professionalism_score": 95, "script_adherence_score": 60,
-        }
         # A missed call event in the conversation makes "Missed Call" a valid label —
         # contact didn't text back but did pick up / miss the call, so the agent
         # correctly categorized it. Accept both "Missed Call" and "Stopped Responding".
@@ -1739,11 +1670,9 @@ def evaluate(
             return PrefilterResult(
                 tier_hit=1, decision="short_circuit", confidence=0.95,
                 notes=f"[{funnel_tier}] contact silent with missed call — label correct",
-                predicted_scores=scores,
                 result=_clean_result(
                     contact_name,
                     summary="Contact never replied. Missed call event recorded. Agent handled correctly.",
-                    scores=scores,
                     funnel_tier=funnel_tier,
                     funnel_stage="none",
                     label_assigned="Missed Call",
@@ -1755,11 +1684,9 @@ def evaluate(
         return PrefilterResult(
             tier_hit=1, decision="short_circuit", confidence=0.95,
             notes=f"[{funnel_tier}] contact silent — drip/no-reply",
-            predicted_scores=scores,
             result=_clean_result(
                 contact_name,
                 summary="Contact never replied. Agent sent outreach templates only.",
-                scores=scores,
                 funnel_tier=funnel_tier,
                 funnel_stage="none",
                 label_assigned="Stopped Responding",
@@ -1806,18 +1733,12 @@ def evaluate(
             else:
                 agent_after_optout = [m for m in messages[optout_idx + 1:] if _is_agent(m)]
                 if len(agent_after_optout) <= 1:
-                    scores = {
-                        "compliance_score": 100, "sentiment_score": 80,
-                        "professionalism_score": 90, "script_adherence_score": 80,
-                    }
                     return PrefilterResult(
                         tier_hit=1, decision="short_circuit", confidence=0.95,
                         notes=f"[{funnel_tier}] opt-out, agent stopped correctly",
-                        predicted_scores=scores,
                         result=_clean_result(
                             contact_name,
                             summary="Contact opted out. Texter stopped messaging correctly. Compliance clean.",
-                            scores=scores,
                             funnel_tier=funnel_tier,
                             funnel_stage="none",
                             label_assigned="DO Not Call",
@@ -1859,25 +1780,14 @@ def evaluate(
         # contact stayed silent/uninterested.
         if not contact_reengaged and (continued_pitch or len(agent_msgs_after_wn) >= 3):
             from . import summary_builder
-            _e4_scores = {
-                "compliance_score": 60,
-                "sentiment_score": 70,
-                "professionalism_score": 75,
-                "script_adherence_score": 60,
-            }
             _e4_summary = summary_builder.build_summary(
-                messages, agent_name, contact_name, _e4_scores,
+                messages, agent_name, contact_name,
                 model_used="prefilter_t1_v2",
             )
             return PrefilterResult(
                 tier_hit=1, decision="short_circuit", confidence=1.0,
                 notes=f"F5: [{funnel_tier}] wrong number — agent continued pitch ({len(agent_msgs_after_wn)} msgs after WN)",
-                predicted_scores=_e4_scores,
                 result={
-                    "compliance_score": _e4_scores["compliance_score"],
-                    "sentiment_score": _e4_scores["sentiment_score"],
-                    "professionalism_score": _e4_scores["professionalism_score"],
-                    "script_adherence_score": _e4_scores["script_adherence_score"],
                     "funnel_tier": funnel_tier,
                     "funnel_stage_reached": "none",
                     "pillars_gathered": [],
@@ -1895,10 +1805,6 @@ def evaluate(
                     "contact_name": contact_name,
                 },
             )
-        scores = {
-            "compliance_score": 100, "sentiment_score": 85,
-            "professionalism_score": 95, "script_adherence_score": 100,
-        }
         
         # DNC ALWAYS wins over Wrong Number.
         # If contact said wrong number AND opted out, the actionable label is DNC —
@@ -1934,11 +1840,9 @@ def evaluate(
         return PrefilterResult(
             tier_hit=1, decision="short_circuit", confidence=0.92,
             notes=f"[{funnel_tier}] wrong number — clean pivot",
-            predicted_scores=scores,
             result=_clean_result(
                 contact_name,
                 summary=summary,
-                scores=scores,
                 funnel_tier=funnel_tier,
                 funnel_stage="none",
                 label_assigned=expected_label,
@@ -1951,18 +1855,12 @@ def evaluate(
     # ── Check 6: Sold property ────────────────────────────────────────────────
     is_sold = any(p.search(contact_text) for p in _SOLD_PATTERNS)
     if is_sold and len(messages) <= 12:
-        scores = {
-            "compliance_score": 100, "sentiment_score": 85,
-            "professionalism_score": 95, "script_adherence_score": 100,
-        }
         return PrefilterResult(
             tier_hit=1, decision="short_circuit", confidence=0.90,
             notes=f"[{funnel_tier}] sold — contact confirmed property sold",
-            predicted_scores=scores,
             result=_clean_result(
                 contact_name,
                 summary="Contact confirmed property is sold. Texter handled appropriately.",
-                scores=scores,
                 funnel_tier=funnel_tier,
                 funnel_stage="none",
                 label_assigned="Sold",
@@ -2037,23 +1935,17 @@ def evaluate(
             # Interested" below.
             if _REALTOR_SELF_DISCLOSURE_RE.search(contact_text):
                 if _label_key(_actual_label) == "do not call":
-                    scores = {
-                        "compliance_score": 100, "sentiment_score": 80,
-                        "professionalism_score": 90, "script_adherence_score": 100,
-                    }
                     from . import summary_builder as _sb_realtor
                     _realtor_summary = _sb_realtor.build_summary(
-                        messages, agent_name, contact_name, scores,
+                        messages, agent_name, contact_name,
                         model_used="prefilter_t1_v2",
                     )
                     return PrefilterResult(
                         tier_hit=1, decision="short_circuit", confidence=0.90,
                         notes=f"[{funnel_tier}] realtor self-disclosure — DNC label accepted",
-                        predicted_scores=scores,
                         result=_clean_result(
                             contact_name,
                             summary=_realtor_summary,
-                            scores=scores,
                             funnel_tier=funnel_tier,
                             funnel_stage="none",
                             label_assigned=_actual_label,
@@ -2082,22 +1974,16 @@ def evaluate(
             from . import summary_builder as _sb_tone
             if (_label_key(_actual_label) == "do not call"
                     and _sb_tone._CONDESCENSION_RE.search(contact_text)):
-                scores = {
-                    "compliance_score": 100, "sentiment_score": 70,
-                    "professionalism_score": 90, "script_adherence_score": 95,
-                }
                 _dnc_summary = _sb_tone.build_summary(
-                    messages, agent_name, contact_name, scores,
+                    messages, agent_name, contact_name,
                     model_used="prefilter_t1_v2",
                 )
                 return PrefilterResult(
                     tier_hit=1, decision="short_circuit", confidence=0.90,
                     notes=f"[{funnel_tier}] mocking/condescending contact — DNC label accepted",
-                    predicted_scores=scores,
                     result=_clean_result(
                         contact_name,
                         summary=_dnc_summary,
-                        scores=scores,
                         funnel_tier=funnel_tier,
                         funnel_stage="none",
                         label_assigned=_actual_label,
@@ -2136,22 +2022,16 @@ def evaluate(
                 if _is_price_label:
                     _price_amt = _abv_ctx["price_amount"] or 0
                     _buyer_side = _sb_ni._BUYER_SIDE_REJECTION_RE.search(contact_text)
-                    scores = {
-                        "compliance_score": 100, "sentiment_score": 85,
-                        "professionalism_score": 90, "script_adherence_score": 100,
-                    }
                     _abv_summary = _sb_ni.build_summary(
-                        messages, agent_name, contact_name, scores,
+                        messages, agent_name, contact_name,
                         model_used="prefilter_t1_v2",
                     )
                     return PrefilterResult(
                         tier_hit=1, decision="short_circuit", confidence=0.90,
                         notes=f"[{funnel_tier}] price-disagreement decline (${_price_amt:,.0f} quoted) — '{_actual_label}' accepted",
-                        predicted_scores=scores,
                         result=_clean_result(
                             contact_name,
                             summary=_abv_summary,
-                            scores=scores,
                             funnel_tier=funnel_tier,
                             funnel_stage="wide",
                             label_assigned=_actual_label,
@@ -2181,23 +2061,17 @@ def evaluate(
             # 1-2 replies = standard rebuttal + close → safe SC
             # >2 replies = too persistent → Groq
             if 1 <= len(agent_after_ni) <= 2:
-                scores = {
-                    "compliance_score": 100, "sentiment_score": 80,
-                    "professionalism_score": 90, "script_adherence_score": 100,
-                }
                 from . import summary_builder as _sb_sum
                 _ni_summary = _sb_sum.build_summary(
-                    messages, agent_name, contact_name, scores,
+                    messages, agent_name, contact_name,
                     model_used="prefilter_t1_v2",
                 )
                 return PrefilterResult(
                     tier_hit=1, decision="short_circuit", confidence=0.88,
                     notes=f"[{funnel_tier}] not interested — {len(agent_after_ni)} agent msg(s) after refusal",
-                    predicted_scores=scores,
                     result=_clean_result(
                         contact_name,
                         summary=_ni_summary,
-                        scores=scores,
                         funnel_tier=funnel_tier,
                         funnel_stage="wide",
                         label_assigned="Not Interested",
@@ -2222,18 +2096,12 @@ def evaluate(
         and not contact_has_high_price
         and not contact_raised_hand
     ):
-        scores = {
-            "compliance_score": 100, "sentiment_score": 85,
-            "professionalism_score": 95, "script_adherence_score": 100,
-        }
         return PrefilterResult(
             tier_hit=1, decision="short_circuit", confidence=0.85,
             notes=f"[{funnel_tier}] maybe later",
-            predicted_scores=scores,
             result=_clean_result(
                 contact_name,
                 summary="Contact indicated possible future interest. Texter closed cleanly.",
-                scores=scores,
                 funnel_tier=funnel_tier,
                 funnel_stage="wide",
                 label_assigned="Maybe Later",

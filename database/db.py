@@ -549,7 +549,7 @@ class Database:
             result["_all_conversations"] = conversations
 
     async def count_valid_scored_conversations(self, agent_id: int) -> int:
-        """Count active conversations with a successful (non-null) score."""
+        """Count active conversations that were actually audited (model_used set)."""
         async with self.pool.acquire() as conn:
             return await conn.fetchval(
                 """SELECT COUNT(DISTINCT c.id)
@@ -557,7 +557,7 @@ class Database:
                    JOIN conversation_scores cs ON cs.conversation_id = c.id
                    WHERE c.agent_id = $1
                      AND c.is_archived = FALSE
-                     AND cs.compliance_score IS NOT NULL""",
+                     AND cs.model_used IS NOT NULL""",
                 agent_id,
             ) or 0
 
@@ -606,7 +606,7 @@ class Database:
         """
         Remove conversations that failed to score so the next run retries them.
         Covers two failure modes:
-          1. Rate-limit skips  — summary = 'Analysis skipped: Could not score...' + NULL scores
+          1. Rate-limit skips  — summary = 'Analysis skipped: Could not score...' + NULL model_used
           2. Ghost rows        — conversation exists but no score row was ever written
 
         When `agent_id` is provided, cleanup is scoped to that agent only — critical
@@ -631,12 +631,12 @@ class Database:
 
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                # ── Case 1: rate-limit skips (have a score row, all scores NULL, skip summary) ──
+                # ── Case 1: rate-limit skips (have a score row, model_used NULL, skip summary) ──
                 row = await conn.fetchrow(
                     f"""SELECT COUNT(*) AS n FROM conversation_scores cs
                         JOIN conversations c ON c.id = cs.conversation_id
                         WHERE cs.summary LIKE $1 AND cs.summary NOT LIKE $2
-                          AND cs.compliance_score IS NULL AND cs.sentiment_score IS NULL
+                          AND cs.model_used IS NULL
                           {agent_clause_cs}""",
                     *params_full,
                 )
@@ -650,7 +650,7 @@ class Database:
                             JOIN accounts a      ON a.id = c.agent_id
                             JOIN contacts co     ON co.id = c.contact_id
                             WHERE cs.summary LIKE $1 AND cs.summary NOT LIKE $2
-                              AND cs.compliance_score IS NULL AND cs.sentiment_score IS NULL
+                              AND cs.model_used IS NULL
                               AND ac.agent_email = a.email AND ac.contact_name = co.name
                               {agent_clause_cs}
                         )""",
@@ -661,7 +661,7 @@ class Database:
                             SELECT cs.conversation_id FROM conversation_scores cs
                             JOIN conversations c ON c.id = cs.conversation_id
                             WHERE cs.summary LIKE $1 AND cs.summary NOT LIKE $2
-                              AND cs.compliance_score IS NULL AND cs.sentiment_score IS NULL
+                              AND cs.model_used IS NULL
                               {agent_clause_cs}
                         )""",
                     *params_full,
@@ -706,7 +706,7 @@ class Database:
                    FROM conversations c
                    JOIN contacts co ON co.id = c.contact_id
                    JOIN conversation_scores cs ON cs.conversation_id = c.id
-                   WHERE c.is_archived = FALSE AND cs.compliance_score IS NOT NULL"""
+                   WHERE c.is_archived = FALSE AND cs.model_used IS NOT NULL"""
             )
             valid: dict[int, set] = {}
             for r in scored_rows:
@@ -726,7 +726,7 @@ class Database:
                            JOIN conversation_scores cs ON cs.conversation_id = c.id
                            WHERE c.agent_id = s.agent_id
                              AND c.is_archived = FALSE
-                             AND cs.compliance_score IS NOT NULL
+                             AND cs.model_used IS NOT NULL
                        )""",
                     agent_id,
                 )
@@ -738,7 +738,7 @@ class Database:
                            JOIN conversation_scores cs ON cs.conversation_id = c.id
                            WHERE c.agent_id = s.agent_id
                              AND c.is_archived = FALSE
-                             AND cs.compliance_score IS NOT NULL
+                             AND cs.model_used IS NOT NULL
                        )"""
                 )
 
@@ -762,7 +762,6 @@ class Database:
                     x for x in pc
                     if (x.get("contact") or "").lower().strip() in valid_contacts
                     and "Analysis skipped" not in (x.get("summary") or "")
-                    and (x.get("compliance") is not None or x.get("compliance_score") is not None)
                 ]
                 if len(clean) != len(pc):
                     d["per_conversation"] = clean

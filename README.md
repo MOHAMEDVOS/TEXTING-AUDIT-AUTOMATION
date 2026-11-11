@@ -11,7 +11,7 @@ An advanced, high-performance automated auditing system for SMS/texting conversa
 ## Key Features
 
 - **API-Driven Scraper**: Pure HTTP client (HTTPX) targeting SmarterContact's GraphQL and REST APIs. No browser required. Firebase token auto-refreshes on expiry.
-- **AI-Driven Auditing**: Full-text analysis against 4 metrics:
+- **Rule-Based Auditing**: flags agent mistakes in 4 areas (no numeric scores):
   - **Compliance**: Opt-out/STOP respect, kid-DNC rule (bare "I'm 15" detection), Wrong Number handling.
   - **Attitude**: Agent warmth, condescension detection, price-disagreement label guards.
   - **Professionalism**: Incoherent messages, name errors, bluffer guard (full-value stance = negotiation, not bluffing).
@@ -23,7 +23,7 @@ An advanced, high-performance automated auditing system for SMS/texting conversa
   - **Tier 4**: Deterministic flag generator (terminal tier — produces effectively all output).
 - **No API keys, no rate limits, no per-conversation cost**: scoring runs entirely on the local machine.
 - **High Throughput**: 20 parallel async workers + ML pre-filter = ~2,000 conversations scraped and audited in under 5 minutes.
-- **Performance Dashboard**: Real-time audit scores, red flags, AI provider status, and read-ack "Done" status (clears on account open).
+- **Performance Dashboard**: Real-time red flags, AI provider status, and read-ack "Done" status (clears on account open).
 
 ## Architecture
 

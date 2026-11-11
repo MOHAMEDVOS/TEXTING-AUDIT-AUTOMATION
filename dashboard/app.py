@@ -429,9 +429,9 @@ async def _fetch_agents_with_scores() -> list[dict]:
     """
     Return every agent joined with their latest audit score.
     red_flags and conversations_analyzed are aggregated across ALL audit runs.
-    Agents that have never been scored still appear (scores will be None).
+    Agents that have never been audited still appear (audit_date will be None).
     """
-    # Latest score row per agent (for score numbers and label accuracy)
+    # Latest audit row per agent (for flags and label accuracy)
     sql = """
         SELECT
             a.id,
@@ -441,11 +441,6 @@ async def _fetch_agents_with_scores() -> list[dict]:
             a.guidelines,
             a.created_at,
             s.audit_date,
-            s.overall_score,
-            s.compliance_score,
-            s.sentiment_score,
-            s.professionalism_score,
-            s.script_adherence_score,
             s.red_flags,
             s.details
         FROM accounts a
@@ -646,10 +641,6 @@ def _score_row_to_analysis(score_row) -> dict:
     for field in ("pillars_gathered", "rebuttals_used", "red_flags"):
         raw[field] = _parse_json_list(raw.get(field))
     return {
-        "compliance": raw.get("compliance_score"),
-        "sentiment": raw.get("sentiment_score"),
-        "professionalism": raw.get("professionalism_score"),
-        "script_adherence": raw.get("script_adherence_score"),
         "funnel_stage_reached": raw.get("funnel_stage"),
         "pillars_gathered": raw.get("pillars_gathered", []),
         "rebuttals_used": raw.get("rebuttals_used", []),
@@ -830,8 +821,7 @@ async def _compute_review_stats_bulk_uncached(conn) -> dict[int, tuple[int, int]
         score_rows = await conn.fetch(
             """SELECT DISTINCT ON (conversation_id)
                       conversation_id,
-                      compliance_score, sentiment_score, professionalism_score,
-                      script_adherence_score, funnel_stage, pillars_gathered,
+                      funnel_stage, pillars_gathered,
                       rebuttals_used, label_assigned, label_correct,
                       label_should_be, label_reason, red_flags, summary, model_used,
                       COALESCE(source, 'groq') AS source
@@ -1061,8 +1051,7 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
             score_rows = await conn2.fetch(
                 """SELECT DISTINCT ON (conversation_id)
                           conversation_id,
-                          compliance_score, sentiment_score, professionalism_score,
-                          script_adherence_score, funnel_stage, pillars_gathered,
+                          funnel_stage, pillars_gathered,
                           rebuttals_used, label_assigned, label_correct,
                           label_should_be, label_reason, red_flags, summary, model_used,
                           COALESCE(source, 'groq') AS source,
@@ -1095,10 +1084,6 @@ async def _fetch_agent_conversations(agent_id: int) -> dict | None:
                 raw[field] = val
             # Remap DB column names → frontend field names expected by renderAiAnalysis
             analysis = {
-                "compliance":          raw.get("compliance_score"),
-                "sentiment":           raw.get("sentiment_score"),
-                "professionalism":     raw.get("professionalism_score"),
-                "script_adherence":    raw.get("script_adherence_score"),
                 "funnel_stage_reached": raw.get("funnel_stage"),
                 "pillars_gathered":    raw.get("pillars_gathered", []),
                 "rebuttals_used":      raw.get("rebuttals_used", []),
@@ -1427,9 +1412,7 @@ async def _save_trend_snapshot(agent_name: str) -> None:
 
             # Latest audit score
             score_row = await conn.fetchrow(
-                """SELECT overall_score, compliance_score, sentiment_score,
-                          professionalism_score, script_adherence_score,
-                          red_flags, details, audit_date
+                """SELECT red_flags, details, audit_date
                    FROM audit_scores
                    WHERE agent_id = $1
                    ORDER BY audit_date DESC, id DESC LIMIT 1""",
@@ -1490,19 +1473,13 @@ async def _save_trend_snapshot(agent_name: str) -> None:
             await conn.execute(
                 """INSERT INTO trend_snapshots
                    (agent_name, audit_date, audit_timestamp, account_email,
-                    total_issues, overall_score, compliance_score, sentiment_score,
-                    professionalism_score, script_adherence_score, conversations_analyzed,
+                    total_issues, conversations_analyzed,
                     late_response_flags, wrong_label_flags)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                    ON CONFLICT (agent_name, audit_date, account_email)
                    DO UPDATE SET
                        audit_timestamp = EXCLUDED.audit_timestamp,
                        total_issues = EXCLUDED.total_issues,
-                       overall_score = EXCLUDED.overall_score,
-                       compliance_score = EXCLUDED.compliance_score,
-                       sentiment_score = EXCLUDED.sentiment_score,
-                       professionalism_score = EXCLUDED.professionalism_score,
-                       script_adherence_score = EXCLUDED.script_adherence_score,
                        conversations_analyzed = EXCLUDED.conversations_analyzed,
                        late_response_flags = EXCLUDED.late_response_flags,
                        wrong_label_flags = EXCLUDED.wrong_label_flags""",
@@ -1511,11 +1488,6 @@ async def _save_trend_snapshot(agent_name: str) -> None:
                 now_ts,
                 snapshot_account_email,
                 0,   # total_issues — recomputed below
-                score_row["overall_score"],
-                score_row["compliance_score"],
-                score_row["sentiment_score"],
-                score_row["professionalism_score"],
-                score_row["script_adherence_score"],
                 conversations_analyzed,
                 0,   # late_response_flags — recomputed below
                 0,   # wrong_label_flags   — recomputed below
@@ -1906,7 +1878,7 @@ async def api_agents():
             audit_date = agent.get("audit_date")
             if audit_date is not None:
                 audit_date_str = audit_date.isoformat() if isinstance(audit_date, _date) else str(audit_date)
-                if audit_date_str == today and agent.get("overall_score") is not None:
+                if audit_date_str == today:
                     key = (agent["name"], today)
                     if key not in _snapshotted:
                         try:
@@ -4347,10 +4319,6 @@ async def api_detailed_dashboard(
                             ELSE c.audit_date
                         END AS effective_date,
                         COALESCE(ap.texter_name, aa.agent_name, c.texter_name) AS texter_name,
-                        cs.compliance_score,
-                        cs.sentiment_score,
-                        cs.professionalism_score,
-                        cs.script_adherence_score,
                         cs.red_flags,
                         cs.label_correct,
                         cs.label_assigned,
@@ -4585,8 +4553,7 @@ async def api_conversation_messages(conversation_id: int):
                 # flag_details was missing here, so the Detailed Dashboard
                 # drill-down silently dropped every per-flag owner badge that
                 # the sidebar route shows.
-                """SELECT compliance_score, sentiment_score, professionalism_score,
-                          script_adherence_score, funnel_stage, pillars_gathered,
+                """SELECT funnel_stage, pillars_gathered,
                           rebuttals_used, label_assigned, label_correct,
                           label_should_be, label_reason, red_flags, summary, model_used,
                           flag_details,

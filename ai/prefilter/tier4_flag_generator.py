@@ -2,7 +2,7 @@
 Tier 4 — Deterministic Flag Generator.
 
 The terminal tier in the prefilter pipeline. Produces flag lists,
-compliance scores, summaries, and label audits using ONLY deterministic
+summaries, and label audits using ONLY deterministic
 regex/pattern matching — no ML, no embeddings, no API calls.
 
 When the pipeline reaches T4 (i.e. T1-T3 all said "escalate or low
@@ -13,8 +13,7 @@ Contract:
     Input  → messages: list[dict], agent_name: str, contact_name: str,
              assigned_labels: list[str]
     Output → dict matching analyzer's result schema:
-             compliance_score, sentiment_score, professionalism_score,
-             script_adherence_score, red_flags, label_correct,
+             red_flags, label_correct,
              label_should_be, label_reason, summary, model_used, …
 """
 from __future__ import annotations
@@ -49,8 +48,6 @@ from ai.prefilter.summary_builder import (
     detect_funnel_stage,
     classify_agent_messages,
     detect_abv_mv_response,
-    score_agent_sentiment,
-    score_agent_professionalism,
 )
 from ai.prefilter.pillar_detection import detect_gathered_pillars
 
@@ -630,29 +627,6 @@ def generate(
     except Exception as e:
         logger.debug("[T4] learned-flag suppression skipped: %r", e)
 
-    # ── Build scores ────────────────────────────────────────────────
-    # Compliance + script move with flags; sentiment + professionalism are now
-    # REAL deterministic measures of the agent's tone and conduct (previously
-    # hardcoded constants of 88 / 90).
-    n_flags = len(final_flags)
-    compliance = max(70, 95 - (n_flags * 12))
-    sentiment = score_agent_sentiment(agent_msgs, final_flags, _msg_cls)
-    professionalism = score_agent_professionalism(agent_msgs, final_flags)
-    script = max(75, 95 - (n_flags * 8))
-
-    if not contact_msgs:
-        # One-sided outreach (no replies yet) — keep script lenient and cap
-        # compliance; sentiment/professionalism already handled per-agent.
-        script = max(script, 92)
-        compliance = min(compliance, 95)
-
-    scores = {
-        "compliance_score": compliance,
-        "sentiment_score": sentiment,
-        "professionalism_score": professionalism,
-        "script_adherence_score": script,
-    }
-
     # ── Label audit ──────────────────────────────────────────────────
     label_name, label_reason = detect_label(messages, contact_name)
     funnel_stage = detect_funnel_stage(messages)
@@ -706,15 +680,11 @@ def generate(
 
     # ── Summary ──────────────────────────────────────────────────────
     summary = build_summary(
-        messages, agent_name, contact_name, scores, model_used="prefilter_t4"
+        messages, agent_name, contact_name, model_used="prefilter_t4"
     )
 
     # ── Assemble result ──────────────────────────────────────────────
     result = {
-        "compliance_score": compliance,
-        "sentiment_score": sentiment,
-        "professionalism_score": professionalism,
-        "script_adherence_score": script,
         "red_flags": final_flags,
         "funnel_stage_reached": funnel_stage,
         "pillars_gathered": sorted(gathered_pillars),
@@ -741,7 +711,7 @@ def generate(
 
     logger.debug(
         f"[T4] {contact_name} → flags={len(final_flags)}, "
-        f"compliance={compliance}, pillars={result['pillars_gathered']}"
+        f"pillars={result['pillars_gathered']}"
     )
 
     return result

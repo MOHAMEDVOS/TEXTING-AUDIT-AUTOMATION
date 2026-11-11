@@ -190,7 +190,6 @@ PREFILTER_REQUIRE_VALIDATION = os.getenv("PREFILTER_REQUIRE_VALIDATION", "false"
 
 # ─── Semantic Auto-Learning ─────────────────────────────────
 SEMANTIC_LEARNING_ENABLED = os.getenv("SEMANTIC_LEARNING_ENABLED", "true").lower() == "true"
-SEMANTIC_MIN_SCORE        = float(os.getenv("SEMANTIC_MIN_SCORE",        "88.0"))
 SEMANTIC_MAX_SIMILARITY   = float(os.getenv("SEMANTIC_MAX_SIMILARITY",   "0.75"))
 SEMANTIC_MIN_PROMOTE      = int(os.getenv("SEMANTIC_MIN_PROMOTE",        "5"))
 SEMANTIC_MAX_PER_RUN      = int(os.getenv("SEMANTIC_MAX_PER_RUN",        "50"))

@@ -3,7 +3,7 @@
 ## Project Overview
 An advanced, high-performance automated auditing system for SMS/Texting conversations.
 - **Target**: Scrapes SmarterContact conversations (via GraphQL and REST APIs).
-- **Audit**: Evaluates agents against 4 metrics: Compliance, Attitude, Professionalism, and Script Adherence.
+- **Audit**: Flags agent mistakes (compliance, attitude, professionalism, script) and checks labels. There are no numeric scores — they were removed 2026-11-11; the `*_score` DB columns are left in place, empty, to keep history.
 - **Scoring**: **ML-only. There is no LLM in the pipeline.** Groq was decommissioned;
   `ai/analyzer.py` makes no API calls and `groq` is not a dependency. Tier 4 is a
   deterministic rule generator, not an AI fallback.

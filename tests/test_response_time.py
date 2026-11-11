@@ -182,7 +182,6 @@ class TestCheckResponseTime:
         )
         assert result["threshold_tag"] == "critical"
         assert result["minutes"] == 40
-        assert result["script_penalty"] == 25
 
     def test_terminal_label_still_wins_over_a_slow_reply(self):
         assert check_response_time(

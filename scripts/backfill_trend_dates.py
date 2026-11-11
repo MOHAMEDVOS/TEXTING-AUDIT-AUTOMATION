@@ -25,9 +25,7 @@ For each row:
      If nothing already exists at (agent_name, new_date, account_email), it's
      a plain UPDATE. If a row already exists there (two adjacent runs landed
      on the same real conversation day), the two are merged: conversations_
-     analyzed sums, score columns become a conversations_analyzed-weighted
-     average (same convention the Trends UI already uses for grouped rows),
-     and the now-redundant row is deleted. total_issues/late_response_flags/
+     analyzed sums and the now-redundant row is deleted. total_issues/late_response_flags/
      wrong_label_flags are NOT merged by arithmetic -- every touched
      (agent_name, date) gets a full _recompute_trend_counts pass after this
      script finishes, which derives those three purely from conversations +
@@ -172,9 +170,7 @@ logger = logging.getLogger("backfill_trend_dates")
 # already does bulk work.
 _BULK_EFFECTIVE_DATE_SQL = """
     SELECT ts.id, ts.agent_name, ts.audit_date, ts.account_email,
-           ts.conversations_analyzed, ts.overall_score, ts.compliance_score,
-           ts.sentiment_score, ts.professionalism_score, ts.script_adherence_score,
-           dist.effective_date
+           ts.conversations_analyzed, dist.effective_date
     FROM trend_snapshots ts
     LEFT JOIN LATERAL (
         SELECT (CASE WHEN c.convo_date <> '' THEN TO_DATE(c.convo_date, 'MM/DD/YYYY')
@@ -207,23 +203,6 @@ async def main(dry_run: bool) -> None:
             )
             return
         logger.info(f"Sanity check passed: {total_ts} trend_snapshots rows accounted for.")
-
-        _SCORE_KEYS = ("overall_score", "compliance_score", "sentiment_score",
-                       "professionalism_score", "script_adherence_score")
-
-        def _combine_score(a_v, a_n, b_v, b_n):
-            """Weighted average by conversations_analyzed, falling back to a
-            plain average when neither side has a count to weight by -- same
-            convention the Trends UI uses for grouped Snapshot Records rows."""
-            if a_v is None and b_v is None:
-                return None
-            if a_v is None:
-                return b_v
-            if b_v is None:
-                return a_v
-            if (a_n + b_n) > 0:
-                return (a_v * a_n + b_v * b_n) / (a_n + b_n)
-            return (a_v + b_v) / 2
 
         unchanged = 0
         no_conversations_found = 0
@@ -270,13 +249,9 @@ async def main(dry_run: bool) -> None:
                 keeper = max(members, key=lambda m: (m["conversations_analyzed"] or 0, -m["id"]))
             absorbed = [m for m in members if m["id"] != keeper["id"]]
 
-            merged_scores = {k: keeper[k] for k in _SCORE_KEYS}
-            running_n = keeper["conversations_analyzed"] or 0
-            for m in absorbed:
-                b_n = m["conversations_analyzed"] or 0
-                for k in _SCORE_KEYS:
-                    merged_scores[k] = _combine_score(merged_scores[k], running_n, m[k], b_n)
-                running_n += b_n
+            running_n = (keeper["conversations_analyzed"] or 0) + sum(
+                m["conversations_analyzed"] or 0 for m in absorbed
+            )
 
             merge_groups.append({
                 "keeper_id": keeper["id"], "agent_name": keeper["agent_name"],
@@ -285,7 +260,6 @@ async def main(dry_run: bool) -> None:
                 "absorbed_ids": [m["id"] for m in absorbed],
                 "absorbed_old_dates": [m["audit_date"] for m in absorbed],
                 "total_conversations_analyzed": running_n,
-                "merged_scores": merged_scores,
             })
 
         logger.info(
@@ -343,16 +317,11 @@ async def main(dry_run: bool) -> None:
                     await conn.execute("DELETE FROM trend_snapshots WHERE id = $1", payload)
                 elif kind == "merge_update":
                     g = payload
-                    s = g["merged_scores"]
                     await conn.execute(
                         """UPDATE trend_snapshots
-                           SET audit_date = $1, conversations_analyzed = $2, overall_score = $3,
-                               compliance_score = $4, sentiment_score = $5, professionalism_score = $6,
-                               script_adherence_score = $7
-                           WHERE id = $8""",
-                        g["new_date"], g["total_conversations_analyzed"], s["overall_score"],
-                        s["compliance_score"], s["sentiment_score"], s["professionalism_score"],
-                        s["script_adherence_score"], g["keeper_id"],
+                           SET audit_date = $1, conversations_analyzed = $2
+                           WHERE id = $3""",
+                        g["new_date"], g["total_conversations_analyzed"], g["keeper_id"],
                     )
                     touched_targets.add((g["agent_name"], g["new_date"]))
 

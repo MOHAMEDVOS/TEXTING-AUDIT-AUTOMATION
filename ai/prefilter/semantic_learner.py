@@ -2,9 +2,8 @@
 Semantic Learner — Auto-capture + promote loop for self-learning pipeline.
 
 After each scoring run, conversations that are:
-  1. Scored with high compliance (>= SEMANTIC_MIN_SCORE)
-  2. Semantically novel (top kNN similarity <= SEMANTIC_MAX_SIMILARITY)
-  3. Flagless (zero red flags)
+  1. Semantically novel (top kNN similarity <= SEMANTIC_MAX_SIMILARITY)
+  2. Flagless (zero red flags)
 get inserted into the `semantic_candidates` table.
 
 A separate `auto_promote()` call (invoked by the dream_worker or CLI)
@@ -33,7 +32,6 @@ import psycopg2.pool
 from config.settings import (
     DATABASE_URL,
     SEMANTIC_LEARNING_ENABLED,
-    SEMANTIC_MIN_SCORE,
     SEMANTIC_MAX_SIMILARITY,
     SEMANTIC_MIN_PROMOTE,
     SEMANTIC_MAX_PER_RUN,
@@ -110,21 +108,7 @@ def capture_candidate(
     if conversation_id is None:
         return False
 
-    # ── Quality gate: must be high-scoring and flag-free ──────────────
-    compliance = result.get("compliance_score")
-    sentiment = result.get("sentiment_score")
-    professionalism = result.get("professionalism_score")
-    script = result.get("script_adherence_score")
-
-    scores = [s for s in [compliance, sentiment, professionalism, script] if s is not None]
-    if not scores:
-        return False
-
-    avg_score = sum(scores) / len(scores)
-    if avg_score < SEMANTIC_MIN_SCORE:
-        return False
-
-    # Must be flagless
+    # ── Quality gate: must be flag-free ──────────────────────────────
     flags = result.get("red_flags") or []
     if flags:
         return False
@@ -162,20 +146,15 @@ def capture_candidate(
                 cur.execute(
                     """INSERT INTO semantic_candidates
                        (conversation_id, embedding_hash, top_similarity,
-                        nearest_conversation_id, compliance_score, sentiment_score,
-                        professionalism_score, script_adherence_score,
+                        nearest_conversation_id,
                         distinctive_phrases, is_clean, capture_reason)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, 'novelty')
+                       VALUES (%s, %s, %s, %s, %s, TRUE, 'novelty')
                        ON CONFLICT (embedding_hash) DO NOTHING""",
                     (
                         conversation_id,
                         embedding_hash,
                         top_similarity,
                         nearest_conversation_id,
-                        compliance,
-                        sentiment,
-                        professionalism,
-                        script,
                         json.dumps(phrases),
                     ),
                 )
@@ -183,7 +162,7 @@ def capture_candidate(
 
         logger.debug(
             f"[SemanticLearner] Captured candidate conv_id={conversation_id} "
-            f"(avg={avg_score:.1f}, sim={top_similarity or 0:.3f})"
+            f"(sim={top_similarity or 0:.3f})"
         )
         return True
 
@@ -224,13 +203,13 @@ def auto_promote(dsn: str | None = None, dry_run: bool = False) -> dict:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 # Find eligible candidates (24h stabilization window)
                 cur.execute(
-                    """SELECT id, conversation_id, compliance_score, top_similarity
+                    """SELECT id, conversation_id, top_similarity
                        FROM semantic_candidates
                        WHERE is_clean = TRUE
                          AND promoted = FALSE
                          AND rejected = FALSE
                          AND created_at < NOW() - INTERVAL '24 hours'
-                       ORDER BY compliance_score DESC
+                       ORDER BY created_at
                        LIMIT %s""",
                     (SEMANTIC_MAX_PER_RUN,),
                 )
@@ -344,7 +323,6 @@ def get_queue_stats(dsn: str | None = None) -> dict:
                          COUNT(*) FILTER (WHERE promoted) AS promoted,
                          COUNT(*) FILTER (WHERE rejected) AS rejected,
                          COUNT(*) AS total,
-                         AVG(compliance_score) FILTER (WHERE NOT promoted AND NOT rejected) AS avg_score,
                          AVG(top_similarity) FILTER (WHERE NOT promoted AND NOT rejected) AS avg_similarity
                        FROM semantic_candidates"""
                 )
@@ -355,8 +333,7 @@ def get_queue_stats(dsn: str | None = None) -> dict:
             "promoted": row[1] or 0,
             "rejected": row[2] or 0,
             "total": row[3] or 0,
-            "avg_pending_score": round(row[4], 1) if row[4] else None,
-            "avg_pending_similarity": round(row[5], 3) if row[5] else None,
+            "avg_pending_similarity": round(row[4], 3) if row[4] else None,
         }
 
     except Exception as e:

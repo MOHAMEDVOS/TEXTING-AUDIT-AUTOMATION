@@ -14,9 +14,9 @@ outside every period that exists - counts as zero confirmed minutes and can't
 raise this flag. We won't hold anyone accountable for time nobody can be shown
 to have owned.
 
-  - Yellow Alert (> 10 min): Medium severity, -8 pts Script Adherence penalty
-  - Red Alert (> 15 min): High severity, -15 pts Script Adherence penalty
-  - Critical Delay (> 25 min): High severity, -25 pts Script Adherence penalty
+  - Yellow Alert (> 10 min): Medium severity
+  - Red Alert (> 15 min): High severity
+  - Critical Delay (> 25 min): High severity
 
 Pure / deterministic: no ML or API calls, zero token cost.
 """
@@ -48,10 +48,6 @@ def _env_int(name: str, default: int) -> int:
 YELLOW_MIN = _env_int("RESPONSE_TIME_YELLOW_MIN", 10)
 RED_MIN = _env_int("RESPONSE_TIME_RED_MIN", 15)
 CRITICAL_MIN = _env_int("RESPONSE_TIME_CRITICAL_MIN", 25)
-
-SCRIPT_PENALTY_YELLOW = _env_int("RESPONSE_TIME_PENALTY_YELLOW", 8)
-SCRIPT_PENALTY_RED = _env_int("RESPONSE_TIME_PENALTY_RED", 15)
-SCRIPT_PENALTY_CRITICAL = _env_int("RESPONSE_TIME_PENALTY_CRITICAL", 25)
 
 # The shift window itself lives in config/settings.py (SHIFT_START_HOUR /
 # SHIFT_END_HOUR / SHIFT_DAYS) and is applied by ai.shift.shift_minutes_with_periods.
@@ -160,7 +156,6 @@ def check_response_time(parsed_messages, assigned_labels, *,
           "threshold_min": 10 | 15 | 25,
           "minutes": int,
           "evidence": [lead_msg, agent_msg],
-          "script_penalty": int,
           "started_at": datetime,       # when the clock started (lead's msg)
           "ended_at": datetime,         # when it stopped (agent's reply)
           "by_texter": {name: minutes}, # empty without periods
@@ -221,17 +216,14 @@ def check_response_time(parsed_messages, assigned_labels, *,
     minutes = int(round(worst_minutes))
     if worst_minutes > CRITICAL_MIN:
         severity = "high"
-        penalty = SCRIPT_PENALTY_CRITICAL
         threshold_tag = "critical"
         threshold_min = CRITICAL_MIN
     elif worst_minutes > RED_MIN:
         severity = "high"
-        penalty = SCRIPT_PENALTY_RED
         threshold_tag = "red"
         threshold_min = RED_MIN
     else:
         severity = "medium"
-        penalty = SCRIPT_PENALTY_YELLOW
         threshold_tag = "yellow"
         threshold_min = YELLOW_MIN
 
@@ -243,7 +235,6 @@ def check_response_time(parsed_messages, assigned_labels, *,
         "threshold_min": threshold_min,
         "minutes": minutes,
         "evidence": worst_evidence,
-        "script_penalty": penalty,
         # The interval itself, so the wait can be split across a handover
         # instead of landing entirely on whoever started the clock.
         "started_at": started_at,
