@@ -466,7 +466,7 @@ async def score_agent_conversations(
                 r["label_correct"] = True
                 continue
             # AI can hallucinate non-existent labels; ignore those wrong-label claims.
-            if not _is_allowed_label_name(should):
+            if not r.get("_dispo_hygiene") and not _is_allowed_label_name(should):
                 r["label_correct"] = True
                 continue
             flag = f"Wrong label: assigned '{wrong}' but should be '{should}'"

@@ -208,3 +208,44 @@ def test_non_string_labels_are_skipped():
     labels = ["Fishnet list", None, 5, "New Lead", "Wrong Number"]
     assert check_label_combination(labels, REPLIED) == [CONFLICTING_DISPO_FLAG]
     assert check_label_combination([None, 7], REPLIED) == []
+
+
+# A reply no other label rule has an opinion about, so only F18/F19 can mark
+# the label wrong.
+NEUTRAL = [
+    _msg("Emma", "Hi Sheriff, have you thought about selling?", NOW - timedelta(minutes=5)),
+    _msg("Contact", "Hi, sorry", NOW),
+]
+
+
+class TestLabelIsMarkedWrong:
+    """F18/F19 must not sit next to a 'Correct' label verdict."""
+
+    def _result(self, labels, thread=NEUTRAL):
+        return analyze_conversation(thread, "Emma", "Sheriff Kristin",
+                                    assigned_labels=labels)
+
+    def test_conflict_marks_label_wrong(self):
+        r = self._result(["Fishnet list", "Missed Call", "Not interested", "New Lead"])
+        assert r["label_correct"] is False
+        assert r["label_should_be"] == "a single status"
+        assert r["_dispo_hygiene"] is True
+
+    def test_new_lead_plus_one_status_names_that_status(self):
+        r = self._result(["Fishnet list", "New Lead", "Maybe later"])
+        assert r["label_correct"] is False
+        assert r["label_should_be"] == "Maybe Later"
+
+    def test_stale_new_lead_marks_label_wrong(self):
+        r = self._result(["Fishnet list", "New Lead"])
+        assert r["label_correct"] is False
+        assert "New Lead" in r["label_should_be"]
+
+    def test_valid_pair_stays_correct(self):
+        r = self._result(["Fishnet list", "Not interested", "Decision Maker"])
+        assert r["label_correct"] is not False
+        assert "_dispo_hygiene" not in r
+
+    def test_wrong_label_culprit_is_recorded(self):
+        r = self._result(["Fishnet list", "New Lead", "Maybe later"])
+        assert "__label__" in (r.get("flag_culprits") or {})

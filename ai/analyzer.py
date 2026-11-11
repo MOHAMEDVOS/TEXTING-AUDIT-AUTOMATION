@@ -132,6 +132,32 @@ from ai.prefilter._guards import (
 )
 
 
+def _mark_label_wrong(
+    result: dict, assigned_labels: list[str] | None, hygiene_flags: list[str]
+) -> None:
+    """Make the label verdict agree with an F18/F19 flag. A label another rule
+    already judged wrong keeps its own, more specific, 'should be'."""
+    from ai.prefilter.label_combination import (
+        CONFLICTING_DISPO_FLAG,
+        status_label_keys,
+    )
+
+    if result.get("label_correct") is False:
+        return
+    if CONFLICTING_DISPO_FLAG in hygiene_flags:
+        left = status_label_keys(assigned_labels) - {"new lead"}
+        should = next(iter(left)).title() if len(left) == 1 else "a single status"
+        reason = "More than one status is on the account — clear the one that no longer applies."
+    else:
+        should = "a real status (not New Lead)"
+        reason = "The contact replied, so the account should no longer be on New Lead."
+    result["label_assigned"] = result.get("label_assigned") or ", ".join(assigned_labels or [])
+    result["label_correct"] = False
+    result["label_should_be"] = should
+    result["label_reason"] = reason
+    result["_dispo_hygiene"] = True
+
+
 def _apply_dispo_hygiene_flags(
     result: dict, messages: list[dict], assigned_labels: list[str] | None
 ) -> None:
@@ -147,10 +173,9 @@ def _apply_dispo_hygiene_flags(
     account was simply left untidy, so the holder at the last activity owns it
     — the same rule the wrong-label flag uses.
 
-    Note these do NOT move the scores. Tier scoring (compliance/script) is
-    already computed by the time we get here, which matches how the existing
-    wrong-label finding behaves: a CRM hygiene defect is surfaced for coaching,
-    not charged against the agent's compliance.
+    The label itself is also marked wrong (label_correct=False), so the panel
+    never shows "Correct" next to a flag saying the dispositions are wrong, and
+    the scorer adds the usual "Wrong label" flag.
     """
     try:
         from ai.prefilter.label_combination import check_label_combination
@@ -163,6 +188,7 @@ def _apply_dispo_hygiene_flags(
     new_flags = check_label_combination(assigned_labels, messages)
     if not new_flags:
         return
+    _mark_label_wrong(result, assigned_labels, new_flags)
 
     flags = list(result.get("red_flags") or [])
     existing = {canon_flag_text(f) for f in flags if isinstance(f, str)}
@@ -186,6 +212,12 @@ def _apply_dispo_hygiene_flags(
         )
 
     result["red_flags"] = flags
+    if result.get("_dispo_hygiene"):
+        culprits.setdefault("__label__", _culprit_ref(
+            messages[-1] if messages else None,
+            len(messages) - 1 if messages else None,
+            "label",
+        ))
     if culprits:
         result["flag_culprits"] = culprits
 
